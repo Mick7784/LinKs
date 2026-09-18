@@ -44,6 +44,7 @@
           "description": { "type": "string" },
           "url": { "type": "string", "pattern": "^(https?:|mailto:|tel:)" },
           "image": { "$ref": "#/definitions/image" },
+          "icon": { "enum": ["youtube", "instagram", "tiktok", "discord", "mail", "website", "cart", "home"] },
           "featured": { "type": "boolean" },
           "affiliate": { "type": "boolean" },
           "expiresAt": { "type": ["string", "null"], "description": "Heure de Paris sans fuseau. Une date seule reste visible toute la journée." }

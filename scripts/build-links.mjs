@@ -8,7 +8,7 @@ const allowed = {
   root: new Set(["$schema", "siteUrl", "profile", "socials", "links"]),
   profile: new Set(["name", "tagline", "description", "avatar", "logo"]),
   social: new Set(["platform", "url", "label"]),
-  link: new Set(["title", "description", "url", "image", "featured", "affiliate", "expiresAt"]),
+  link: new Set(["title", "description", "url", "image", "icon", "featured", "affiliate", "expiresAt"]),
 };
 
 let raw;
@@ -66,10 +66,11 @@ function parseLinks(value) {
     const url = requiredUrl(item.url, `${path}.url`);
     const description = optionalString(item.description, `${path}.description`);
     const imageValue = item.image === undefined ? undefined : image(item.image, `${path}.image`);
+    const icon = item.icon === undefined ? undefined : linkIcon(item.icon, `${path}.icon`);
     const featured = bool(item.featured, `${path}.featured`, false);
     const affiliate = bool(item.affiliate, `${path}.affiliate`, false);
     const expiresAt = parseExpiry(item.expiresAt, `${path}.expiresAt`);
-    return { id: `link-${index}`, title, url, featured, affiliate, expiresAt, ...(description && { description }), ...(imageValue && { image: imageValue }) };
+    return { id: `link-${index}`, title, url, featured, affiliate, expiresAt, ...(description && { description }), ...(imageValue && { image: imageValue }), ...(icon && { icon }) };
   });
 }
 
@@ -79,6 +80,7 @@ function optionalString(value, path) { if (value === undefined) return undefined
 function requiredUrl(value, path, protocols = ["http:", "https:", "mailto:", "tel:"]) { if (typeof value === "string") try { if (protocols.includes(new URL(value).protocol)) return value; } catch {} errors.push(`${path} : URL complète attendue.`); return ""; }
 function image(value, path) { if (typeof value === "string" && value.startsWith("/") && !value.startsWith("//")) { if (!existsSync(resolve(root, "site", decodeURI(value).slice(1)))) errors.push(`${path} : fichier introuvable (${value}).`); return value; } return requiredUrl(value, path, ["http:", "https:"]); }
 function bool(value, path, fallback) { if (value === undefined) return fallback; if (typeof value === "boolean") return value; errors.push(`${path} : true ou false attendu.`); return fallback; }
+function linkIcon(value, path) { const icons = new Set(["youtube", "instagram", "tiktok", "discord", "mail", "website", "cart", "home"]); if (icons.has(value)) return value; errors.push(`${path} : icône inconnue.`); return undefined; }
 
 function parseExpiry(value, path) {
   if (value === undefined || value === null) return null;

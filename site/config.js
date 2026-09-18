@@ -33,7 +33,8 @@ window.LINKS_CONFIG = {
       "featured": true,
       "affiliate": false,
       "expiresAt": null,
-      "description": "Tests, tutos et idées pour une maison plus confortable."
+      "description": "Tests, tutos et idées pour une maison plus confortable.",
+      "icon": "youtube"
     },
     {
       "id": "link-1",
@@ -42,16 +43,18 @@ window.LINKS_CONFIG = {
       "featured": false,
       "affiliate": false,
       "expiresAt": null,
-      "description": "Les nouveautés et mon quotidien de créateur."
+      "description": "Les nouveautés et mon quotidien de créateur.",
+      "icon": "instagram"
     },
     {
       "id": "link-2",
       "title": "Mes liens Amazon",
       "url": "https://amzn.to/4heRBoW",
       "featured": false,
-      "affiliate": false,
+      "affiliate": true,
       "expiresAt": null,
-      "description": "Ma sélection de produits et de matériel."
+      "description": "Ma sélection de produits et de matériel.",
+      "icon": "cart"
     },
     {
       "id": "link-3",
@@ -60,7 +63,8 @@ window.LINKS_CONFIG = {
       "featured": false,
       "affiliate": true,
       "expiresAt": null,
-      "description": "Domotique et objets connectés pour la maison."
+      "description": "Domotique et objets connectés pour la maison.",
+      "icon": "home"
     },
     {
       "id": "link-4",
@@ -69,7 +73,8 @@ window.LINKS_CONFIG = {
       "featured": false,
       "affiliate": false,
       "expiresAt": null,
-      "description": "Une marque, un produit ou une idée de collaboration ?"
+      "description": "Une marque, un produit ou une idée de collaboration ?",
+      "icon": "mail"
     }
   ]
 };

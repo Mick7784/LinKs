@@ -14,10 +14,10 @@
     { "platform": "email", "url": "mailto:domotikpro77@gmail.com", "label": "Me contacter par e-mail" }
   ],
   "links": [
-    { "title": "Mes dernières vidéos", "description": "Tests, tutos et idées pour une maison plus confortable.", "url": "https://www.youtube.com/@DomotiKStudio/videos", "featured": true },
-    { "title": "Les coulisses sur Instagram", "description": "Les nouveautés et mon quotidien de créateur.", "url": "https://www.instagram.com/domotik_studio/" },
-    { "title": "Mes liens Amazon", "description": "Ma sélection de produits et de matériel.", "url": "https://amzn.to/4heRBoW" },
-    { "title": "Domadoo", "description": "Domotique et objets connectés pour la maison.", "url": "https://www.domadoo.fr/?domid=117", "affiliate": true },
-    { "title": "Travaillons ensemble", "description": "Une marque, un produit ou une idée de collaboration ?", "url": "mailto:domotikpro77@gmail.com" }
+    { "title": "Mes dernières vidéos", "description": "Tests, tutos et idées pour une maison plus confortable.", "url": "https://www.youtube.com/@DomotiKStudio/videos", "icon": "youtube", "featured": true },
+    { "title": "Les coulisses sur Instagram", "description": "Les nouveautés et mon quotidien de créateur.", "url": "https://www.instagram.com/domotik_studio/", "icon": "instagram" },
+    { "title": "Mes liens Amazon", "description": "Ma sélection de produits et de matériel.", "url": "https://amzn.to/4heRBoW", "icon": "cart", "affiliate": true },
+    { "title": "Domadoo", "description": "Domotique et objets connectés pour la maison.", "url": "https://www.domadoo.fr/?domid=117", "icon": "home", "affiliate": true },
+    { "title": "Travaillons ensemble", "description": "Une marque, un produit ou une idée de collaboration ?", "url": "mailto:domotikpro77@gmail.com", "icon": "mail" }
   ]
 }

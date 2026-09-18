@@ -7,6 +7,8 @@ const paths = {
   discord: '<path d="M8 5 5 6C3 10 2 14 3 17l4 2 1-2m8-12 3 1c2 4 3 8 2 11l-4 2-1-2M8 6c3-1 5-1 8 0M6 16c4 2 8 2 12 0"/><circle cx="8.5" cy="12" r="1"/><circle cx="15.5" cy="12" r="1"/>',
   tiktok: '<path d="M14 4v10.5a4.5 4.5 0 1 1-3-4.24"/><path d="M14 4c1 2.4 2.7 3.8 5 4"/>',
   website: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.3 2.5 3.5 5.5 3.5 9S14.3 18.5 12 21c-2.3-2.5-3.5-5.5-3.5-9S9.7 5.5 12 3"/>',
+  cart: '<path d="M3 4h2l2 12h10l2-8H6"/><circle cx="9" cy="20" r="1"/><circle cx="17" cy="20" r="1"/>',
+  home: '<path d="m3 11 9-7 9 7v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1Z"/><path d="M9 21v-6h6v6"/>',
   arrow: '<path d="M6 18 18 6M6 6h12v12"/>'
 };
 
@@ -89,9 +91,7 @@ function renderLinks() {
       image.src = item.image;
       image.alt = "";
       badge.append(image);
-    } else {
-      badge.textContent = item.title.charAt(0).toUpperCase();
-    }
+    } else badge.append(icon(item.icon || "website"));
     const copy = document.createElement("span");
     copy.className = "card-copy";
     if (item.featured) copy.append(text("span", "eyebrow", "À découvrir"));
