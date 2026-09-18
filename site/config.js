@@ -11,7 +11,6 @@ window.LINKS_CONFIG = {
   "latestVideo": {
     "title": "Home Assistant : une fois ces 3 modules installés, difficile de s’en passer !",
     "url": "https://youtu.be/KzfhhIf_x_Q",
-    "image": "https://i.ytimg.com/vi/KzfhhIf_x_Q/hqdefault.jpg",
     "published": "2026-09-13T16:44:17+00:00"
   },
   "socials": [
@@ -34,13 +33,13 @@ window.LINKS_CONFIG = {
   "links": [
     {
       "id": "link-0",
-      "title": "Mes dernières vidéos",
-      "url": "https://www.youtube.com/@DomotiKStudio/videos",
+      "title": "La communauté domotique AyLabs",
+      "url": "https://discord.gg/XYKJEkPtRS",
       "featured": true,
       "affiliate": false,
       "expiresAt": null,
-      "description": "Tests, tutos et idées pour une maison plus confortable.",
-      "icon": "youtube"
+      "description": "Échanger, partager ses projets et s'entraider autour de la domotique.",
+      "icon": "discord"
     },
     {
       "id": "link-1",
