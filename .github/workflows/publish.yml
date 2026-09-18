@@ -5,6 +5,8 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+  schedule:
+    - cron: '17 */3 * * *'
 permissions:
   contents: read
 concurrency:
@@ -33,7 +35,7 @@ jobs:
             sleep 1
           done
           curl -fsS http://127.0.0.1:18080/ | grep -q 'DomotiK'
-          for file in style.css config.js app.js assets/logo.webp assets/portrait.webp; do
+          for file in style.css icons.css config.js app.js assets/logo.webp assets/portrait.webp; do
             curl -fsS "http://127.0.0.1:18080/$file" -o /dev/null
           done
       - name: Log in to GHCR
