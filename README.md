@@ -6,6 +6,18 @@ Page statique responsive, sans dépendance JavaScript externe, sans traceur ni c
 
 Modifier uniquement `links.json` : profil, réseaux, ordre et contenu des cartes. Le fichier est validé à chaque build : une URL ou une date incorrecte bloque la publication plutôt que de mettre un site incomplet en ligne.
 
+### Dernière vidéo YouTube
+
+Le bloc `latestVideo` récupère automatiquement le titre, la miniature et le lien direct vers la dernière vidéo publiée sur la chaîne :
+
+```json
+"latestVideo": {
+  "channelId": "UC-bkgpkh9sGcnX8oqFea3Uw"
+}
+```
+
+Le workflow GitHub est aussi relancé toutes les trois heures afin de reconstruire l’image avec la vidéo la plus récente.
+
 Exemple de lien temporaire :
 
 ```json
@@ -18,7 +30,7 @@ Exemple de lien temporaire :
 
 `"2026-10-31"` laisse le lien visible jusqu'à la fin du 31 octobre, heure de Paris. Pour une heure précise : `"2026-10-31T18:00"`. Le lien disparaît à l'heure prévue, y compris pour une page déjà ouverte. Les propriétés admises sont documentées dans `links.schema.json`, ce qui donne aussi l'autocomplétion dans VS Code.
 
-Les images locales se placent dans `site/`, puis se référencent par leur chemin web, par exemple `"image": "/assets/mon-image.webp"`. Sans image, la carte affiche l'initiale du titre.
+Les images locales se placent dans `site/`, puis se référencent par leur chemin web, par exemple `"image": "/assets/mon-image.webp"`. Sans image, une icône graphique peut être choisie avec `"icon"`.
 
 Le style est dans `site/style.css`. Le portrait et le logo se trouvent dans `site/assets/`. L'e-mail de contact est public sur le site.
 

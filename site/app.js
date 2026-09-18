@@ -71,6 +71,26 @@ for (const item of config.socials.filter((item) => validUrl(item.url))) {
   socialTarget.append(a);
 }
 
+const latestVideoTarget = document.getElementById("latest-video");
+const latestVideo = config.latestVideo;
+if (latestVideo && validUrl(latestVideo.url) && latestVideo.title && latestVideo.image) {
+  const a = document.createElement("a");
+  a.className = "video-card";
+  a.href = latestVideo.url;
+  a.target = "_blank";
+  a.rel = "noopener noreferrer";
+  const image = document.createElement("img");
+  image.src = latestVideo.image;
+  image.alt = "Miniature de la dernière vidéo";
+  image.loading = "eager";
+  const copy = document.createElement("span");
+  copy.className = "video-copy";
+  copy.append(text("span", "eyebrow", "Dernière vidéo"), text("span", "video-title", latestVideo.title), text("span", "video-action", "Regarder sur YouTube"));
+  a.append(image, copy, icon("arrow", "arrow"));
+  latestVideoTarget.append(a);
+  latestVideoTarget.hidden = false;
+}
+
 const linkTarget = document.getElementById("links");
 function renderLinks() {
   linkTarget.replaceChildren();

@@ -8,6 +8,9 @@
     "avatar": "/assets/portrait.webp",
     "logo": "/assets/logo.webp"
   },
+  "latestVideo": {
+    "channelId": "UC-bkgpkh9sGcnX8oqFea3Uw"
+  },
   "socials": [
     { "platform": "youtube", "url": "https://www.youtube.com/@DomotiKStudio", "label": "YouTube DomotiK Studio" },
     { "platform": "instagram", "url": "https://www.instagram.com/domotik_studio/", "label": "Instagram DomotiK Studio" },

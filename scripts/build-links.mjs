@@ -5,8 +5,9 @@ const root = process.cwd();
 const errors = [];
 const platforms = new Set(["youtube", "instagram", "tiktok", "discord", "x", "twitch", "github", "linkedin", "email", "website"]);
 const allowed = {
-  root: new Set(["$schema", "siteUrl", "profile", "socials", "links"]),
+  root: new Set(["$schema", "siteUrl", "profile", "latestVideo", "socials", "links"]),
   profile: new Set(["name", "tagline", "description", "avatar", "logo"]),
+  latestVideo: new Set(["channelId"]),
   social: new Set(["platform", "url", "label"]),
   link: new Set(["title", "description", "url", "image", "icon", "featured", "affiliate", "expiresAt"]),
 };
@@ -18,6 +19,7 @@ if (!record(raw)) fail(["La racine de links.json doit être un objet."]);
 
 checkKeys(raw, "", allowed.root);
 const profile = parseProfile(raw.profile);
+const latestVideo = raw.latestVideo === undefined ? undefined : await parseLatestVideo(raw.latestVideo);
 const socials = raw.socials === undefined ? [] : parseSocials(raw.socials);
 const links = parseLinks(raw.links);
 const siteUrl = raw.siteUrl === undefined ? undefined : requiredUrl(raw.siteUrl, "siteUrl", ["http:", "https:"]);
@@ -26,6 +28,7 @@ if (errors.length) fail(errors);
 const output = {
   ...(siteUrl && { siteUrl: siteUrl.replace(/\/+$/, "") }),
   profile,
+  ...(latestVideo && { latestVideo }),
   socials,
   links: links.filter((link) => link.expiresAt === null || link.expiresAt > Date.now()),
 };
@@ -42,6 +45,41 @@ function parseProfile(value) {
   const logo = value.logo === undefined ? undefined : image(value.logo, "profile.logo");
   return { name, avatar, ...(tagline && { tagline }), ...(description && { description }), ...(logo && { logo }) };
 }
+
+async function parseLatestVideo(value) {
+  if (!record(value)) { errors.push("latestVideo : objet attendu."); return undefined; }
+  checkKeys(value, "latestVideo", allowed.latestVideo);
+  const channelId = requiredString(value.channelId, "latestVideo.channelId");
+  if (!/^UC[\w-]{22}$/.test(channelId)) {
+    errors.push("latestVideo.channelId : identifiant YouTube invalide (doit commencer par UC).");
+    return undefined;
+  }
+  try {
+    const response = await fetch(`https://www.youtube.com/feeds/videos.xml?channel_id=${encodeURIComponent(channelId)}`, {
+      headers: { "user-agent": "DomotiK-Studio-Linktree/1.0" },
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!response.ok) throw new Error(`réponse HTTP ${response.status}`);
+    const feed = await response.text();
+    const entry = /<entry>([\s\S]*?)<\/entry>/.exec(feed)?.[1];
+    const videoId = xmlValue(entry, "yt:videoId");
+    const title = xmlValue(entry, "title");
+    const published = xmlValue(entry, "published");
+    if (!videoId || !title) throw new Error("aucune vidéo trouvée dans le flux");
+    return { title, url: `https://youtu.be/${videoId}`, image: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`, ...(published && { published }) };
+  } catch (error) {
+    errors.push(`latestVideo : impossible de récupérer la dernière vidéo YouTube (${error.message}).`);
+    return undefined;
+  }
+}
+
+function xmlValue(xml, tag) {
+  if (!xml) return undefined;
+  const escaped = tag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const raw = new RegExp(`<${escaped}[^>]*>([\\s\\S]*?)<\\/${escaped}>`).exec(xml)?.[1];
+  return raw ? decodeXml(raw.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1").trim()) : undefined;
+}
+function decodeXml(value) { return value.replace(/&(amp|lt|gt|quot|apos|#39);/g, (_, entity) => ({ amp: "&", lt: "<", gt: ">", quot: "\\\"", apos: "'", "#39": "'" })[entity]); }
 
 function parseSocials(value) {
   if (!Array.isArray(value)) { errors.push("socials : tableau attendu."); return []; }

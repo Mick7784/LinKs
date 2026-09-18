@@ -8,6 +8,12 @@ window.LINKS_CONFIG = {
     "description": "Domotique • Tech • Objets du quotidien",
     "logo": "/assets/logo.webp"
   },
+  "latestVideo": {
+    "title": "Home Assistant : une fois ces 3 modules installés, difficile de s’en passer !",
+    "url": "https://youtu.be/KzfhhIf_x_Q",
+    "image": "https://i.ytimg.com/vi/KzfhhIf_x_Q/hqdefault.jpg",
+    "published": "2026-09-13T16:44:17+00:00"
+  },
   "socials": [
     {
       "platform": "youtube",

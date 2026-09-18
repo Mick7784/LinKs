@@ -8,6 +8,14 @@
   "properties": {
     "$schema": { "type": "string" },
     "siteUrl": { "type": "string", "format": "uri" },
+    "latestVideo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["channelId"],
+      "properties": {
+        "channelId": { "type": "string", "pattern": "^UC[\\w-]{22}$", "description": "ID de la chaîne YouTube (commence par UC)." }
+      }
+    },
     "profile": {
       "type": "object",
       "additionalProperties": false,
