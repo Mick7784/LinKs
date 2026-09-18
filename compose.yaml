@@ -1,0 +1,24 @@
+name: domotik-links
+services:
+  links:
+    image: ghcr.io/mick7784/links:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      pangolin:
+        aliases:
+          - domotik-links
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+networks:
+  pangolin:
+    external: true
