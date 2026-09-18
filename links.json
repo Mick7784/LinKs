@@ -17,9 +17,9 @@
     { "platform": "email", "url": "mailto:domotikpro77@gmail.com", "label": "Me contacter par e-mail" }
   ],
   "links": [
-    { "title": "La communauté domotique AyLabs", "description": "Échanger, partager ses projets et s'entraider autour de la domotique.", "url": "https://discord.gg/XYKJEkPtRS", "icon": "discord", "featured": true },
+    { "title": "La communauté domotique AyLabs", "description": "Échanger, partager ses projets et s'entraider autour de la domotique.", "url": "https://discord.gg/XYKJEkPtRS", "icon": "discord" },
     { "title": "Les coulisses sur Instagram", "description": "Les nouveautés et mon quotidien de créateur.", "url": "https://www.instagram.com/domotik_studio/", "icon": "instagram" },
-    { "title": "Mes liens Amazon", "description": "Ma sélection de produits et de matériel.", "url": "https://amzn.to/4heRBoW", "icon": "cart", "affiliate": true },
+    { "title": "Amazon", "description": "Accéder à Amazon tout en soutenant la chaîne.", "url": "https://amzn.to/4heRBoW", "icon": "cart", "affiliate": true },
     { "title": "Domadoo", "description": "Domotique et objets connectés pour la maison.", "url": "https://www.domadoo.fr/?domid=117", "icon": "home", "affiliate": true },
     { "title": "Travaillons ensemble", "description": "Une marque, un produit ou une idée de collaboration ?", "url": "mailto:domotikpro77@gmail.com", "icon": "mail" }
   ]

@@ -35,7 +35,7 @@ window.LINKS_CONFIG = {
       "id": "link-0",
       "title": "La communauté domotique AyLabs",
       "url": "https://discord.gg/XYKJEkPtRS",
-      "featured": true,
+      "featured": false,
       "affiliate": false,
       "expiresAt": null,
       "description": "Échanger, partager ses projets et s'entraider autour de la domotique.",
@@ -53,12 +53,12 @@ window.LINKS_CONFIG = {
     },
     {
       "id": "link-2",
-      "title": "Mes liens Amazon",
+      "title": "Amazon",
       "url": "https://amzn.to/4heRBoW",
       "featured": false,
       "affiliate": true,
       "expiresAt": null,
-      "description": "Ma sélection de produits et de matériel.",
+      "description": "Accéder à Amazon tout en soutenant la chaîne.",
       "icon": "cart"
     },
     {
