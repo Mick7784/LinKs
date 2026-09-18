@@ -1,5 +1,9 @@
 *
 !Dockerfile
 !nginx.conf
+!links.json
+!links.schema.json
+!scripts/
+!scripts/**
 !site/
 !site/**

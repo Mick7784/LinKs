@@ -1,0 +1,23 @@
+{
+  "$schema": "./links.schema.json",
+  "siteUrl": "https://links.domotik-studio.fr",
+  "profile": {
+    "name": "DomotiK Studio",
+    "tagline": "La maison plus confortable.",
+    "description": "Domotique • Tech • Objets du quotidien",
+    "avatar": "/assets/portrait.webp",
+    "logo": "/assets/logo.webp"
+  },
+  "socials": [
+    { "platform": "youtube", "url": "https://www.youtube.com/@DomotiKStudio", "label": "YouTube DomotiK Studio" },
+    { "platform": "instagram", "url": "https://www.instagram.com/domotik_studio/", "label": "Instagram DomotiK Studio" },
+    { "platform": "email", "url": "mailto:domotikpro77@gmail.com", "label": "Me contacter par e-mail" }
+  ],
+  "links": [
+    { "title": "Mes dernières vidéos", "description": "Tests, tutos et idées pour une maison plus confortable.", "url": "https://www.youtube.com/@DomotiKStudio/videos", "featured": true },
+    { "title": "Les coulisses sur Instagram", "description": "Les nouveautés et mon quotidien de créateur.", "url": "https://www.instagram.com/domotik_studio/" },
+    { "title": "Mes liens Amazon", "description": "Ma sélection de produits et de matériel.", "url": "https://amzn.to/4heRBoW" },
+    { "title": "Domadoo", "description": "Domotique et objets connectés pour la maison.", "url": "https://www.domadoo.fr/?domid=117", "affiliate": true },
+    { "title": "Travaillons ensemble", "description": "Une marque, un produit ou une idée de collaboration ?", "url": "mailto:domotikpro77@gmail.com" }
+  ]
+}
