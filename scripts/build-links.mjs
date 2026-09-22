@@ -65,8 +65,8 @@ async function parseLatestVideo(value) {
     const videoId = xmlValue(entry, "yt:videoId");
     const title = xmlValue(entry, "title");
     const published = xmlValue(entry, "published");
-    if (!videoId || !title) throw new Error("aucune vidéo trouvée dans le flux");
-    return { title, url: `https://youtu.be/${videoId}`, ...(published && { published }) };
+    if (!videoId || !/^[A-Za-z0-9_-]{11}$/.test(videoId) || !title) throw new Error("aucune vidéo trouvée dans le flux");
+    return { title, url: `https://youtu.be/${videoId}`, thumbnail: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`, ...(published && { published }) };
   } catch (error) {
     errors.push(`latestVideo : impossible de récupérer la dernière vidéo YouTube (${error.message}).`);
     return undefined;

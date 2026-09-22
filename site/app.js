@@ -74,19 +74,43 @@ for (const item of config.socials.filter((item) => validUrl(item.url))) {
 const latestVideoTarget = document.getElementById("latest-video");
 const latestVideo = config.latestVideo;
 if (latestVideo && validUrl(latestVideo.url) && latestVideo.title) {
+  const heading = text("h2", "video-heading", "Dernière vidéo");
+  heading.prepend(icon("youtube"));
   const a = document.createElement("a");
-  a.className = "card";
+  a.className = "video-card";
   a.href = latestVideo.url;
   a.target = "_blank";
   a.rel = "noopener noreferrer";
-  const badge = document.createElement("span");
-  badge.className = "card-icon";
-  badge.append(icon("youtube"));
-  const copy = document.createElement("span");
+  const visual = document.createElement("div");
+  visual.className = "video-visual";
+  if (latestVideo.thumbnail) {
+    const image = document.createElement("img");
+    image.src = latestVideo.thumbnail;
+    image.alt = "";
+    image.width = 1280;
+    image.height = 720;
+    image.addEventListener("error", () => image.remove(), { once: true });
+    visual.append(image);
+  }
+  const play = text("span", "video-play", "▶");
+  play.setAttribute("aria-hidden", "true");
+  visual.append(play);
+  const details = document.createElement("div");
+  details.className = "video-details";
+  const copy = document.createElement("div");
   copy.className = "card-copy";
-  copy.append(text("span", "card-title", "Dernière vidéo"), text("span", "card-description", latestVideo.title));
-  a.append(badge, copy, icon("arrow", "arrow"));
-  latestVideoTarget.append(a);
+  copy.append(text("h3", "video-title", latestVideo.title));
+  const published = new Date(latestVideo.published);
+  if (Number.isFinite(published.getTime())) {
+    const date = text("time", "video-date", "Publiée le " + new Intl.DateTimeFormat("fr-FR", {
+      day: "numeric", month: "long", year: "numeric", timeZone: "Europe/Paris"
+    }).format(published));
+    date.dateTime = published.toISOString();
+    copy.append(date);
+  }
+  details.append(copy, icon("arrow", "arrow"));
+  a.append(visual, details);
+  latestVideoTarget.append(heading, a);
   latestVideoTarget.hidden = false;
 }
 
