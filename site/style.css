@@ -7,7 +7,7 @@
 .video-card{display:block;overflow:hidden;border:1px solid #306578;border-radius:19px;background:linear-gradient(110deg,#131e2d,#111b29);color:inherit;text-decoration:none;transition:transform .2s,border-color .2s}
 .video-card:hover{transform:translateY(-2px);border-color:#72ddeb}
 .video-visual{position:relative;aspect-ratio:16/9;overflow:hidden;background:radial-gradient(ellipse at center,#164355,#0b1423);border-bottom:1px solid #243246;display:grid;place-items:center}
-.video-visual img{display:block;width:100%;height:100%;object-fit:cover;transition:transform .4s}
+.video-visual img{position:absolute;inset:0;display:block;width:100%;height:100%;object-fit:cover;object-position:center;transition:transform .4s}
 .video-card:hover .video-visual img{transform:scale(1.03)}
 .video-play{position:absolute;display:grid;place-items:center;width:58px;height:58px;padding-left:4px;border-radius:50%;background:#080f1bcc;border:1px solid #ffffff55;color:#fff;font-size:24px;transition:background .2s,transform .2s}
 .video-card:hover .video-play{background:#126580;transform:scale(1.08)}
