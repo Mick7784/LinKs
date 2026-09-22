@@ -16,6 +16,8 @@ Le bloc `latestVideo` récupère automatiquement le titre, la miniature et le li
 }
 ```
 
+La carte affiche une miniature 16:9, un bouton de lecture, le titre et la date de publication. Un clic ouvre YouTube dans un nouvel onglet. Si la miniature échoue, la carte reste utilisable. Les miniatures sont chargées depuis `i.ytimg.com`, autorisé explicitement par la politique de sécurité du serveur.
+
 Le workflow GitHub est aussi relancé toutes les trois heures afin de reconstruire l’image avec la vidéo la plus récente.
 
 Exemple de lien temporaire :
