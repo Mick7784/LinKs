@@ -2,6 +2,9 @@ name: domotik-links
 services:
   links:
     image: ghcr.io/mick7784/links:${IMAGE_TAG:-latest}
+    environment:
+      CREATOR_STUDIO_URL: http://creator-studio-api:3001/api/export/youtube
+      CREATOR_STUDIO_API_KEY: ${CREATOR_STUDIO_API_KEY:-}
     restart: unless-stopped
     read_only: true
     tmpfs:

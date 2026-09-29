@@ -72,7 +72,7 @@ for (const item of config.socials.filter((item) => validUrl(item.url))) {
 }
 
 const latestVideoTarget = document.getElementById("latest-video");
-const latestVideo = config.latestVideo;
+function renderLatestVideo(latestVideo) {
 if (latestVideo && validUrl(latestVideo.url) && latestVideo.title) {
   const heading = text("h2", "video-heading", "Dernière vidéo");
   heading.prepend(icon("youtube"));
@@ -112,6 +112,14 @@ if (latestVideo && validUrl(latestVideo.url) && latestVideo.title) {
   a.append(visual, details);
   latestVideoTarget.append(heading, a);
   latestVideoTarget.hidden = false;
+}
+
+}
+if (config.latestVideo) {
+  fetch("/latest-video.json", { cache: "no-store" })
+    .then(response => { if (!response.ok) throw new Error("Vidéo indisponible"); return response.json(); })
+    .then(renderLatestVideo)
+    .catch(() => { latestVideoTarget.hidden = true; });
 }
 
 const linkTarget = document.getElementById("links");

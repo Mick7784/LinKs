@@ -6,12 +6,13 @@ COPY site ./site
 RUN node scripts/build-links.mjs
 
 FROM nginx:stable-alpine
+RUN apk add --no-cache nodejs
 LABEL org.opencontainers.image.source="https://github.com/Mick7784/links"
 LABEL org.opencontainers.image.title="DomotiK Studio Links"
 COPY nginx.conf /etc/nginx/nginx.conf
 COPY --from=config /app/site/ /usr/share/nginx/html/
+COPY scripts/video-api.mjs scripts/start.mjs /app/
 USER nginx
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 CMD wget -q -O /dev/null http://127.0.0.1:8080/healthz || exit 1
-ENTRYPOINT ["nginx"]
-CMD ["-g", "daemon off;"]
+ENTRYPOINT ["node", "/app/start.mjs"]
