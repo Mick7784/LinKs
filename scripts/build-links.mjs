@@ -54,32 +54,8 @@ async function parseLatestVideo(value) {
     errors.push("latestVideo.channelId : identifiant YouTube invalide (doit commencer par UC).");
     return undefined;
   }
-  try {
-    const response = await fetch(`https://www.youtube.com/feeds/videos.xml?channel_id=${encodeURIComponent(channelId)}`, {
-      headers: { "user-agent": "DomotiK-Studio-Linktree/1.0" },
-      signal: AbortSignal.timeout(15000),
-    });
-    if (!response.ok) throw new Error(`réponse HTTP ${response.status}`);
-    const feed = await response.text();
-    const entry = /<entry>([\s\S]*?)<\/entry>/.exec(feed)?.[1];
-    const videoId = xmlValue(entry, "yt:videoId");
-    const title = xmlValue(entry, "title");
-    const published = xmlValue(entry, "published");
-    if (!videoId || !/^[A-Za-z0-9_-]{11}$/.test(videoId) || !title) throw new Error("aucune vidéo trouvée dans le flux");
-    return { title, url: `https://youtu.be/${videoId}`, thumbnail: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`, ...(published && { published }) };
-  } catch (error) {
-    errors.push(`latestVideo : impossible de récupérer la dernière vidéo YouTube (${error.message}).`);
-    return undefined;
-  }
+  return { channelId };
 }
-
-function xmlValue(xml, tag) {
-  if (!xml) return undefined;
-  const escaped = tag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const raw = new RegExp(`<${escaped}[^>]*>([\\s\\S]*?)<\\/${escaped}>`).exec(xml)?.[1];
-  return raw ? decodeXml(raw.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1").trim()) : undefined;
-}
-function decodeXml(value) { return value.replace(/&(amp|lt|gt|quot|apos|#39);/g, (_, entity) => ({ amp: "&", lt: "<", gt: ">", quot: "\\\"", apos: "'", "#39": "'" })[entity]); }
 
 function parseSocials(value) {
   if (!Array.isArray(value)) { errors.push("socials : tableau attendu."); return []; }
