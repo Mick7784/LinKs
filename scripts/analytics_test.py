@@ -7,6 +7,7 @@ class AnalyticsTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory()
         os.environ['ANALYTICS_DB']=self.tmp.name+'/stats.db'
+        os.environ['UPLOAD_DIR']=self.tmp.name+'/uploads'
         spec=importlib.util.spec_from_file_location('analytics',Path(__file__).with_name('analytics.py'))
         self.a=importlib.util.module_from_spec(spec);spec.loader.exec_module(self.a);self.a.init()
         self.servers=[]
@@ -58,4 +59,27 @@ class AnalyticsTests(unittest.TestCase):
         for t in threads:t.join()
         with self.a.connection() as db:self.assertEqual(db.execute('SELECT SUM(total) FROM counts').fetchone()[0],20)
 
+    def test_seed_public_config_and_scheduling(self):
+        config=self.a.public_config()
+        self.assertEqual(config['profile']['name'],'DomotiK Studio')
+        self.assertEqual(config['links'][0]['id'],'legacy-link-0')
+        self.assertEqual(config['socials'][0]['metricKey'],'button:legacy-button-0')
+        with self.a.connection() as db:
+            db.execute("UPDATE content_blocks SET start_at='2999-01-01T00:00:00Z' WHERE id='legacy-link-0'")
+        self.assertNotIn('legacy-link-0',[x['id'] for x in self.a.public_config()['links']])
+
+    def test_content_crud_archive_and_existing_counts(self):
+        admin=self.server(True)
+        item={'type':'promo','internal_name':'Promo test','title':'Offre','description':'Test','url':'https://example.com','icon':'website','image':'','badge':'Promo','cta':'Voir','active':True,'draft':False,'start_at':None,'end_at':None}
+        status,body=self.request(admin+'/api/content',item,{'Content-Type':'application/json'})
+        self.assertEqual(status,201);item_id=json.loads(body)['id']
+        public=self.server()
+        self.assertEqual(self.request(public+'/metrics',{'kind':'click','link':'block:'+item_id},{'Origin':self.a.ORIGIN,'Content-Type':'application/json'})[0],204)
+        self.assertIn(item_id,[x['id'] for x in self.a.content_list()])
+        self.assertEqual(next(x for x in self.a.content_list() if x['id']==item_id)['clicks'],1)
+        self.assertEqual(self.request(admin+'/api/content/'+item_id+'/archive',{}, {'Content-Type':'application/json'})[0],204)
+        self.assertNotIn(item_id,[x['id'] for x in self.a.public_config()['links']])
+
 if __name__=='__main__':unittest.main()
+
+

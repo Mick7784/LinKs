@@ -1,1 +1,51 @@
-<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Links · Statistiques</title><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head><body><main><header><p class="eyebrow">DOMOTIK STUDIO · BACKOFFICE</p><h1>Les liens, en chiffres.</h1><p>Comprendre d’où viennent les visites et ce qui intéresse ta communauté.</p></header><form id="filters"><label>Période<select id="period"><option value="7">7 derniers jours</option><option value="30" selected>30 derniers jours</option><option value="90">90 derniers jours</option><option value="custom">Personnalisée</option></select></label><label>Du<input id="start" type="date" required></label><label>Au<input id="end" type="date" required></label><label>Source<select id="source"><option value="">Toutes les sources</option></select></label><button>Actualiser</button></form><p id="status" role="status" aria-live="polite"></p><section class="cards" aria-label="Indicateurs"><article><span>Pages vues</span><strong id="views">—</strong></article><article><span>Clics sur les liens</span><strong id="clicks">—</strong></article><article><span>Clics pour 100 vues</span><strong id="ratio">—</strong></article></section><section class="panel"><h2>Au fil des jours</h2><p class="legend">Bleu : pages vues · Violet : clics</p><div id="chart" role="img" aria-label="Évolution quotidienne des vues et des clics"></div><details><summary>Voir les valeurs du graphique</summary><div id="daily"></div></details></section><div class="grid"><section class="panel"><h2>D’où viennent les visites ?</h2><div id="sources"></div></section><section class="panel"><h2>Les liens les plus cliqués</h2><div id="links"></div></section></div><section class="panel"><h2>Quels liens selon la source ?</h2><div id="cross"></div></section><section class="panel"><h2>Identifier tes publications</h2><p>Utilise ces adresses dans tes profils pour reconnaître les visites même quand l’application masque leur provenance.</p><p><a href="https://links.domotik-studio.fr/?utm_source=youtube">YouTube</a> · <a href="https://links.domotik-studio.fr/?utm_source=instagram">Instagram</a> · <a href="https://links.domotik-studio.fr/?utm_source=domotik-studio">Site DomotiK Studio</a></p><p>Copie l’adresse du lien correspondant.</p></section><footer>Heure de Paris · Conservation : 400 jours · Comptages à partir de l’activation.<br>Pages vues, pas visiteurs uniques. Les clics pour 100 vues peuvent dépasser 100. « Direct / inconnu » signifie que la provenance n’a pas été transmise. Les bloqueurs et certains robots peuvent affecter les totaux.</footer></main></body></html>
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Links · Back-office</title><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head>
+<body><main>
+<header class="masthead"><div><p class="eyebrow">DOMOTIK STUDIO · BACK-OFFICE</p><h1>Links</h1><p>Contenus, boutons et statistiques de la page publique.</p></div><span class="secure">Accès privé Pangolin</span></header>
+<nav class="tabs" aria-label="Navigation du back-office">
+ <button data-tab="dashboard" class="active">Dashboard</button><button data-tab="content">Liens</button><button data-tab="buttons">Boutons du haut</button><button data-tab="archives">Archives</button><button data-tab="settings">Réglages</button>
+</nav>
+<p id="notice" role="status" aria-live="polite"></p>
+<section class="view active" id="dashboard">
+ <div class="section-head"><div><h2>Vue d’ensemble</h2><p>Mesure agrégée, sans cookies ni identifiant visiteur.</p></div>
+ <form id="filters"><select id="period" aria-label="Période"><option value="7">7 jours</option><option value="30" selected>30 jours</option><option value="90">90 jours</option></select><select id="source" aria-label="Source"><option value="">Toutes les sources</option></select></form></div>
+ <section class="kpis" aria-label="Indicateurs"><article><span>Visites</span><strong id="views">—</strong></article><article><span>Clics</span><strong id="clicks">—</strong></article><article><span>CTR global</span><strong id="ratio">—</strong></article></section>
+ <section class="panel"><div class="panel-title"><h3>Évolution</h3><span class="legend">● Visites &nbsp; <i>●</i> Clics</span></div><div id="chart" role="img" aria-label="Évolution quotidienne"></div></section>
+ <div class="dashboard-grid"><section class="panel"><h3>Top 5 des liens</h3><div id="top-links"></div></section><section class="panel"><h3>Sources principales</h3><div id="sources"></div></section></div>
+</section>
+<section class="view" id="content">
+ <div class="section-head"><div><h2>Liens et mises en avant</h2><p>La dernière vidéo reste verrouillée au-dessus de cette liste.</p></div><button class="primary" data-action="new-block">Ajouter un bloc</button></div>
+ <article class="locked"><span>🔒</span><div><strong>Dernière vidéo</strong><small>Toujours visible en première position · gérée par Creator Studio</small></div></article>
+ <div id="content-list" class="sortable-list"></div>
+</section>
+<section class="view" id="buttons">
+ <div class="section-head"><div><h2>Boutons du haut</h2><p>Réseaux, contact et ancres affichés sous le profil.</p></div><button class="primary" data-action="new-button">Ajouter un bouton</button></div>
+ <div id="button-list" class="sortable-list"></div>
+</section>
+<section class="view" id="archives">
+ <div class="section-head"><div><h2>Archives</h2><p>Les éléments archivés sont masqués de la page mais conservent leurs statistiques.</p></div></div>
+ <div id="archive-list" class="sortable-list"></div>
+</section>
+<section class="view" id="settings">
+ <div class="section-head"><div><h2>Réglages</h2><p>Informations principales affichées sur la page.</p></div></div>
+ <form id="settings-form" class="panel form-grid"><label>Nom<input name="name" required maxlength="120"></label><label>Accroche<input name="tagline" maxlength="200"></label><label class="wide">Description<input name="description" maxlength="300"></label><div class="wide actions"><button class="primary">Enregistrer</button></div></form>
+</section>
+<footer>Heure de Paris · Statistiques conservées 400 jours · Le VPN Pangolin protège ce back-office.</footer>
+</main>
+<dialog id="block-dialog"><form method="dialog" id="block-form"><header><div><p class="eyebrow">ÉDITION</p><h2 id="block-title">Nouveau bloc</h2></div><button class="icon-button" value="cancel" aria-label="Fermer">×</button></header>
+ <div class="editor"><div class="form-grid">
+  <input type="hidden" name="id"><label>Type<select name="type"><option value="classic">Lien classique</option><option value="featured">Mise en avant</option><option value="promo">Promo visuelle</option></select></label>
+  <label>Nom interne<input name="internal_name" required maxlength="300"></label><label>Titre public<input name="title" required maxlength="300"></label>
+  <label class="wide">Description<textarea name="description" rows="3" maxlength="1000"></textarea></label><label class="wide">URL<input name="url" type="url" required></label>
+  <label>Icône<select name="icon"><option value="website">Site</option><option value="youtube">YouTube</option><option value="instagram">Instagram</option><option value="discord">Discord</option><option value="cart">Panier</option><option value="home">Maison</option><option value="mail">E-mail</option></select></label>
+  <label>Badge<select name="badge"><option value="">Aucun</option><option>Promo</option><option>Nouveau</option><option>Partenaire</option><option>Bon plan</option></select></label>
+  <label>CTA<input name="cta" maxlength="80" placeholder="Découvrir"></label><label>Image<input id="block-image-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif"><input name="image" type="hidden"></label>
+  <label>Début<input name="start_at" type="datetime-local"></label><label>Fin<input name="end_at" type="datetime-local"></label>
+  <label class="check"><input name="active" type="checkbox" checked> Activé</label><label class="check"><input name="draft" type="checkbox"> Brouillon</label>
+ </div><aside class="preview"><div class="preview-head"><strong>Aperçu</strong><button type="button" data-preview="desktop" class="active">Desktop</button><button type="button" data-preview="mobile">Mobile</button></div><div id="block-preview"></div></aside></div>
+ <div class="dialog-actions"><button value="cancel">Annuler</button><button type="submit" value="default" class="primary">Enregistrer</button></div></form></dialog>
+<dialog id="button-dialog"><form method="dialog" id="button-form"><header><h2 id="button-title">Nouveau bouton</h2><button class="icon-button" value="cancel" aria-label="Fermer">×</button></header><div class="form-grid">
+ <input type="hidden" name="id"><label>Icône<select name="icon"><option value="youtube">YouTube</option><option value="instagram">Instagram</option><option value="discord">Discord</option><option value="mail">E-mail</option><option value="website">Site</option></select></label><label>Libellé<input name="label" required maxlength="100"></label><label class="wide">URL ou ancre<input name="url" required placeholder="https://… ou #section"></label><label class="check wide"><input name="active" type="checkbox" checked> Activé</label></div><div class="dialog-actions"><button value="cancel">Annuler</button><button type="submit" value="default" class="primary">Enregistrer</button></div></form></dialog>
+</body></html>
+

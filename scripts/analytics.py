@@ -1,115 +1,312 @@
-"""Aggregate-only analytics; no IP addresses, cookies or visitor identifiers."""
-import json, os, sqlite3, threading
-from datetime import date, datetime, timedelta
+"""Small SQLite content manager and aggregate analytics service."""
+import base64, binascii, json, mimetypes, os, re, sqlite3, threading, uuid
+from contextlib import contextmanager
+from datetime import date, datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlsplit, parse_qs
+from urllib.parse import parse_qs, unquote, urlsplit
 from zoneinfo import ZoneInfo
 
-ROOT = Path(__file__).resolve().parent
-if not (ROOT / 'links.json').exists(): ROOT = ROOT.parent
-DB = os.environ.get('ANALYTICS_DB', '/data/analytics.db')
-ORIGIN = os.environ.get('ANALYTICS_ORIGIN', 'https://links.domotik-studio.fr').rstrip('/')
-ADMIN = ROOT / 'admin'
-CONFIG = json.loads((ROOT / 'links.json').read_text())
-CATALOG = {'latest-video': 'Dernière vidéo'}
-for item in CONFIG['socials']:
-    CATALOG['social:' + item['platform']] = 'Réseau · ' + item.get('label', item['platform'])
-for item in CONFIG['links']:
-    CATALOG['link:' + item['url']] = item['title']
+ROOT=Path(__file__).resolve().parent
+if not (ROOT/"links.json").exists(): ROOT=ROOT.parent
+DB=os.environ.get("ANALYTICS_DB","/data/analytics.db")
+ORIGIN=os.environ.get("ANALYTICS_ORIGIN","https://links.domotik-studio.fr").rstrip("/")
+ADMIN=ROOT/"admin"; UPLOADS=Path(os.environ.get("UPLOAD_DIR","/data/uploads"))
+CONFIG=json.loads((ROOT/"links.json").read_text(encoding="utf-8"))
+PARIS=ZoneInfo("Europe/Paris")
+TYPES={"classic","promo","featured"}; ICONS={"youtube","instagram","tiktok","discord","mail","website","cart","home"}
+BADGES={"","Promo","Nouveau","Partenaire","Bon plan"}
+IMAGE_TYPES={"image/jpeg":".jpg","image/png":".png","image/webp":".webp","image/gif":".gif"}
 
+@contextmanager
 def connection():
-    db = sqlite3.connect(DB, timeout=10)
-    db.row_factory = sqlite3.Row
-    return db
+    db=sqlite3.connect(DB,timeout=10); db.row_factory=sqlite3.Row; db.execute("PRAGMA foreign_keys=ON")
+    try:
+        yield db
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+def now_iso(): return datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
+def instant(value):
+    if not value:return None
+    if not isinstance(value,str):raise ValueError("Date invalide")
+    try:
+        result=datetime.fromisoformat(value.strip().replace("Z","+00:00"))
+        return (result if result.tzinfo else result.replace(tzinfo=PARIS)).astimezone(timezone.utc)
+    except ValueError as exc: raise ValueError("Date invalide") from exc
+def legacy_expiry(value):
+    if value is None:return None
+    if isinstance(value,(int,float)):return datetime.fromtimestamp(value/1000,timezone.utc).isoformat().replace("+00:00","Z")
+    try:return instant(value).isoformat().replace("+00:00","Z")
+    except ValueError:return None
 
 def init():
+    Path(DB).parent.mkdir(parents=True,exist_ok=True); UPLOADS.mkdir(parents=True,exist_ok=True)
     with connection() as db:
-        db.execute('PRAGMA journal_mode=WAL')
-        db.execute('CREATE TABLE IF NOT EXISTS counts(day TEXT, source TEXT, kind TEXT, link TEXT, total INTEGER NOT NULL, PRIMARY KEY(day,source,kind,link))')
+        db.execute("PRAGMA journal_mode=WAL")
+        db.execute("CREATE TABLE IF NOT EXISTS counts(day TEXT,source TEXT,kind TEXT,link TEXT,total INTEGER NOT NULL,PRIMARY KEY(day,source,kind,link))")
+        db.execute("""CREATE TABLE IF NOT EXISTS content_blocks(
+          id TEXT PRIMARY KEY,type TEXT NOT NULL,internal_name TEXT NOT NULL,title TEXT NOT NULL,
+          description TEXT NOT NULL DEFAULT '',url TEXT NOT NULL,icon TEXT NOT NULL DEFAULT 'website',
+          image TEXT NOT NULL DEFAULT '',badge TEXT NOT NULL DEFAULT '',cta TEXT NOT NULL DEFAULT '',
+          position INTEGER NOT NULL,active INTEGER NOT NULL DEFAULT 1,draft INTEGER NOT NULL DEFAULT 0,
+          start_at TEXT,end_at TEXT,archived INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)""")
+        db.execute("""CREATE TABLE IF NOT EXISTS top_buttons(
+          id TEXT PRIMARY KEY,icon TEXT NOT NULL,label TEXT NOT NULL,url TEXT NOT NULL,position INTEGER NOT NULL,
+          active INTEGER NOT NULL DEFAULT 1,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)""")
+        db.execute("CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL)")
+        seed(db)
 
-def record(kind, source, link, day=None):
-    day = day or datetime.now(ZoneInfo('Europe/Paris')).date().isoformat()
+def seed(db):
+    stamp=now_iso()
+    if db.execute("SELECT COUNT(*) FROM content_blocks").fetchone()[0]==0:
+        for i,item in enumerate(CONFIG.get("links",[])):
+            db.execute("INSERT INTO content_blocks VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(
+              f"legacy-link-{i}","featured" if item.get("featured") else "classic",item.get("title",f"Lien {i+1}"),
+              item.get("title",""),item.get("description",""),item.get("url",""),item.get("icon","website"),
+              item.get("image",""),"","Découvrir",i,1,0,None,legacy_expiry(item.get("expiresAt")),0,stamp,stamp))
+    if db.execute("SELECT COUNT(*) FROM top_buttons").fetchone()[0]==0:
+        for i,item in enumerate(CONFIG.get("socials",[])):
+            db.execute("INSERT INTO top_buttons VALUES(?,?,?,?,?,?,?,?)",(f"legacy-button-{i}",item.get("platform","website"),item.get("label",item.get("platform","Lien")),item.get("url",""),i,1,stamp,stamp))
+    profile=CONFIG.get("profile",{})
+    for key,value in {"name":profile.get("name","DomotiK Studio"),"tagline":profile.get("tagline",""),"description":profile.get("description",""),"avatar":profile.get("avatar","/assets/portrait.webp"),"logo":profile.get("logo","/assets/logo.webp")}.items():
+        db.execute("INSERT OR IGNORE INTO settings VALUES(?,?)",("profile."+key,value))
+
+def record(kind,source,link,day=None):
+    day=day or datetime.now(PARIS).date().isoformat()
     with connection() as db:
-        db.execute('INSERT INTO counts VALUES(?,?,?,?,1) ON CONFLICT(day,source,kind,link) DO UPDATE SET total=total+1', (day,source,kind,link))
-        db.execute('DELETE FROM counts WHERE day < ?', ((date.fromisoformat(day)-timedelta(days=400)).isoformat(),))
-
+        db.execute("INSERT INTO counts VALUES(?,?,?,?,1) ON CONFLICT(day,source,kind,link) DO UPDATE SET total=total+1",(day,source,kind,link))
+        db.execute("DELETE FROM counts WHERE day < ?",((date.fromisoformat(day)-timedelta(days=400)).isoformat(),))
 def source_of(data):
-    source = data.get('source', '')
-    if not isinstance(source, str): raise ValueError()
-    source = source.strip().lower()
-    if source:
-        return {'yt':'youtube','ig':'instagram','domotik-studio':'domotik-studio.fr'}.get(source, source) if source in ['yt','ig','youtube','instagram','facebook','tiktok','discord','google','newsletter','domotik-studio','domotik-studio.fr'] else 'autre-campagne'
-    ref = data.get('referrer', '')
-    if not isinstance(ref, str): raise ValueError()
-    host = (urlsplit(ref).hostname or '').lower()
-    if host == urlsplit(ORIGIN).hostname: return 'direct-inconnu'
-    for domain, name in [('youtube.com','youtube'),('youtu.be','youtube'),('instagram.com','instagram'),('facebook.com','facebook'),('tiktok.com','tiktok'),('discord.com','discord'),('google.com','google'),('google.fr','google'),('domotik-studio.fr','domotik-studio.fr')]:
-        if host == domain or host.endswith('.'+domain): return name
-    return 'autre-site' if host else 'direct-inconnu'
+    source=data.get("source","")
+    if not isinstance(source,str):raise ValueError()
+    source=source.strip().lower()
+    known={"yt","ig","youtube","instagram","facebook","tiktok","discord","google","newsletter","domotik-studio","domotik-studio.fr"}
+    if source:return {"yt":"youtube","ig":"instagram","domotik-studio":"domotik-studio.fr"}.get(source,source) if source in known else "autre-campagne"
+    ref=data.get("referrer","")
+    if not isinstance(ref,str):raise ValueError()
+    host=(urlsplit(ref).hostname or "").lower()
+    if host==urlsplit(ORIGIN).hostname:return "direct-inconnu"
+    for domain,name in [("youtube.com","youtube"),("youtu.be","youtube"),("instagram.com","instagram"),("facebook.com","facebook"),("tiktok.com","tiktok"),("discord.com","discord"),("google.com","google"),("google.fr","google"),("domotik-studio.fr","domotik-studio.fr")]:
+        if host==domain or host.endswith("."+domain):return name
+    return "autre-site" if host else "direct-inconnu"
+def report(start,end,source=""):
+    a,b=date.fromisoformat(start),date.fromisoformat(end)
+    if a>b or (b-a).days>399:raise ValueError("Période maximale : 400 jours")
+    where="day BETWEEN ? AND ?"; params=[start,end]
+    if source:where+=" AND source=?";params.append(source)
+    with connection() as db: rows=[dict(r) for r in db.execute("SELECT * FROM counts WHERE "+where+" ORDER BY day",params)]
+    return {"rows":rows,"timezone":"Europe/Paris"}
 
-def report(start, end, source=''):
-    a,b = date.fromisoformat(start),date.fromisoformat(end)
-    if a>b or (b-a).days>399: raise ValueError('Période maximale : 400 jours')
-    where='day BETWEEN ? AND ?'; params=[start,end]
-    if source: where+=' AND source=?'; params.append(source)
+def profile(db):
+    values={r["key"]:r["value"] for r in db.execute("SELECT key,value FROM settings")}
+    return {k:values.get("profile."+k,"") for k in ["name","tagline","description","avatar","logo"]}
+def status_of(row,at=None):
+    if row["archived"]:return "Archivé"
+    if row["draft"]:return "Brouillon"
+    if not row["active"]:return "Désactivé"
+    at=at or datetime.now(timezone.utc); start=instant(row["start_at"]); end=instant(row["end_at"])
+    if start and start>at:return "Programmé"
+    if end and end<=at:return "Expiré"
+    return "Actif"
+def serialize(row,totals=None):
+    item=dict(row); item.update(active=bool(item["active"]),draft=bool(item["draft"]),archived=bool(item["archived"]),status=status_of(row))
+    if totals is not None:item["clicks"]=totals.get("block:"+item["id"],0)+totals.get(item["title"],0)
+    return item
+def totals(db):return {r["link"]:r["total"] for r in db.execute("SELECT link,SUM(total) total FROM counts WHERE kind='click' GROUP BY link")}
+def content_list(archived=False):
     with connection() as db:
-        rows=[dict(r) for r in db.execute('SELECT * FROM counts WHERE '+where+' ORDER BY day', params)]
-    return {'rows':rows, 'timezone':'Europe/Paris'}
+        clicks=totals(db); return [serialize(r,clicks) for r in db.execute("SELECT * FROM content_blocks WHERE archived=? ORDER BY CASE WHEN type IN ('promo','featured') THEN 0 ELSE 1 END,position,created_at",(1 if archived else 0,))]
+def button_list():
+    with connection() as db:
+        clicks=totals(db); result=[]
+        for row in db.execute("SELECT * FROM top_buttons ORDER BY position,created_at"):
+            item=dict(row);item["active"]=bool(item["active"]);item["clicks"]=clicks.get("button:"+item["id"],0)+clicks.get("Réseau · "+item["label"],0);result.append(item)
+        return result
+def public_config():
+    with connection() as db:
+        blocks=[serialize(r) for r in db.execute("SELECT * FROM content_blocks WHERE archived=0 ORDER BY CASE WHEN type IN ('promo','featured') THEN 0 ELSE 1 END,position,created_at") if status_of(r)=="Actif"]
+        buttons=[dict(r) for r in db.execute("SELECT * FROM top_buttons WHERE active=1 ORDER BY position,created_at")]
+        result={"profile":profile(db),"socials":[{"id":x["id"],"platform":x["icon"],"label":x["label"],"url":x["url"],"metricKey":"button:"+x["id"]} for x in buttons],
+                "links":[{"id":x["id"],"type":x["type"],"title":x["title"],"description":x["description"],"url":x["url"],"icon":x["icon"],"image":x["image"],"badge":x["badge"],"cta":x["cta"],"metricKey":"block:"+x["id"]} for x in blocks]}
+    if CONFIG.get("latestVideo"):result["latestVideo"]=CONFIG["latestVideo"]
+    return result
+
+def required(data,key,limit=300):
+    value=data.get(key,"")
+    if not isinstance(value,str) or not value.strip() or len(value.strip())>limit:raise ValueError(f"{key} est obligatoire")
+    return value.strip()
+def optional(data,key,limit=1000):
+    value=data.get(key,"")
+    if value is None:return ""
+    if not isinstance(value,str) or len(value.strip())>limit:raise ValueError(f"{key} est invalide")
+    return value.strip()
+def valid_url(value):
+    if not isinstance(value,str) or len(value)>2000:return False
+    parsed=urlsplit(value);return parsed.scheme in {"http","https","mailto","tel"} and bool(parsed.netloc or parsed.path)
+def block_data(data):
+    kind=data.get("type","classic")
+    if kind not in TYPES:raise ValueError("Type invalide")
+    url=required(data,"url",2000)
+    if not valid_url(url):raise ValueError("URL invalide")
+    icon=data.get("icon","website"); badge=optional(data,"badge",40); image=optional(data,"image",2000)
+    if icon not in ICONS:icon="website"
+    if badge not in BADGES:raise ValueError("Badge invalide")
+    if image and not (image.startswith("/uploads/") or image.startswith("/assets/") or valid_url(image)):raise ValueError("Image invalide")
+    start,end=instant(data.get("start_at")),instant(data.get("end_at"))
+    if start and end and end<=start:raise ValueError("La fin doit suivre le début")
+    return {"type":kind,"internal_name":required(data,"internal_name"),"title":required(data,"title"),"description":optional(data,"description"),"url":url,"icon":icon,"image":image,"badge":badge,"cta":optional(data,"cta",80),"active":1 if data.get("active",True) else 0,"draft":1 if data.get("draft",False) else 0,"start_at":start.isoformat().replace("+00:00","Z") if start else None,"end_at":end.isoformat().replace("+00:00","Z") if end else None}
+def button_data(data):
+    icon=data.get("icon","website");url=required(data,"url",2000)
+    if icon not in ICONS:raise ValueError("Icône invalide")
+    if url.startswith("#"):
+        if not re.fullmatch(r"#[A-Za-z][\w:-]*",url):raise ValueError("Ancre invalide")
+    elif not valid_url(url):raise ValueError("URL invalide")
+    return {"icon":icon,"label":required(data,"label",100),"url":url,"active":1 if data.get("active",True) else 0}
+def valid_metric(key):
+    if key=="latest-video":return True
+    table,prefix=("content_blocks","block:") if key.startswith("block:") else (("top_buttons","button:") if key.startswith("button:") else (None,None))
+    if table:
+        with connection() as db:return db.execute(f"SELECT 1 FROM {table} WHERE id=?",(key.removeprefix(prefix),)).fetchone() is not None
+    return (key.startswith("social:") or key.startswith("link:")) and len(key)<=2048
 
 class Handler(BaseHTTPRequestHandler):
-    def log_message(self, *args): pass
-    def setup(self):
-        super().setup(); self.connection.settimeout(10)
-    def send(self, status, body=b'', mime='application/json'):
-        self.send_response(status)
-        self.send_header('Content-Type', mime)
-        self.send_header('Content-Length',str(len(body)))
-        self.send_header('Cache-Control','no-store')
-        self.send_header('X-Content-Type-Options','nosniff')
-        self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'")
-        self.end_headers(); self.wfile.write(body)
+    def log_message(self,*_):pass
+    def setup(self):super().setup();self.connection.settimeout(15)
+    def send(self,status,body=b"",mime="application/json; charset=utf-8"):
+        self.send_response(status);self.send_header("Content-Type",mime);self.send_header("Content-Length",str(len(body)));self.send_header("Cache-Control","no-store");self.send_header("X-Content-Type-Options","nosniff");self.send_header("Content-Security-Policy","default-src 'self';script-src 'self';style-src 'self';img-src 'self' data:;object-src 'none';frame-ancestors 'none';base-uri 'none'");self.end_headers();self.wfile.write(body)
+    def json(self,status,data):self.send(status,json.dumps(data,ensure_ascii=False).encode())
+    def body(self,limit=8*1024*1024):
+        size=int(self.headers.get("Content-Length","0"))
+        if not 0<size<=limit:raise ValueError("Corps invalide")
+        data=json.loads(self.rfile.read(size))
+        if not isinstance(data,dict):raise ValueError("Objet attendu")
+        return data
+    def file(self,path,mime=None):
+        try:data=path.read_bytes()
+        except OSError:return self.send(404)
+        self.send(200,data,mime or mimetypes.guess_type(path.name)[0] or "application/octet-stream")
     def do_GET(self):
-        if not self.server.admin: return self.send(404)
-        if self.path == '/healthz':
-            try:
-                with connection() as db: db.execute('SELECT total FROM counts LIMIT 1').fetchone()
-                return self.send(200, b'ok', 'text/plain')
-            except sqlite3.Error: return self.send(503)
         url=urlsplit(self.path)
-        if url.path=='/api/stats':
+        if url.path=="/healthz":
             try:
-                p=parse_qs(url.query); today=datetime.now(ZoneInfo('Europe/Paris')).date()
-                result=report(p.get('start',[(today-timedelta(days=29)).isoformat()])[0],p.get('end',[today.isoformat()])[0],p.get('source',[''])[0])
-                return self.send(200,json.dumps(result).encode())
-            except (ValueError, TypeError): return self.send(400,b'{"error":"Invalid period"}')
-        files={'/':('index.html','text/html; charset=utf-8'),'/app.js':('app.js','application/javascript'),'/style.css':('style.css','text/css')}
-        if url.path not in files: return self.send(404)
-        name,mime=files[url.path];self.send(200,(ADMIN/name).read_bytes(),mime)
-    def do_POST(self):
-        if self.server.admin or self.path!='/metrics': return self.send(404)
-        if self.headers.get('Origin')!=ORIGIN: return self.send(403)
-        if any(x in self.headers.get('User-Agent','').lower() for x in ['bot','spider','crawler','headless']): return self.send(204)
+                with connection() as db:db.execute("SELECT total FROM counts LIMIT 1").fetchone()
+                return self.send(200,b"ok","text/plain")
+            except sqlite3.Error:return self.send(503)
+        if url.path.startswith("/uploads/"):
+            name=unquote(url.path.removeprefix("/uploads/"))
+            return self.file(UPLOADS/name) if re.fullmatch(r"[a-f0-9-]{36}\.(jpg|png|webp|gif)",name) else self.send(404)
+        if not self.server.admin:return self.json(200,public_config()) if url.path=="/api/public-config" else self.send(404)
         try:
-            n=int(self.headers.get('Content-Length','0'))
-            if not 0<n<=2048: return self.send(413)
-            data=json.loads(self.rfile.read(n))
-            if not isinstance(data,dict): raise ValueError()
-            kind=data.get('kind'); key=data.get('link','')
-            if kind not in ['view','click'] or not isinstance(key,str): raise ValueError()
-            if kind=='click' and key not in CATALOG: raise ValueError()
-            label=CATALOG[key] if kind=='click' else ''
-            record(kind,source_of(data),label)
-            self.send(204)
-        except (ValueError,TypeError,KeyError): self.send(400)
-        except sqlite3.Error: self.send(503)
+            if url.path=="/api/stats":
+                q=parse_qs(url.query);today=datetime.now(PARIS).date();return self.json(200,report(q.get("start",[(today-timedelta(days=29)).isoformat()])[0],q.get("end",[today.isoformat()])[0],q.get("source",[""])[0]))
+            if url.path=="/api/content":return self.json(200,{"items":content_list(parse_qs(url.query).get("archived",["0"])[0]=="1")})
+            if url.path=="/api/buttons":return self.json(200,{"items":button_list()})
+            if url.path=="/api/settings":
+                with connection() as db:return self.json(200,profile(db))
+            if url.path=="/api/public-config":return self.json(200,public_config())
+        except (ValueError,TypeError):return self.json(400,{"error":"Paramètres invalides"})
+        files={"/":("index.html","text/html;charset=utf-8"),"/app.js":("app.js","application/javascript"),"/style.css":("style.css","text/css")}
+        return self.file(ADMIN/files[url.path][0],files[url.path][1]) if url.path in files else self.send(404)
+    def do_POST(self):
+        path=urlsplit(self.path).path
+        if not self.server.admin:
+            if path!="/metrics":return self.send(404)
+            if self.headers.get("Origin")!=ORIGIN:return self.send(403)
+            if any(x in self.headers.get("User-Agent","").lower() for x in ["bot","spider","crawler","headless"]):return self.send(204)
+            try:
+                data=self.body(2048);kind,key=data.get("kind"),data.get("link","")
+                if kind not in {"view","click"} or not isinstance(key,str) or (kind=="click" and not valid_metric(key)):raise ValueError()
+                record(kind,source_of(data),key if kind=="click" else "");return self.send(204)
+            except (ValueError,TypeError,json.JSONDecodeError):return self.send(400)
+            except sqlite3.Error:return self.send(503)
+        try:
+            data=self.body()
+            if path=="/api/content":return self.create_content(data)
+            if path=="/api/content/reorder":return self.reorder("content_blocks",data)
+            match=re.fullmatch(r"/api/content/([\w-]+)/(duplicate|archive|restore)",path)
+            if match:return self.content_action(match.group(1),match.group(2))
+            if path=="/api/buttons":return self.create_button(data)
+            if path=="/api/buttons/reorder":return self.reorder("top_buttons",data)
+            if path=="/api/upload":return self.upload(data)
+            if path=="/api/settings":return self.save_settings(data)
+            return self.send(404)
+        except (ValueError,TypeError,json.JSONDecodeError,binascii.Error) as exc:return self.json(400,{"error":str(exc) or "Requête invalide"})
+    def do_PUT(self):
+        if not self.server.admin:return self.send(404)
+        try:
+            data=self.body();path=urlsplit(self.path).path
+            match=re.fullmatch(r"/api/content/([\w-]+)",path)
+            if match:return self.update_content(match.group(1),data)
+            match=re.fullmatch(r"/api/buttons/([\w-]+)",path)
+            if match:return self.update_button(match.group(1),data)
+            return self.send(404)
+        except (ValueError,TypeError,json.JSONDecodeError) as exc:return self.json(400,{"error":str(exc) or "Requête invalide"})
+    def do_DELETE(self):
+        if not self.server.admin:return self.send(404)
+        path=urlsplit(self.path).path;match=re.fullmatch(r"/api/content/([\w-]+)",path);table="content_blocks"
+        if not match:match=re.fullmatch(r"/api/buttons/([\w-]+)",path);table="top_buttons"
+        if not match:return self.send(404)
+        with connection() as db:
+            if table=="content_blocks":
+                row=db.execute("SELECT archived FROM content_blocks WHERE id=?",(match.group(1),)).fetchone()
+                if not row:return self.send(404)
+                if not row["archived"]:return self.json(409,{"error":"Archive d’abord cet élément"})
+            changed=db.execute(f"DELETE FROM {table} WHERE id=?",(match.group(1),)).rowcount
+        return self.send(204) if changed else self.send(404)
+    def create_content(self,data):
+        item=block_data(data);item_id=str(uuid.uuid4());stamp=now_iso()
+        with connection() as db:
+            pos=db.execute("SELECT COALESCE(MAX(position),-1)+1 FROM content_blocks WHERE archived=0").fetchone()[0]
+            db.execute("""INSERT INTO content_blocks(id,type,internal_name,title,description,url,icon,image,badge,cta,position,active,draft,start_at,end_at,archived,created_at,updated_at)
+              VALUES(:id,:type,:internal_name,:title,:description,:url,:icon,:image,:badge,:cta,:position,:active,:draft,:start_at,:end_at,0,:created_at,:updated_at)""",{**item,"id":item_id,"position":pos,"created_at":stamp,"updated_at":stamp})
+        return self.json(201,{"id":item_id})
+    def update_content(self,item_id,data):
+        item=block_data(data)
+        with connection() as db:changed=db.execute("""UPDATE content_blocks SET type=:type,internal_name=:internal_name,title=:title,description=:description,url=:url,icon=:icon,image=:image,badge=:badge,cta=:cta,active=:active,draft=:draft,start_at=:start_at,end_at=:end_at,updated_at=:updated_at WHERE id=:id""",{**item,"id":item_id,"updated_at":now_iso()}).rowcount
+        return self.send(204) if changed else self.send(404)
+    def content_action(self,item_id,action):
+        with connection() as db:
+            row=db.execute("SELECT * FROM content_blocks WHERE id=?",(item_id,)).fetchone()
+            if not row:return self.send(404)
+            if action=="duplicate":
+                new_id=str(uuid.uuid4());stamp=now_iso();pos=db.execute("SELECT COALESCE(MAX(position),-1)+1 FROM content_blocks").fetchone()[0]
+                db.execute("INSERT INTO content_blocks VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(new_id,row["type"],row["internal_name"]+" (copie)",row["title"],row["description"],row["url"],row["icon"],row["image"],row["badge"],row["cta"],pos,0,1,row["start_at"],row["end_at"],0,stamp,stamp));return self.json(201,{"id":new_id})
+            db.execute("UPDATE content_blocks SET archived=?,updated_at=? WHERE id=?",(1 if action=="archive" else 0,now_iso(),item_id))
+        return self.send(204)
+    def reorder(self,table,data):
+        ids=data.get("ids")
+        if not isinstance(ids,list) or not ids or len(ids)>500 or len(set(ids))!=len(ids):raise ValueError("Ordre invalide")
+        with connection() as db:
+            for pos,item_id in enumerate(ids):
+                if not db.execute(f"SELECT 1 FROM {table} WHERE id=?",(item_id,)).fetchone():raise ValueError("Élément inconnu")
+                db.execute(f"UPDATE {table} SET position=?,updated_at=? WHERE id=?",(pos,now_iso(),item_id))
+        return self.send(204)
+    def create_button(self,data):
+        item=button_data(data);item_id=str(uuid.uuid4());stamp=now_iso()
+        with connection() as db:pos=db.execute("SELECT COALESCE(MAX(position),-1)+1 FROM top_buttons").fetchone()[0];db.execute("INSERT INTO top_buttons VALUES(?,?,?,?,?,?,?,?)",(item_id,item["icon"],item["label"],item["url"],pos,item["active"],stamp,stamp))
+        return self.json(201,{"id":item_id})
+    def update_button(self,item_id,data):
+        item=button_data(data)
+        with connection() as db:changed=db.execute("UPDATE top_buttons SET icon=?,label=?,url=?,active=?,updated_at=? WHERE id=?",(item["icon"],item["label"],item["url"],item["active"],now_iso(),item_id)).rowcount
+        return self.send(204) if changed else self.send(404)
+    def upload(self,data):
+        mime=data.get("type","");encoded=data.get("data","")
+        if mime not in IMAGE_TYPES or not isinstance(encoded,str):raise ValueError("Format d’image non pris en charge")
+        raw=base64.b64decode(encoded.split(",",1)[-1],validate=True)
+        if not raw or len(raw)>4*1024*1024:raise ValueError("Image vide ou supérieure à 4 Mo")
+        name=str(uuid.uuid4())+IMAGE_TYPES[mime];(UPLOADS/name).write_bytes(raw);return self.json(201,{"url":"/uploads/"+name})
+    def save_settings(self,data):
+        values={"name":required(data,"name",120),"tagline":optional(data,"tagline",200),"description":optional(data,"description",300)}
+        with connection() as db:
+            for key,value in values.items():db.execute("INSERT INTO settings VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",("profile."+key,value))
+        return self.send(204)
 
-def serve(port, admin, host):
-    server=ThreadingHTTPServer((host,port),Handler);server.admin=admin
-    return server
+def serve(port,admin,host):
+    server=ThreadingHTTPServer((host,port),Handler);server.admin=admin;return server
+if __name__=="__main__":
+    init();public=serve(3003,False,"127.0.0.1");threading.Thread(target=public.serve_forever,daemon=True).start();serve(8081,True,"0.0.0.0").serve_forever()
 
-if __name__=='__main__':
-    init()
-    public=serve(3003,False,'127.0.0.1')
-    threading.Thread(target=public.serve_forever,daemon=True).start()
-    serve(8081,True,'0.0.0.0').serve_forever()

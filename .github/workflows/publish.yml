@@ -35,10 +35,12 @@ jobs:
             sleep 1
           done
           curl -fsS http://127.0.0.1:18080/ | grep -q 'DomotiK'
+          curl -fsS http://127.0.0.1:18080/api/public-config | python3 -c 'import json,sys; data=json.load(sys.stdin); assert data["links"] and data["socials"]'
           for file in style.css icons.css config.js app.js metrics.js assets/logo.webp assets/portrait.webp; do
             curl -fsS "http://127.0.0.1:18080/$file" -o /dev/null
           done
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18081/api/stats)" = 200
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18081/api/content)" = 200
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18080/api/stats)" = 404
           curl -fsS -H 'Origin: https://links.domotik-studio.fr' -H 'Content-Type: application/json' -d '{"kind":"view","source":"youtube"}' http://127.0.0.1:18080/metrics
           curl -fsS http://127.0.0.1:18081/api/stats | python3 -c 'import json,sys; assert sum(r["total"] for r in json.load(sys.stdin)["rows"]) == 1'
@@ -56,3 +58,5 @@ jobs:
           set -euo pipefail
           docker buildx create --use --name links-builder
           docker buildx build --platform linux/amd64,linux/arm64 --tag "$IMAGE:latest" --tag "$IMAGE:sha-$COMMIT_SHA" --label "org.opencontainers.image.revision=$COMMIT_SHA" --push .
+
+

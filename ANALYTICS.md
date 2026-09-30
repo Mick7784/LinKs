@@ -2,6 +2,10 @@
 
 La même image sert la page publique sur 8080 et le backoffice sur 8081. Le port 8080 expose uniquement la collecte `POST /metrics`, jamais la consultation des statistiques.
 
+Le même service SQLite stocke désormais les blocs de contenu, les boutons du haut et les réglages du profil. Les tables existantes de compteurs ne sont ni supprimées ni recréées. Au premier démarrage, les liens et boutons de `links.json` sont importés si les tables de contenu sont vides.
+
+Les images ajoutées dans le back-office sont limitées à 4 Mo (JPEG, PNG, WebP ou GIF) et enregistrées dans `/data/uploads`. Le volume `links-stats` existant suffit donc pour conserver statistiques, contenus et visuels.
+
 ## Activation
 
 - Définir `ANALYTICS_ENABLED=true` dans l'environnement du conteneur. Aucun mot de passe applicatif n'est demandé.
@@ -20,7 +24,7 @@ Sources reconnues : YouTube, Instagram, Facebook, TikTok, Discord, Google, newsl
 
 Exemples : `?utm_source=youtube`, `?utm_source=instagram`, `?utm_source=domotik-studio`.
 
-Compteurs agrégés par jour (Europe/Paris), source et intitulé du lien. Conservation glissante de 400 jours avec purge à la collecte. Les intitulés différents sont comptabilisés séparément. La carte « Dernière vidéo » regroupe les vidéos successives.
+Compteurs agrégés par jour (Europe/Paris), source et identifiant stable du lien. Conservation glissante de 400 jours avec purge à la collecte. Les anciens compteurs basés sur les intitulés restent lisibles. La carte « Dernière vidéo » regroupe les vidéos successives.
 
 Les vues ne sont pas des visiteurs uniques et les clics pour 100 vues ne sont pas un taux de conversion. La collecte côté navigateur peut être bloquée, omise ou falsifiée ; ce ne sont pas des chiffres de facturation. Aucune reconstitution de l'historique avant activation.
 
@@ -29,3 +33,5 @@ La base ne contient pas les IP ; les journaux techniques du reverse proxy peuven
 ## Vérification
 
 `python3 scripts/analytics_test.py` vérifie l'accès privé sans mot de passe, l'isolation des ports, les entrées invalides, l'attribution, la persistance et les mises à jour concurrentes. Le workflow teste aussi le conteneur avec un système de fichiers en lecture seule et un répertoire de données accessible en écriture.
+
+
