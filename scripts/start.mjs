@@ -16,7 +16,9 @@ function stop(code) {
   if (!nginx) process.exit(code);
   else nginx.once("exit", () => process.exit(code));
 }
-if (process.env.STATS_PASSWORD) {
+// STATS_PASSWORD is retained only as a legacy enable flag; VPN controls access.
+const analyticsEnabled = process.env.ANALYTICS_ENABLED ?? (process.env.STATS_PASSWORD ? "true" : "false");
+if (analyticsEnabled === "true") {
   analytics = spawn("python3", ["/app/analytics.py"], { stdio: "inherit" });
   analytics.on("error", () => stop(1));
   analytics.on("exit", () => { if (!stopping) stop(1); });

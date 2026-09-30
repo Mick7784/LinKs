@@ -1,5 +1,5 @@
 """Aggregate-only analytics; no IP addresses, cookies or visitor identifiers."""
-import base64, hmac, json, os, sqlite3, threading
+import json, os, sqlite3, threading
 from datetime import date, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -9,7 +9,6 @@ from zoneinfo import ZoneInfo
 ROOT = Path(__file__).resolve().parent
 if not (ROOT / 'links.json').exists(): ROOT = ROOT.parent
 DB = os.environ.get('ANALYTICS_DB', '/data/analytics.db')
-PASSWORD = os.environ.get('STATS_PASSWORD', '')
 ORIGIN = os.environ.get('ANALYTICS_ORIGIN', 'https://links.domotik-studio.fr').rstrip('/')
 ADMIN = ROOT / 'admin'
 CONFIG = json.loads((ROOT / 'links.json').read_text())
@@ -70,9 +69,6 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('X-Content-Type-Options','nosniff')
         self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'")
         self.end_headers(); self.wfile.write(body)
-    def authorized(self):
-        expected='Basic '+base64.b64encode(('admin:'+PASSWORD).encode()).decode()
-        return len(PASSWORD)>=16 and hmac.compare_digest(self.headers.get('Authorization','').encode(),expected.encode())
     def do_GET(self):
         if not self.server.admin: return self.send(404)
         if self.path == '/healthz':
@@ -80,8 +76,6 @@ class Handler(BaseHTTPRequestHandler):
                 with connection() as db: db.execute('SELECT total FROM counts LIMIT 1').fetchone()
                 return self.send(200, b'ok', 'text/plain')
             except sqlite3.Error: return self.send(503)
-        if not self.authorized():
-            self.send_response(401);self.send_header('WWW-Authenticate','Basic realm="Links stats", charset="UTF-8"');self.send_header('Cache-Control','no-store');self.end_headers();return
         url=urlsplit(self.path)
         if url.path=='/api/stats':
             try:
@@ -94,7 +88,6 @@ class Handler(BaseHTTPRequestHandler):
         name,mime=files[url.path];self.send(200,(ADMIN/name).read_bytes(),mime)
     def do_POST(self):
         if self.server.admin or self.path!='/metrics': return self.send(404)
-        if len(PASSWORD)<16: return self.send(503)
         if self.headers.get('Origin')!=ORIGIN: return self.send(403)
         if any(x in self.headers.get('User-Agent','').lower() for x in ['bot','spider','crawler','headless']): return self.send(204)
         try:
@@ -116,8 +109,6 @@ def serve(port, admin, host):
     return server
 
 if __name__=='__main__':
-    if len(PASSWORD)<16:
-        raise SystemExit('STATS_PASSWORD must contain at least 16 characters')
     init()
     public=serve(3003,False,'127.0.0.1')
     threading.Thread(target=public.serve_forever,daemon=True).start()

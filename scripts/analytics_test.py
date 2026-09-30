@@ -1,4 +1,4 @@
-import base64, importlib.util, json, os, tempfile, threading, unittest
+import importlib.util, json, os, tempfile, threading, unittest
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 from pathlib import Path
@@ -7,7 +7,6 @@ class AnalyticsTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory()
         os.environ['ANALYTICS_DB']=self.tmp.name+'/stats.db'
-        os.environ['STATS_PASSWORD']='test-password-only-123456'
         spec=importlib.util.spec_from_file_location('analytics',Path(__file__).with_name('analytics.py'))
         self.a=importlib.util.module_from_spec(spec);spec.loader.exec_module(self.a);self.a.init()
         self.servers=[]
@@ -30,15 +29,14 @@ class AnalyticsTests(unittest.TestCase):
         self.assertEqual(self.a.report('2026-09-30','2026-09-30','youtube')['rows'][0]['total'],2)
         self.assertEqual(self.a.report('2026-09-29','2026-09-29')['rows'],[])
         with self.assertRaises(ValueError):self.a.report('2026-10-01','2026-09-01')
-    def test_admin_private_and_fail_closed(self):
+    def test_admin_vpn_access_without_password(self):
         url=self.server(True)
         self.assertEqual(self.request(url+'/healthz'),(200,b'ok'))
-        self.assertEqual(self.request(url+'/api/stats')[0],401)
-        h={'Authorization':'Basic '+base64.b64encode(b'admin:test-password-only-123456').decode()}
-        self.assertEqual(self.request(url+'/api/stats',headers=h)[0],200)
-        self.assertEqual(self.request(url+'/',headers=h)[0],200)
-        self.a.PASSWORD=''
-        self.assertEqual(self.request(url+'/api/stats',headers=h)[0],401)
+        self.assertEqual(self.request(url+'/api/stats')[0],200)
+        self.assertEqual(self.request(url+'/')[0],200)
+        public=self.server()
+        for path in ['/', '/api/stats', '/app.js', '/style.css']:
+            self.assertEqual(self.request(public+path)[0],404)
     def test_ingestion_no_stats_route_and_validation(self):
         url=self.server();event={'kind':'click','link':'latest-video','source':'youtube'}
         self.assertEqual(self.request(url+'/api/stats')[0],404)
