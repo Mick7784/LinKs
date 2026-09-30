@@ -20,3 +20,5 @@
  .navigation .tabs button{width:100%;min-height:46px;text-align:left;white-space:normal}
 }
 @media(prefers-reduced-motion:reduce){.menu-chevron{transition:none}}
+
+.visits-bar{fill:#4fd9f5}.clicks-bar{fill:#b586ff}.chart-grid{stroke:#293b57;stroke-width:1}.chart-hit{fill:transparent}.chart-bucket{cursor:pointer}.chart-bucket:hover .chart-hit,.chart-bucket:focus .chart-hit,.chart-bucket.selected .chart-hit{fill:#ffffff0d}.chart-bucket:focus{outline:none}.chart-bucket:focus .chart-hit{stroke:#edf4ff;stroke-width:1}#chart-detail{min-height:2.5em;margin:8px 0 0;font-size:.8rem}
