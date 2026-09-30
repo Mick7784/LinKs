@@ -13,6 +13,7 @@ DB=os.environ.get("ANALYTICS_DB","/data/analytics.db")
 ORIGIN=os.environ.get("ANALYTICS_ORIGIN","https://links.domotik-studio.fr").rstrip("/")
 ADMIN=ROOT/"admin"; UPLOADS=Path(os.environ.get("UPLOAD_DIR","/data/uploads"))
 CONFIG=json.loads((ROOT/"links.json").read_text(encoding="utf-8"))
+DATA_LOCK=threading.RLock()
 PARIS=ZoneInfo("Europe/Paris")
 TYPES={"classic","promo","featured"}; ICONS={"youtube","instagram","tiktok","discord","mail","website","cart","home"}
 BADGES={"","Promo","Nouveau","Partenaire","Bon plan"}
@@ -20,15 +21,16 @@ IMAGE_TYPES={"image/jpeg":".jpg","image/png":".png","image/webp":".webp","image/
 
 @contextmanager
 def connection():
-    db=sqlite3.connect(DB,timeout=10); db.row_factory=sqlite3.Row; db.execute("PRAGMA foreign_keys=ON")
-    try:
-        yield db
-        db.commit()
-    except Exception:
-        db.rollback()
-        raise
-    finally:
-        db.close()
+    with DATA_LOCK:
+        db=sqlite3.connect(DB,timeout=10); db.row_factory=sqlite3.Row; db.execute("PRAGMA foreign_keys=ON")
+        try:
+            yield db
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+        finally:
+            db.close()
 def now_iso(): return datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
 def instant(value):
     if not value:return None
@@ -64,6 +66,7 @@ def init():
         seed(db)
 
 def seed(db):
+    if db.execute("SELECT 1 FROM settings WHERE key='content.initialized'").fetchone():return
     stamp=now_iso()
     if db.execute("SELECT COUNT(*) FROM content_blocks").fetchone()[0]==0:
         for i,item in enumerate(CONFIG.get("links",[])):
@@ -78,6 +81,8 @@ def seed(db):
     profile=CONFIG.get("profile",{})
     for key,value in {"name":profile.get("name","DomotiK Studio"),"tagline":profile.get("tagline",""),"description":profile.get("description",""),"avatar":profile.get("avatar","/assets/portrait.webp"),"logo":profile.get("logo","/assets/logo.webp")}.items():
         db.execute("INSERT OR IGNORE INTO settings VALUES(?,?)",("profile."+key,value))
+
+    db.execute("INSERT OR REPLACE INTO settings VALUES('content.initialized','1')")
 
 def record(kind,source,link,day=None):
     day=day or datetime.now(PARIS).date().isoformat()
@@ -102,7 +107,13 @@ def report(start,end,source=""):
     if a>b or (b-a).days>399:raise ValueError("Période maximale : 400 jours")
     where="day BETWEEN ? AND ? AND kind IN ('view','click')"; params=[start,end]
     if source:where+=" AND source=?";params.append(source)
-    with connection() as db: rows=[dict(r) for r in db.execute("SELECT * FROM counts WHERE "+where+" ORDER BY day",params)]
+    with connection() as db:
+        rows=[dict(r) for r in db.execute("SELECT * FROM counts WHERE "+where+" ORDER BY day",params)]
+        labels={"block:"+r["id"]:r["title"] for r in db.execute("SELECT id,title FROM content_blocks")}
+        labels.update({"button:"+r["id"]:r["label"] for r in db.execute("SELECT id,label FROM top_buttons")})
+        labels["latest-video"]="Dernière vidéo"
+        for row in rows:
+            row["label"]=labels.get(row["link"], "Ancien lien" if row["link"].startswith(("block:","button:")) else row["link"])
     return {"rows":rows,"timezone":"Europe/Paris"}
 
 def profile(db):
@@ -196,11 +207,12 @@ def concurrency(existing,start,end):
             segment_end=ordered[index+1] if index+1<len(ordered) else end
             segments.append({"start_at":datetime.fromtimestamp(point,timezone.utc).isoformat().replace("+00:00","Z"),"end_at":None if segment_end==float("inf") else datetime.fromtimestamp(segment_end,timezone.utc).isoformat().replace("+00:00","Z"),"count":count})
     return maximum,overlap,segments
-def promotion_check(item,exclude_id=None):
+def promotion_check(item,exclude_id=None,db=None):
+    if db is None:
+        with connection() as conn:return promotion_check(item,exclude_id,conn)
     now=datetime.now(timezone.utc)
-    with connection() as db:
-        rows=promotion_rows(db,exclude_id)
-        all_rows=list(db.execute("SELECT * FROM content_blocks WHERE type IN ('promo','featured') AND archived=0"))
+    rows=promotion_rows(db,exclude_id)
+    all_rows=list(db.execute("SELECT * FROM content_blocks WHERE type IN ('promo','featured') AND archived=0"))
     active=sum(status_of(row,now)=="Actif" for row in all_rows);programmed=sum(status_of(row,now)=="Programmé" for row in all_rows)
     if item["type"] not in {"promo","featured"} or not item["active"] or item["draft"]:
         return {"allowed":True,"maximum":0,"overlaps":[],"segments":[],"next_start":None,"active":active,"programmed":programmed}
@@ -215,8 +227,8 @@ def promotion_check(item,exclude_id=None):
             if concurrency(rows,candidate,candidate_end)[0]<=3:
                 next_start=datetime.fromtimestamp(candidate,timezone.utc).isoformat().replace("+00:00","Z");break
     return {"allowed":maximum<=3,"maximum":maximum,"overlaps":[promotion_snapshot(row,now) for row,_,_ in overlap],"segments":segments,"next_start":next_start,"active":active,"programmed":programmed}
-def ensure_promotion_capacity(item,exclude_id=None):
-    check=promotion_check(item,exclude_id)
+def ensure_promotion_capacity(item,exclude_id=None,db=None):
+    check=promotion_check(item,exclude_id,db)
     if not check["allowed"]:raise ValueError("Limite de 3 promotions simultanées dépassée")
     return check
 def button_data(data):
@@ -232,6 +244,107 @@ def valid_metric(key):
     if table:
         with connection() as db:return db.execute(f"SELECT 1 FROM {table} WHERE id=?",(key.removeprefix(prefix),)).fetchone() is not None
     return (key.startswith("social:") or key.startswith("link:")) and len(key)<=2048
+
+def save_content(db,item,item_id=None):
+    ensure_promotion_capacity(item,item_id,db)
+    stamp=now_iso()
+    if item_id:
+        if not isinstance(item_id,str) or not db.execute("SELECT 1 FROM content_blocks WHERE id=?",(item_id,)).fetchone():raise ValueError("Bloc introuvable")
+        values={**item,"updated_at":stamp}
+        db.execute("UPDATE content_blocks SET "+",".join(k+"=?" for k in values)+" WHERE id=?",[*values.values(),item_id])
+    else:
+        item_id=str(uuid.uuid4())
+        pos=db.execute("SELECT COALESCE(MAX(position),-1)+1 FROM content_blocks WHERE archived=0").fetchone()[0]
+        values={**item,"id":item_id,"position":pos,"archived":0,"created_at":stamp,"updated_at":stamp}
+        db.execute("INSERT INTO content_blocks ("+",".join(values)+") VALUES ("+",".join("?" for _ in values)+")",list(values.values()))
+    return item_id
+
+BACKUP_TABLES=('content_blocks','top_buttons','settings','counts')
+BACKUP_LIMIT=64*1024*1024
+UPLOAD_NAME=re.compile(r'[a-f0-9-]{36}\.(jpg|png|webp|gif)')
+
+def export_backup():
+    with DATA_LOCK,connection() as db:
+        tables={table:[dict(row) for row in db.execute('SELECT * FROM '+table)] for table in BACKUP_TABLES}
+        references={r['image'] for r in tables['content_blocks']}
+        references.update(r['value'] for r in tables['settings'] if r['key'] in {'profile.avatar','profile.logo'})
+        images={};size=0
+        for ref in references:
+            if not ref.startswith('/uploads/'):continue
+            name=ref.removeprefix('/uploads/')
+            if not UPLOAD_NAME.fullmatch(name):raise ValueError('Référence image invalide')
+            try:raw=(UPLOADS/name).read_bytes()
+            except OSError as exc:raise ValueError('Une image référencée est introuvable : '+name) from exc
+            size+=len(raw)
+            if size>40*1024*1024:raise ValueError('Sauvegarde trop volumineuse : sauvegarder le volume serveur')
+            images[name]=base64.b64encode(raw).decode('ascii')
+        result={'format':'domotik-links-backup','version':1,'created_at':now_iso(),'tables':tables,'images':images}
+        encoded=json.dumps(result,ensure_ascii=False).encode()
+        if len(encoded)>BACKUP_LIMIT:raise ValueError('Sauvegarde supérieure à 64 Mo : sauvegarder le volume serveur')
+        return encoded
+
+def restore_backup(data):
+    if data.get('format')!='domotik-links-backup' or data.get('version')!=1:raise ValueError('Ce fichier n’est pas une sauvegarde Links compatible')
+    tables=data.get('tables');images=data.get('images')
+    if not isinstance(tables,dict) or set(tables)!=set(BACKUP_TABLES) or not isinstance(images,dict):raise ValueError('Sauvegarde incomplète')
+    decoded={};mapping={};written=[];size=0
+    for name,encoded in images.items():
+        if not isinstance(name,str) or not UPLOAD_NAME.fullmatch(name) or not isinstance(encoded,str):raise ValueError('Nom ou format image invalide')
+        try:raw=base64.b64decode(encoded,validate=True)
+        except (ValueError,binascii.Error) as exc:raise ValueError('Image corrompue') from exc
+        size+=len(raw)
+        if not 0<len(raw)<=4*1024*1024 or size>40*1024*1024:raise ValueError('Images trop volumineuses')
+        new_name=str(uuid.uuid4())+Path(name).suffix
+        mapping['/uploads/'+name]='/uploads/'+new_name;decoded[new_name]=raw
+    try:
+        with DATA_LOCK,connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            for table in BACKUP_TABLES:
+                rows=tables[table]
+                if not isinstance(rows,list) or len(rows)>500000:raise ValueError('Table invalide : '+table)
+                schema=list(db.execute('PRAGMA table_info('+table+')'));columns=[c['name'] for c in schema]
+                for row in rows:
+                    if not isinstance(row,dict) or set(row)!=set(columns):raise ValueError('Structure incompatible : '+table)
+                    for column in schema:
+                        value=row[column['name']]
+                        if value is None:
+                            if column['notnull'] or column['pk']:raise ValueError('Valeur obligatoire absente')
+                        elif column['type']=='INTEGER':
+                            if type(value) is not int or not 0<=value<2**53:raise ValueError('Compteur ou position invalide')
+                        elif not isinstance(value,str) or len(value)>16384:raise ValueError('Texte invalide')
+                    if table=='content_blocks':
+                        block_data(row)
+                        if any(row[k] not in (0,1) for k in ['active','draft','archived']):raise ValueError('État invalide')
+                    elif table=='top_buttons':
+                        button_data({**row,'icon':'mail' if row['icon']=='email' else row['icon']})
+                    elif table=='counts':
+                        date.fromisoformat(row['day'])
+                        if row['kind'] not in {'view','click','impression'} or row['total']<1:raise ValueError('Statistique invalide')
+                    elif row['key'] not in {'content.initialized','profile.name','profile.tagline','profile.description','profile.avatar','profile.logo'}:raise ValueError('Réglage inconnu')
+            # Every uploaded image used by the restored content must exist in this backup.
+            for row in tables['content_blocks']:
+                if row['image'].startswith('/uploads/'):
+                    if row['image'] not in mapping:raise ValueError('Image manquante dans la sauvegarde')
+                    row['image']=mapping[row['image']]
+            for row in tables['settings']:
+                if row['key'] in {'profile.avatar','profile.logo'} and row['value'].startswith('/uploads/'):
+                    if row['value'] not in mapping:raise ValueError('Image de profil manquante')
+                    row['value']=mapping[row['value']]
+            for table in BACKUP_TABLES:
+                db.execute('DELETE FROM '+table)
+                columns=[c['name'] for c in db.execute('PRAGMA table_info('+table+')')]
+                db.executemany('INSERT INTO '+table+' ('+','.join(columns)+') VALUES ('+','.join('?' for _ in columns)+')',[[row[c] for c in columns] for row in tables[table]])
+            db.execute("INSERT OR REPLACE INTO settings VALUES('content.initialized','1')")
+            for row in db.execute("SELECT * FROM content_blocks WHERE archived=0 AND active=1 AND draft=0 AND type IN ('promo','featured')"):
+                ensure_promotion_capacity(dict(row),row['id'],db)
+            # New filenames ensure that a failed restore cannot overwrite current images.
+            for name,raw in decoded.items():
+                target=UPLOADS/name;written.append(target);target.write_bytes(raw)
+        return {'blocks':len(tables['content_blocks']),'buttons':len(tables['top_buttons']),'images':len(images)}
+    except Exception:
+        for path in written:path.unlink(missing_ok=True)
+        raise
+
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self,*_):pass
@@ -261,6 +374,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.file(UPLOADS/name) if re.fullmatch(r"[a-f0-9-]{36}\.(jpg|png|webp|gif)",name) else self.send(404)
         if not self.server.admin:return self.json(200,public_config()) if url.path=="/api/public-config" else self.send(404)
         try:
+            if url.path=="/api/backup":return self.send(200,export_backup())
             if url.path=="/api/stats":
                 q=parse_qs(url.query);today=datetime.now(PARIS).date();return self.json(200,report(q.get("start",[(today-timedelta(days=29)).isoformat()])[0],q.get("end",[today.isoformat()])[0],q.get("source",[""])[0]))
             if url.path=="/api/content":return self.json(200,{"items":content_list(parse_qs(url.query).get("archived",["0"])[0]=="1")})
@@ -268,7 +382,7 @@ class Handler(BaseHTTPRequestHandler):
             if url.path=="/api/settings":
                 with connection() as db:return self.json(200,profile(db))
             if url.path=="/api/public-config":return self.json(200,public_config())
-        except (ValueError,TypeError):return self.json(400,{"error":"Paramètres invalides"})
+        except (ValueError,TypeError) as exc:return self.json(400,{"error":str(exc) or "Paramètres invalides"})
         files={"/":("index.html","text/html;charset=utf-8"),"/app.js":("app.js","application/javascript"),"/style.css":("style.css","text/css")}
         return self.file(ADMIN/files[url.path][0],files[url.path][1]) if url.path in files else self.send(404)
     def do_POST(self):
@@ -284,7 +398,9 @@ class Handler(BaseHTTPRequestHandler):
             except (ValueError,TypeError,json.JSONDecodeError):return self.send(400)
             except sqlite3.Error:return self.send(503)
         try:
-            data=self.body()
+            data=self.body(BACKUP_LIMIT if path=="/api/restore" else 8*1024*1024)
+            if path=="/api/restore":return self.json(200,restore_backup(data))
+            if path=="/api/promotions/replace":return self.replace_promotion(data)
             if path=="/api/content":return self.create_content(data)
             if path=="/api/promotions/check":
                 item=block_data(data);return self.json(200,promotion_check(item,data.get("id") or None))
@@ -296,7 +412,8 @@ class Handler(BaseHTTPRequestHandler):
             if path=="/api/upload":return self.upload(data)
             if path=="/api/settings":return self.save_settings(data)
             return self.send(404)
-        except (ValueError,TypeError,json.JSONDecodeError,binascii.Error) as exc:return self.json(400,{"error":str(exc) or "Requête invalide"})
+        except (ValueError,TypeError,json.JSONDecodeError,binascii.Error,sqlite3.IntegrityError) as exc:return self.json(400,{"error":str(exc) or "Requête invalide"})
+        except (OSError,sqlite3.OperationalError):return self.json(503,{"error":"Stockage indisponible. Les données n’ont pas été remplacées."})
     def do_PUT(self):
         if not self.server.admin:return self.send(404)
         try:
@@ -318,26 +435,41 @@ class Handler(BaseHTTPRequestHandler):
             if changed:db.execute("DELETE FROM counts WHERE kind IN ('click','impression') AND link=?",(prefix+match.group(1),))
         return self.send(204) if changed else self.send(404)
     def create_content(self,data):
-        item=block_data(data);item_id=str(uuid.uuid4());stamp=now_iso()
-        ensure_promotion_capacity(item)
+        item=block_data(data)
         with connection() as db:
-            pos=db.execute("SELECT COALESCE(MAX(position),-1)+1 FROM content_blocks WHERE archived=0").fetchone()[0]
-            db.execute("""INSERT INTO content_blocks(id,type,internal_name,title,description,url,icon,image,badge,cta,position,active,draft,start_at,end_at,archived,created_at,updated_at,priority)
-              VALUES(:id,:type,:internal_name,:title,:description,:url,:icon,:image,:badge,:cta,:position,:active,:draft,:start_at,:end_at,0,:created_at,:updated_at,:priority)""",{**item,"id":item_id,"position":pos,"created_at":stamp,"updated_at":stamp})
+            db.execute("BEGIN IMMEDIATE")
+            item_id=save_content(db,item)
         return self.json(201,{"id":item_id})
     def update_content(self,item_id,data):
         item=block_data(data)
-        ensure_promotion_capacity(item,item_id)
-        with connection() as db:changed=db.execute("""UPDATE content_blocks SET type=:type,internal_name=:internal_name,title=:title,description=:description,url=:url,icon=:icon,image=:image,badge=:badge,cta=:cta,priority=:priority,active=:active,draft=:draft,start_at=:start_at,end_at=:end_at,updated_at=:updated_at WHERE id=:id""",{**item,"id":item_id,"updated_at":now_iso()}).rowcount
-        return self.send(204) if changed else self.send(404)
+        with connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            if not db.execute("SELECT 1 FROM content_blocks WHERE id=?",(item_id,)).fetchone():return self.send(404)
+            save_content(db,item,item_id)
+        return self.send(204)
+    def replace_promotion(self,data):
+        target=required(data,"replace_id",100)
+        content=data.get("content")
+        if not isinstance(content,dict):raise ValueError("Promotion invalide")
+        item=block_data(content);item_id=content.get("id") or None
+        if item["type"] not in {"promo","featured"} or item_id==target:raise ValueError("Remplacement invalide")
+        with connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row=db.execute("SELECT * FROM content_blocks WHERE id=? AND archived=0 AND type IN ('promo','featured')",(target,)).fetchone()
+            if not row:raise ValueError("Promotion à remplacer introuvable")
+            db.execute("UPDATE content_blocks SET active=0,updated_at=? WHERE id=?",(now_iso(),target))
+            item_id=save_content(db,item,item_id)
+        return self.json(200,{"id":item_id})
     def content_action(self,item_id,action):
         with connection() as db:
+            db.execute("BEGIN IMMEDIATE")
             row=db.execute("SELECT * FROM content_blocks WHERE id=?",(item_id,)).fetchone()
             if not row:return self.send(404)
             if action=="duplicate":
                 new_id=str(uuid.uuid4());stamp=now_iso();pos=db.execute("SELECT COALESCE(MAX(position),-1)+1 FROM content_blocks").fetchone()[0]
                 db.execute("""INSERT INTO content_blocks(id,type,internal_name,title,description,url,icon,image,badge,cta,position,active,draft,start_at,end_at,archived,created_at,updated_at,priority)
                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",(new_id,row["type"],row["internal_name"]+" (copie)",row["title"],row["description"],row["url"],row["icon"],row["image"],row["badge"],row["cta"],pos,0,1,row["start_at"],row["end_at"],0,stamp,stamp,row["priority"]));return self.json(201,{"id":new_id})
+            if action=="restore":ensure_promotion_capacity(dict(row),item_id,db)
             db.execute("UPDATE content_blocks SET archived=?,updated_at=? WHERE id=?",(1 if action=="archive" else 0,now_iso(),item_id))
         return self.send(204)
     def reorder(self,table,data):

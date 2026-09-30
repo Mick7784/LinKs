@@ -37,3 +37,15 @@ La base ne contient pas les IP ; les journaux techniques du reverse proxy peuven
 `python3 scripts/analytics_test.py` vérifie l'accès privé sans mot de passe, l'isolation des ports, les entrées invalides, l'attribution, la persistance et les mises à jour concurrentes. Le workflow teste aussi le conteneur avec un système de fichiers en lecture seule et un répertoire de données accessible en écriture.
 
 
+
+## Partage et sauvegarde
+
+Dans Réglages, « Partager Links » génère une adresse avec `utm_source` pour chaque plateforme reconnue. Le bouton de copie fonctionne aussi avec un accès HTTP privé lorsque le navigateur autorise la copie ; sinon le champ est sélectionné pour une copie manuelle.
+
+« Télécharger une sauvegarde » exporte un fichier JSON versionné contenant les blocs (archives comprises), les boutons, les réglages, les compteurs et les images importées utilisées par ces contenus. Les anciennes images inutilisées et les journaux serveur ne sont pas inclus. Les fichiers statiques fournis par l'image Docker ne sont pas dupliqués.
+
+La restauration remplace les données actuelles après confirmation dans l'interface. Elle valide la structure, les compteurs, les images et la capacité des promotions, puis réalise la modification dans une transaction. Les images restaurées utilisent de nouveaux noms : une erreur d'écriture ne remplace pas les fichiers existants. Télécharger une sauvegarde actuelle avant de restaurer permet de revenir en arrière.
+
+Limites : 64 Mo pour le JSON complet, 40 Mo d'images avant encodage et 4 Mo par image. Au-delà, sauvegarder le volume `/data` avec les outils du serveur. Le téléchargement et la restauration ne sont accessibles que sur le port privé 8081.
+
+L'import initial depuis `links.json` est désormais marqué en base : vider les listes ne provoque plus leur réapparition au redémarrage. La restauration des archives respecte la limite des trois promotions et le remplacement d'une promotion est atomique. Le dashboard conserve les identifiants stables en base et affiche leurs noms publics ; le ratio global est libellé « Clics pour 100 vues ».

@@ -115,6 +115,79 @@ class AnalyticsTests(unittest.TestCase):
         self.assertEqual(item['impressions'],1)
         self.assertNotIn('impression',{row['kind'] for row in self.a.report(date.today().isoformat(),date.today().isoformat())['rows']})
 
+    def test_seed_runs_only_once_even_after_everything_deleted(self):
+        with self.a.connection() as db:
+            db.execute('DELETE FROM content_blocks');db.execute('DELETE FROM top_buttons')
+        self.a.init()
+        self.assertEqual(self.a.content_list(),[]);self.assertEqual(self.a.button_list(),[])
+
+    def test_report_resolves_labels_without_changing_metric_keys(self):
+        self.a.record('click','youtube','block:legacy-link-0','2026-09-30')
+        row=self.a.report('2026-09-30','2026-09-30')['rows'][0]
+        self.assertEqual(row['link'],'block:legacy-link-0')
+        self.assertEqual(row['label'],self.a.CONFIG['links'][0]['title'])
+
+    def test_promotion_restore_and_atomic_replacement(self):
+        admin=self.server(True)
+        base={'type':'promo','internal_name':'Promo','title':'Offre','url':'https://example.com','start_at':'2099-01-01T00:00:00Z','end_at':'2099-02-01T00:00:00Z'}
+        ids=[]
+        for i in range(3):
+            status,body=self.request(admin+'/api/content',{**base,'internal_name':str(i)})
+            self.assertEqual(status,201);ids.append(json.loads(body)['id'])
+        self.request(admin+'/api/content/'+ids[0]+'/archive',{})
+        status,body=self.request(admin+'/api/content',base);self.assertEqual(status,201)
+        self.assertEqual(self.request(admin+'/api/content/'+ids[0]+'/restore',{})[0],400)
+        self.assertTrue(next(x for x in self.a.content_list(True) if x['id']==ids[0])['archived'])
+        # Failure occurs after disabling the old promotion inside the transaction.
+        self.assertEqual(self.request(admin+'/api/promotions/replace',{'replace_id':ids[1],'content':{**base,'id':'missing'}})[0],400)
+        self.assertTrue(next(x for x in self.a.content_list() if x['id']==ids[1])['active'])
+        self.assertEqual(self.request(admin+'/api/promotions/replace',{'replace_id':ids[1],'content':base})[0],200)
+        self.assertFalse(next(x for x in self.a.content_list() if x['id']==ids[1])['active'])
+        self.assertEqual(len([x for x in self.a.content_list() if x['type']=='promo' and x['active']]),3)
+
+    def test_backup_roundtrip_including_images_and_counts(self):
+        name='12345678-1234-1234-1234-123456789abc.png'
+        raw=b'\x89PNG\r\n\x1a\nbackup-test';(self.a.UPLOADS/name).write_bytes(raw)
+        with self.a.connection() as db:
+            db.execute('UPDATE content_blocks SET image=? WHERE id=?',('/uploads/'+name,'legacy-link-0'))
+        self.a.record('click','youtube','block:legacy-link-0')
+        admin=self.server(True);public=self.server()
+        status,body=self.request(admin+'/api/backup');self.assertEqual(status,200)
+        backup=json.loads(body)
+        self.assertEqual(self.request(public+'/api/backup')[0],404)
+        self.assertEqual(self.request(public+'/api/restore',backup)[0],404)
+        with self.a.connection() as db:db.execute('DELETE FROM counts');db.execute('DELETE FROM content_blocks')
+        status,body=self.request(admin+'/api/restore',backup);self.assertEqual(status,200,body)
+        restored=next(x for x in self.a.content_list() if x['id']=='legacy-link-0')
+        self.assertEqual(restored['clicks'],1)
+        self.assertEqual((self.a.UPLOADS/restored['image'].split('/')[-1]).read_bytes(),raw)
+        self.assertEqual((self.a.UPLOADS/name).read_bytes(),raw)
+        self.a.init();self.assertEqual(len(self.a.content_list()),len(backup['tables']['content_blocks']))
+
+    def test_invalid_backup_preserves_current_database(self):
+        backup=json.loads(self.a.export_backup())
+        backup['tables']['settings'].append(dict(backup['tables']['settings'][0]))
+        before=self.a.content_list()
+        # A duplicate fails after DELETE statements, so this tests rollback.
+        status,_=self.request(self.server(True)+'/api/restore',backup)
+        self.assertEqual(status,400);self.assertEqual(self.a.content_list(),before)
+        self.a.init();self.assertEqual(self.a.content_list(),before)
+        backup=json.loads(self.a.export_backup());backup['images']['../escape.png']='eA=='
+        self.assertEqual(self.request(self.server(True)+'/api/restore',backup)[0],400)
+        self.assertEqual(self.a.content_list(),before)
+
+    def test_failed_image_write_rolls_back_restore(self):
+        from unittest.mock import patch
+        backup=json.loads(self.a.export_backup())
+        name='12345678-1234-1234-1234-123456789abc.png'
+        backup['images'][name]=base64.b64encode(b'image').decode()
+        backup['tables']['content_blocks'][0]['title']='Changed'
+        backup['tables']['content_blocks'][0]['image']='/uploads/'+name
+        before=self.a.content_list()
+        with patch.object(Path,'write_bytes',side_effect=OSError('disk full')):
+            with self.assertRaises(OSError):self.a.restore_backup(backup)
+        self.assertEqual(self.a.content_list(),before)
+
 if __name__=='__main__':unittest.main()
 
 

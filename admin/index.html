@@ -10,7 +10,7 @@
 <section class="view active" id="dashboard">
  <div class="section-head"><div><h2>Vue d’ensemble</h2><p>Mesure agrégée, sans cookies ni identifiant visiteur.</p></div>
  <form id="filters"><select id="period" aria-label="Période"><option value="7">7 jours</option><option value="30" selected>30 jours</option><option value="90">90 jours</option></select><select id="source" aria-label="Source"><option value="">Toutes les sources</option></select></form></div>
- <section class="kpis" aria-label="Indicateurs"><article><span>Visites</span><strong id="views">—</strong></article><article><span>Clics</span><strong id="clicks">—</strong></article><article><span>CTR global</span><strong id="ratio">—</strong></article></section>
+ <section class="kpis" aria-label="Indicateurs"><article><span>Pages vues</span><strong id="views">—</strong></article><article><span>Clics</span><strong id="clicks">—</strong></article><article><span>Clics pour 100 vues</span><strong id="ratio">—</strong></article></section>
  <section class="panel"><div class="panel-title"><h3>Évolution</h3><span class="legend">● Visites &nbsp; <i>●</i> Clics</span></div><div id="chart" role="img" aria-label="Évolution quotidienne"></div></section>
  <div class="dashboard-grid"><section class="panel"><h3>Top 5 des liens</h3><div id="top-links"></div></section><section class="panel"><h3>Sources principales</h3><div id="sources"></div></section></div>
 </section>
@@ -32,6 +32,8 @@
 <section class="view" id="settings">
  <div class="section-head"><div><h2>Réglages</h2><p>Informations principales affichées sur la page.</p></div></div>
  <form id="settings-form" class="panel form-grid"><label>Nom<input name="name" required maxlength="120"></label><label>Accroche<input name="tagline" maxlength="200"></label><label class="wide">Description<input name="description" maxlength="300"></label><div class="wide actions"><button class="primary">Enregistrer</button></div></form>
+ <section class="panel"><h3>Partager Links</h3><p>Choisis où tu publies le lien pour reconnaître la provenance des visites.</p><div class="share-controls"><label>Plateforme<select id="share-source"><option value="youtube">YouTube</option><option value="instagram">Instagram</option><option value="domotik-studio">Site DomotiK Studio</option><option value="facebook">Facebook</option><option value="tiktok">TikTok</option><option value="discord">Discord</option><option value="newsletter">Newsletter</option></select></label><label>Adresse à partager<input id="share-url" readonly></label><button type="button" id="copy-share">Copier le lien</button></div><p id="share-status" role="status"></p></section>
+ <section class="panel"><h3>Sauvegarde</h3><p>Un fichier contient tes contenus, images utilisées, réglages et statistiques. Garde-le sur ton ordinateur.</p><div class="backup-controls"><button type="button" id="download-backup">Télécharger une sauvegarde</button><label class="restore-label">Restaurer une sauvegarde<input type="file" id="restore-backup" accept=".json,application/json"></label></div><p id="backup-status" role="status"></p><p>La restauration remplace les données actuelles. Maximum : 64 Mo par fichier.</p></section>
 </section>
 <footer>Heure de Paris · Statistiques conservées 400 jours · Le VPN Pangolin protège ce back-office.</footer>
 </main>
