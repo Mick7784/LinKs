@@ -31,6 +31,48 @@ class AnalyticsTests(unittest.TestCase):
         self.assertEqual(self.a.report('2026-09-30','2026-09-30','youtube')['rows'][0]['total'],2)
         self.assertEqual(self.a.report('2026-09-29','2026-09-29')['rows'],[])
         with self.assertRaises(ValueError):self.a.report('2026-10-01','2026-09-01')
+    def test_legacy_clicks_share_identity_without_changing_history(self):
+        day='2026-09-30'
+        for source,key in [('youtube','Domadoo'),('instagram','block:legacy-link-3'),
+                           ('youtube','Réseau · Me contacter par e-mail'),('youtube','button:legacy-button-2')]:
+            self.a.record('click',source,key,day)
+        self.a.record('view','youtube','',day)
+        with self.a.connection() as db:
+            db.execute("UPDATE content_blocks SET title='Domadoo renommé' WHERE id='legacy-link-3'")
+            db.execute("UPDATE top_buttons SET label='Contact' WHERE id='legacy-button-2'")
+            before=[tuple(r) for r in db.execute('SELECT * FROM counts ORDER BY kind,link,source')]
+        rows=self.a.report(day,day)['rows']
+        grouped={}
+        for row in rows:
+            if row['kind']=='click':grouped[row['link']]=grouped.get(row['link'],0)+row['total']
+        self.assertEqual(grouped,{'block:legacy-link-3':2,'button:legacy-button-2':2})
+        self.assertEqual(sum(r['total'] for r in rows),5)
+        self.assertEqual({r['label'] for r in rows if r['link']=='block:legacy-link-3'},{'Domadoo renommé'})
+        self.assertEqual(sum(r['total'] for r in self.a.report(day,day,'instagram')['rows']),1)
+        self.assertEqual(next(x for x in self.a.content_list() if x['id']=='legacy-link-3')['clicks'],2)
+        self.assertEqual(next(x for x in self.a.button_list() if x['id']=='legacy-button-2')['clicks'],2)
+        with self.a.connection() as db:
+            self.assertEqual(before,[tuple(r) for r in db.execute('SELECT * FROM counts ORDER BY kind,link,source')])
+
+    def test_same_title_blocks_and_ambiguous_legacy_labels_stay_separate(self):
+        admin=self.server(True)
+        item={'type':'classic','internal_name':'Autre Domadoo','title':'Domadoo','url':'https://example.com'}
+        status,body=self.request(admin+'/api/content',item)
+        self.assertEqual(status,201)
+        new_id=json.loads(body)['id']
+        for key in ['Domadoo','block:legacy-link-3','block:'+new_id]:self.a.record('click','youtube',key,'2026-09-30')
+        items={x['id']:x for x in self.a.content_list()}
+        self.assertEqual(items['legacy-link-3']['clicks'],2)
+        self.assertEqual(items[new_id]['clicks'],1)
+        rows=self.a.report('2026-09-30','2026-09-30')['rows']
+        self.assertEqual({r['link'] for r in rows},{'block:legacy-link-3','block:'+new_id})
+        self.a.CONFIG['links'].append(dict(self.a.CONFIG['links'][3]))
+        with self.a.connection() as db:self.assertNotIn('Domadoo',self.a.metric_aliases(db))
+        self.a.CONFIG['links'].pop()
+        with self.a.connection() as db:
+            db.execute("DELETE FROM content_blocks WHERE id='legacy-link-3'")
+            self.assertNotIn('Domadoo',self.a.metric_aliases(db))
+
     def test_admin_vpn_access_without_password(self):
         url=self.server(True)
         self.assertEqual(self.request(url+'/healthz'),(200,b'ok'))
@@ -189,5 +231,3 @@ class AnalyticsTests(unittest.TestCase):
         self.assertEqual(self.a.content_list(),before)
 
 if __name__=='__main__':unittest.main()
-
-
