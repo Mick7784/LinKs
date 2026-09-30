@@ -33,7 +33,7 @@
 </section>
 <footer>Heure de Paris · Statistiques conservées 400 jours · Le VPN Pangolin protège ce back-office.</footer>
 </main>
-<dialog id="block-dialog"><form method="dialog" id="block-form"><header><div><p class="eyebrow">ÉDITION</p><h2 id="block-title">Nouveau bloc</h2></div><button class="icon-button" value="cancel" aria-label="Fermer">×</button></header>
+<dialog id="block-dialog"><form method="dialog" id="block-form"><header><div><p class="eyebrow">ÉDITION</p><h2 id="block-title">Nouveau bloc</h2></div><button class="icon-button" value="cancel" formnovalidate aria-label="Fermer">×</button></header>
  <div class="editor"><div class="form-grid">
   <input type="hidden" name="id"><label>Type<select name="type"><option value="classic">Lien classique</option><option value="featured">Mise en avant</option><option value="promo">Promo visuelle</option></select></label>
   <label>Nom interne<input name="internal_name" required maxlength="300"></label><label>Titre public<input name="title" required maxlength="300"></label>
@@ -44,8 +44,8 @@
   <label>Début<input name="start_at" type="datetime-local"></label><label>Fin<input name="end_at" type="datetime-local"></label>
   <label class="check"><input name="active" type="checkbox" checked> Activé</label><label class="check"><input name="draft" type="checkbox"> Brouillon</label>
  </div><aside class="preview"><div class="preview-head"><strong>Aperçu</strong><button type="button" data-preview="desktop" class="active">Desktop</button><button type="button" data-preview="mobile">Mobile</button></div><div id="block-preview"></div></aside></div>
- <div class="dialog-actions"><button value="cancel">Annuler</button><button type="submit" value="default" class="primary">Enregistrer</button></div></form></dialog>
-<dialog id="button-dialog"><form method="dialog" id="button-form"><header><h2 id="button-title">Nouveau bouton</h2><button class="icon-button" value="cancel" aria-label="Fermer">×</button></header><div class="form-grid">
- <input type="hidden" name="id"><label>Icône<select name="icon"><option value="youtube">YouTube</option><option value="instagram">Instagram</option><option value="discord">Discord</option><option value="mail">E-mail</option><option value="website">Site</option></select></label><label>Libellé<input name="label" required maxlength="100"></label><label class="wide">URL ou ancre<input name="url" required placeholder="https://… ou #section"></label><label class="check wide"><input name="active" type="checkbox" checked> Activé</label></div><div class="dialog-actions"><button value="cancel">Annuler</button><button type="submit" value="default" class="primary">Enregistrer</button></div></form></dialog>
+ <div class="dialog-actions"><button value="cancel" formnovalidate>Annuler</button><button type="submit" value="default" class="primary">Enregistrer</button></div></form></dialog>
+<dialog id="button-dialog"><form method="dialog" id="button-form"><header><h2 id="button-title">Nouveau bouton</h2><button class="icon-button" value="cancel" formnovalidate aria-label="Fermer">×</button></header><div class="form-grid">
+ <input type="hidden" name="id"><label>Icône<select name="icon"><option value="youtube">YouTube</option><option value="instagram">Instagram</option><option value="discord">Discord</option><option value="mail">E-mail</option><option value="website">Site</option></select></label><label>Libellé<input name="label" required maxlength="100"></label><label class="wide">URL ou ancre<input name="url" required placeholder="https://… ou #section"></label><label class="check wide"><input name="active" type="checkbox" checked> Activé</label></div><div class="dialog-actions"><button value="cancel" formnovalidate>Annuler</button><button type="submit" value="default" class="primary">Enregistrer</button></div></form></dialog>
 </body></html>
 

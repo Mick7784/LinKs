@@ -1,4 +1,4 @@
-import importlib.util, json, os, tempfile, threading, unittest
+import base64, importlib.util, json, os, tempfile, threading, unittest
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 from pathlib import Path
@@ -79,6 +79,15 @@ class AnalyticsTests(unittest.TestCase):
         self.assertEqual(next(x for x in self.a.content_list() if x['id']==item_id)['clicks'],1)
         self.assertEqual(self.request(admin+'/api/content/'+item_id+'/archive',{}, {'Content-Type':'application/json'})[0],204)
         self.assertNotIn(item_id,[x['id'] for x in self.a.public_config()['links']])
+
+    def test_image_upload_is_persistent_and_publicly_readable(self):
+        admin=self.server(True)
+        png=base64.b64encode(b'\x89PNG\r\n\x1a\nminimal-test').decode()
+        status,body=self.request(admin+'/api/upload',{'type':'image/png','data':png},{'Content-Type':'application/json'})
+        self.assertEqual(status,201)
+        path=json.loads(body)['url']
+        self.assertEqual(self.request(admin+path)[0],200)
+        self.assertEqual(self.request(self.server()+path)[0],200)
 
 if __name__=='__main__':unittest.main()
 
