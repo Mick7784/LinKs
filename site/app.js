@@ -60,6 +60,7 @@ for (const item of config.socials.filter((item) => validUrl(item.url))) {
   const a = document.createElement("a");
   const label = item.label || item.platform;
   a.className = "social";
+  a.dataset.metric = "social:" + item.platform;
   a.href = item.url;
   a.setAttribute("aria-label", label);
   a.title = label;
@@ -78,6 +79,7 @@ if (latestVideo && validUrl(latestVideo.url) && latestVideo.title) {
   heading.prepend(icon("youtube"));
   const a = document.createElement("a");
   a.className = "video-card";
+  a.dataset.metric = "latest-video";
   a.href = latestVideo.url;
   a.target = "_blank";
   a.rel = "noopener noreferrer";
@@ -130,6 +132,7 @@ function renderLinks() {
   for (const item of visible) {
     const a = document.createElement("a");
     a.href = item.url;
+    a.dataset.metric = "link:" + item.url;
     a.className = "card" + (item.featured ? " featured" : "");
     if (item.url.startsWith("http")) {
       a.target = "_blank";

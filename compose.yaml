@@ -5,6 +5,9 @@ services:
     environment:
       CREATOR_STUDIO_URL: http://creator-studio-api:3001/api/export/youtube
       CREATOR_STUDIO_API_KEY: ${CREATOR_STUDIO_API_KEY:-}
+      STATS_PASSWORD: ${STATS_PASSWORD:?Set a password of at least 16 characters}
+    volumes:
+      - links-stats:/data
     restart: unless-stopped
     read_only: true
     tmpfs:
@@ -25,3 +28,6 @@ services:
 networks:
   pangolin:
     external: true
+
+volumes:
+  links-stats:

@@ -26,17 +26,22 @@ jobs:
         run: |
           set -euo pipefail
           docker run --rm -v "$PWD:/app" -w /app node:24-alpine node --test scripts/video-api.test.mjs
+          python3 scripts/analytics_test.py
           docker build -t links-test .
-          docker run -d --name links-test --read-only --tmpfs /tmp:rw,noexec,nosuid,size=32m,mode=1777 --cap-drop ALL --security-opt no-new-privileges:true -p 127.0.0.1:18080:8080 links-test
+          docker run -d --name links-test -e STATS_PASSWORD=ci-test-password-123456 --read-only --tmpfs /data:rw,nosuid,size=32m,mode=1777 --tmpfs /tmp:rw,noexec,nosuid,size=32m,mode=1777 --cap-drop ALL --security-opt no-new-privileges:true -p 127.0.0.1:18080:8080 -p 127.0.0.1:18081:8081 links-test
           trap 'docker logs links-test; docker rm -f links-test' EXIT
           for attempt in $(seq 1 20); do
             if curl -fsS http://127.0.0.1:18080/healthz; then break; fi
             sleep 1
           done
           curl -fsS http://127.0.0.1:18080/ | grep -q 'DomotiK'
-          for file in style.css icons.css config.js app.js assets/logo.webp assets/portrait.webp; do
+          for file in style.css icons.css config.js app.js metrics.js assets/logo.webp assets/portrait.webp; do
             curl -fsS "http://127.0.0.1:18080/$file" -o /dev/null
           done
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18081/api/stats)" = 401
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18080/api/stats)" = 404
+          curl -fsS -H 'Origin: https://links.domotik-studio.fr' -H 'Content-Type: application/json' -d '{"kind":"view","source":"youtube"}' http://127.0.0.1:18080/metrics
+          curl -fsS -u admin:ci-test-password-123456 http://127.0.0.1:18081/api/stats | python3 -c 'import json,sys; assert sum(r["total"] for r in json.load(sys.stdin)["rows"]) == 1'
       - name: Log in to GHCR
         if: github.event_name != 'pull_request'
         env:
