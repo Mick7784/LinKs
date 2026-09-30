@@ -7,8 +7,17 @@ const say=(message,error=false)=>{const node=$("notice");node.textContent=messag
 const esc=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const typeName={classic:"Classique",featured:"Featured",promo:"Promo"};
 const statusClass=value=>({Actif:"active",Programmé:"scheduled",Expiré:"expired",Brouillon:"draft"}[value]||"");
-function activate(id){document.querySelectorAll(".view").forEach(x=>x.classList.toggle("active",x.id===id));document.querySelectorAll(".tabs button").forEach(x=>x.classList.toggle("active",x.dataset.tab===id));if(id==="dashboard")loadStats();if(id==="content")loadContent();if(id==="buttons")loadButtons();if(id==="archives")loadArchives();if(id==="settings")loadSettings()}
-document.querySelector(".tabs").addEventListener("click",event=>{const button=event.target.closest("[data-tab]");if(button)activate(button.dataset.tab)});
+function activate(id){document.querySelectorAll(".view").forEach(x=>x.classList.toggle("active",x.id===id));document.querySelectorAll(".tabs button").forEach(x=>x.classList.toggle("active",x.dataset.tab===id));syncNavigation();if(id==="dashboard")loadStats();if(id==="content")loadContent();if(id==="buttons")loadButtons();if(id==="archives")loadArchives();if(id==="settings")loadSettings()}
+const navigation=$("navigation"),menuToggle=$("menu-toggle"),mobileNavigation=matchMedia("(max-width:760px)");
+function closeMenu(restoreFocus=false){navigation.classList.remove("open");menuToggle.setAttribute("aria-expanded","false");if(restoreFocus)menuToggle.focus()}
+function syncNavigation(){document.querySelectorAll(".tabs button").forEach(button=>{const active=button.classList.contains("active");if(active){button.setAttribute("aria-current","page");$("menu-current").textContent=button.textContent}else button.removeAttribute("aria-current")})}
+menuToggle.addEventListener("click",()=>{const open=navigation.classList.toggle("open");menuToggle.setAttribute("aria-expanded",String(open))});
+navigation.addEventListener("keydown",event=>{if(event.key==="Escape"&&navigation.classList.contains("open")){event.preventDefault();closeMenu(true)}});
+document.addEventListener("click",event=>{if(!navigation.contains(event.target))closeMenu()});
+navigation.addEventListener("focusout",event=>{if(!navigation.contains(event.relatedTarget))closeMenu()});
+mobileNavigation.addEventListener("change",()=>{const active=document.activeElement;const hiddenFocus=mobileNavigation.matches?active?.matches(".tabs button"):active===menuToggle;closeMenu();if(hiddenFocus)(mobileNavigation.matches?menuToggle:document.querySelector(".tabs button.active")).focus()});
+document.querySelector(".tabs").addEventListener("click",event=>{const button=event.target.closest("[data-tab]");if(button){activate(button.dataset.tab);closeMenu(mobileNavigation.matches)}});
+syncNavigation();
 
 function dates(){const days=Number($("period").value),end=new Date(),start=new Date();start.setDate(start.getDate()-days+1);const iso=d=>new Intl.DateTimeFormat("en-CA",{timeZone:"Europe/Paris",year:"numeric",month:"2-digit",day:"2-digit"}).format(d);return{start:iso(start),end:iso(end)}}
 function bars(id,items){const root=$(id);if(!items.length){root.innerHTML='<p class="empty">Aucune donnée sur cette période.</p>';return}const max=Math.max(...items.map(x=>x[1]),1);root.className="bar-list";root.innerHTML=items.map(([label,value])=>`<div class="bar-row"><span title="${esc(label)}">${esc(label)}</span><span class="bar"><i></i></span><strong>${fmt.format(value)}</strong></div>`).join("");root.querySelectorAll(".bar i").forEach((bar,index)=>{bar.style.width=`${items[index][1]/max*100}%`})}
