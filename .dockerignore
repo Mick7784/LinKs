@@ -7,3 +7,5 @@
 !scripts/**
 !site/
 !site/**
+!admin/
+!admin/**
