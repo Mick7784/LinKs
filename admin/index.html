@@ -17,6 +17,8 @@
 <section class="view" id="content">
  <div class="section-head"><div><h2>Liens et mises en avant</h2><p>La dernière vidéo reste verrouillée au-dessus de cette liste.</p></div><button class="primary" data-action="new-block">Ajouter un bloc</button></div>
  <article class="locked"><span>🔒</span><div><strong>Dernière vidéo</strong><small>Toujours visible en première position · gérée par Creator Studio</small></div></article>
+ <section class="promo-overview"><strong id="promo-count">Promotions actives : — / 3</strong><span id="promo-scheduled"></span></section>
+ <section class="planning panel"><h3>Planning des promotions</h3><div id="promo-planning"></div></section>
  <div id="content-list" class="sortable-list"></div>
 </section>
 <section class="view" id="buttons">
@@ -40,12 +42,14 @@
   <label class="wide">Description<textarea name="description" rows="3" maxlength="1000"></textarea></label><label class="wide">URL<input name="url" type="url" required></label>
   <label>Icône<select name="icon"><option value="website">Site</option><option value="youtube">YouTube</option><option value="instagram">Instagram</option><option value="discord">Discord</option><option value="cart">Panier</option><option value="home">Maison</option><option value="mail">E-mail</option></select></label>
   <label>Badge<select name="badge"><option value="">Aucun</option><option>Promo</option><option>Nouveau</option><option>Partenaire</option><option>Bon plan</option></select></label>
-  <label>CTA<input name="cta" maxlength="80" placeholder="Découvrir"></label><label>Image<input id="block-image-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif"><input name="image" type="hidden"></label>
+  <label>CTA<input name="cta" maxlength="80" placeholder="Découvrir"></label><label>Priorité<select name="priority"><option value="normal">Normale</option><option value="high">Haute</option></select></label><label class="wide">Image<input id="block-image-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif"><input name="image" type="hidden"></label>
   <label>Début<input name="start_at" type="datetime-local"></label><label>Fin<input name="end_at" type="datetime-local"></label>
+  <div class="wide availability" id="promo-availability" hidden></div>
   <label class="check"><input name="active" type="checkbox" checked> Activé</label><label class="check"><input name="draft" type="checkbox"> Brouillon</label>
  </div><aside class="preview"><div class="preview-head"><strong>Aperçu</strong><button type="button" data-preview="desktop" class="active">Desktop</button><button type="button" data-preview="mobile">Mobile</button></div><div id="block-preview"></div></aside></div>
  <div class="dialog-actions"><button value="cancel" formnovalidate>Annuler</button><button type="submit" value="default" class="primary">Enregistrer</button></div></form></dialog>
 <dialog id="button-dialog"><form method="dialog" id="button-form"><header><h2 id="button-title">Nouveau bouton</h2><button class="icon-button" value="cancel" formnovalidate aria-label="Fermer">×</button></header><div class="form-grid">
  <input type="hidden" name="id"><label>Icône<select name="icon"><option value="youtube">YouTube</option><option value="instagram">Instagram</option><option value="discord">Discord</option><option value="mail">E-mail</option><option value="website">Site</option></select></label><label>Libellé<input name="label" required maxlength="100"></label><label class="wide">URL ou ancre<input name="url" required placeholder="https://… ou #section"></label><label class="check wide"><input name="active" type="checkbox" checked> Activé</label></div><div class="dialog-actions"><button value="cancel" formnovalidate>Annuler</button><button type="submit" value="default" class="primary">Enregistrer</button></div></form></dialog>
+<dialog id="conflict-dialog"><div class="conflict-box"><header><div><p class="eyebrow">PLANIFICATION</p><h2>Limite de promotions simultanées atteinte</h2></div><button class="icon-button" data-conflict="dates" aria-label="Fermer">×</button></header><p>Maximum 3 promotions peuvent être affichées simultanément.</p><div id="conflict-period"></div><div id="conflict-items"></div><label>Promotion à remplacer<select id="replacement-promo"></select></label><div class="conflict-actions"><button data-conflict="next">Trouver le prochain créneau</button><button data-conflict="replace">Remplacer la promotion sélectionnée</button><button data-conflict="dates">Modifier les dates</button></div></div></dialog>
 </body></html>
 

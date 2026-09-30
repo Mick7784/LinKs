@@ -1,4 +1,5 @@
 import base64, importlib.util, json, os, tempfile, threading, unittest
+from datetime import date
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 from pathlib import Path
@@ -90,6 +91,29 @@ class AnalyticsTests(unittest.TestCase):
         path=json.loads(body)['url']
         self.assertEqual(self.request(admin+path)[0],200)
         self.assertEqual(self.request(self.server()+path)[0],200)
+
+    def test_promotion_limit_next_slot_and_edit_exclusion(self):
+        admin=self.server(True)
+        base={'type':'promo','internal_name':'Promo','title':'Offre','description':'','url':'https://example.com','icon':'website','image':'','badge':'Promo','cta':'Voir','priority':'normal','active':True,'draft':False,'start_at':'2099-01-01T00:00:00Z'}
+        ids=[]
+        for index,end in enumerate(['2099-01-05T00:00:00Z','2099-01-06T00:00:00Z','2099-01-07T00:00:00Z']):
+            item={**base,'internal_name':'Promo '+str(index+1),'end_at':end}
+            status,body=self.request(admin+'/api/content',item,{'Content-Type':'application/json'})
+            self.assertEqual(status,201);ids.append(json.loads(body)['id'])
+        candidate={**base,'internal_name':'Quatrième','start_at':'2099-01-02T00:00:00Z','end_at':'2099-01-03T00:00:00Z'}
+        status,body=self.request(admin+'/api/promotions/check',candidate,{'Content-Type':'application/json'})
+        check=json.loads(body);self.assertEqual(status,200);self.assertFalse(check['allowed']);self.assertEqual(check['maximum'],4)
+        self.assertEqual(check['next_start'],'2099-01-05T00:00:00Z')
+        self.assertEqual(self.request(admin+'/api/content',candidate,{'Content-Type':'application/json'})[0],400)
+        edited={**candidate,'id':ids[0]}
+        self.assertTrue(json.loads(self.request(admin+'/api/promotions/check',edited,{'Content-Type':'application/json'})[1])['allowed'])
+
+    def test_visible_promotion_impression_is_recorded(self):
+        public=self.server();headers={'Origin':self.a.ORIGIN,'Content-Type':'application/json'}
+        self.assertEqual(self.request(public+'/metrics',{'kind':'impression','link':'block:legacy-link-0'},headers)[0],204)
+        item=next(x for x in self.a.content_list() if x['id']=='legacy-link-0')
+        self.assertEqual(item['impressions'],1)
+        self.assertNotIn('impression',{row['kind'] for row in self.a.report(date.today().isoformat(),date.today().isoformat())['rows']})
 
 if __name__=='__main__':unittest.main()
 

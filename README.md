@@ -10,6 +10,8 @@ Au premier démarrage de cette version, le contenu de `links.json` est importé 
 
 La carte « Dernière vidéo » reste alimentée par Creator Studio, verrouillée et toujours placée avant les blocs administrables.
 
+Les blocs `promo` et `featured` sont limités à trois affichages simultanés. Le back-office vérifie les chevauchements en temps réel et côté serveur, propose le premier créneau réellement disponible et affiche un planning compact. Sur la page publique, une à trois offres sont regroupées dans « Offres du moment » ; à partir de deux offres, la zone devient un carousel responsive avec navigation tactile.
+
 ## Personnaliser le contenu de secours
 
 - **Contenu** : modifier `links.json` pour le profil, les réseaux et les liens.

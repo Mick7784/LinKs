@@ -14,4 +14,7 @@
   view(); document.addEventListener('visibilitychange', view);
   function click(e) { if (e.type === 'auxclick' && e.button !== 1) return; const a = e.target.closest('a[data-metric]'); if (a && e.isTrusted) send('click', a.dataset.metric); }
   document.addEventListener('click', click); document.addEventListener('auxclick', click);
+  window.addEventListener('links:impression', event => { const link=event.detail?.link; if(typeof link==='string' && link.startsWith('block:')) send('impression',link); });
 })();
+
+

@@ -26,6 +26,8 @@ Exemples : `?utm_source=youtube`, `?utm_source=instagram`, `?utm_source=domotik-
 
 Compteurs agrégés par jour (Europe/Paris), source et identifiant stable du lien. Conservation glissante de 400 jours avec purge à la collecte. Les anciens compteurs basés sur les intitulés restent lisibles. La carte « Dernière vidéo » regroupe les vidéos successives.
 
+Pour les promos du carousel, une impression est ajoutée uniquement lorsque la diapositive devient effectivement visible. Les impressions ne sont pas incluses dans les totaux globaux de clics du dashboard ; elles servent au calcul du CTR propre à chaque promo.
+
 Les vues ne sont pas des visiteurs uniques et les clics pour 100 vues ne sont pas un taux de conversion. La collecte côté navigateur peut être bloquée, omise ou falsifiée ; ce ne sont pas des chiffres de facturation. Aucune reconstitution de l'historique avant activation.
 
 La base ne contient pas les IP ; les journaux techniques du reverse proxy peuvent en contenir indépendamment. L'accès `/metrics` n'est pas journalisé par Nginx dans cette image.

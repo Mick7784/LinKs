@@ -53,7 +53,10 @@ def init():
           description TEXT NOT NULL DEFAULT '',url TEXT NOT NULL,icon TEXT NOT NULL DEFAULT 'website',
           image TEXT NOT NULL DEFAULT '',badge TEXT NOT NULL DEFAULT '',cta TEXT NOT NULL DEFAULT '',
           position INTEGER NOT NULL,active INTEGER NOT NULL DEFAULT 1,draft INTEGER NOT NULL DEFAULT 0,
-          start_at TEXT,end_at TEXT,archived INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)""")
+          start_at TEXT,end_at TEXT,archived INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,
+          priority TEXT NOT NULL DEFAULT 'normal')""")
+        if "priority" not in {row[1] for row in db.execute("PRAGMA table_info(content_blocks)")}:
+            db.execute("ALTER TABLE content_blocks ADD COLUMN priority TEXT NOT NULL DEFAULT 'normal'")
         db.execute("""CREATE TABLE IF NOT EXISTS top_buttons(
           id TEXT PRIMARY KEY,icon TEXT NOT NULL,label TEXT NOT NULL,url TEXT NOT NULL,position INTEGER NOT NULL,
           active INTEGER NOT NULL DEFAULT 1,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)""")
@@ -64,10 +67,11 @@ def seed(db):
     stamp=now_iso()
     if db.execute("SELECT COUNT(*) FROM content_blocks").fetchone()[0]==0:
         for i,item in enumerate(CONFIG.get("links",[])):
-            db.execute("INSERT INTO content_blocks VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(
+            db.execute("""INSERT INTO content_blocks(id,type,internal_name,title,description,url,icon,image,badge,cta,position,active,draft,start_at,end_at,archived,created_at,updated_at,priority)
+              VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",(
               f"legacy-link-{i}","featured" if item.get("featured") else "classic",item.get("title",f"Lien {i+1}"),
               item.get("title",""),item.get("description",""),item.get("url",""),item.get("icon","website"),
-              item.get("image",""),"","Découvrir",i,1,0,None,legacy_expiry(item.get("expiresAt")),0,stamp,stamp))
+              item.get("image",""),"","Découvrir",i,1,0,None,legacy_expiry(item.get("expiresAt")),0,stamp,stamp,"normal"))
     if db.execute("SELECT COUNT(*) FROM top_buttons").fetchone()[0]==0:
         for i,item in enumerate(CONFIG.get("socials",[])):
             db.execute("INSERT INTO top_buttons VALUES(?,?,?,?,?,?,?,?)",(f"legacy-button-{i}",item.get("platform","website"),item.get("label",item.get("platform","Lien")),item.get("url",""),i,1,stamp,stamp))
@@ -96,7 +100,7 @@ def source_of(data):
 def report(start,end,source=""):
     a,b=date.fromisoformat(start),date.fromisoformat(end)
     if a>b or (b-a).days>399:raise ValueError("Période maximale : 400 jours")
-    where="day BETWEEN ? AND ?"; params=[start,end]
+    where="day BETWEEN ? AND ? AND kind IN ('view','click')"; params=[start,end]
     if source:where+=" AND source=?";params.append(source)
     with connection() as db: rows=[dict(r) for r in db.execute("SELECT * FROM counts WHERE "+where+" ORDER BY day",params)]
     return {"rows":rows,"timezone":"Europe/Paris"}
@@ -114,9 +118,12 @@ def status_of(row,at=None):
     return "Actif"
 def serialize(row,totals=None):
     item=dict(row); item.update(active=bool(item["active"]),draft=bool(item["draft"]),archived=bool(item["archived"]),status=status_of(row))
-    if totals is not None:item["clicks"]=totals.get("block:"+item["id"],0)+totals.get(item["title"],0)
+    if totals is not None:
+        item["clicks"]=totals.get(("click","block:"+item["id"]),0)+totals.get(("click",item["title"]),0)
+        item["impressions"]=totals.get(("impression","block:"+item["id"]),0)
+        item["ctr"]=round(item["clicks"]*100/item["impressions"],1) if item["impressions"] else None
     return item
-def totals(db):return {r["link"]:r["total"] for r in db.execute("SELECT link,SUM(total) total FROM counts WHERE kind='click' GROUP BY link")}
+def totals(db):return {(r["kind"],r["link"]):r["total"] for r in db.execute("SELECT kind,link,SUM(total) total FROM counts WHERE kind IN ('click','impression') GROUP BY kind,link")}
 def content_list(archived=False):
     with connection() as db:
         clicks=totals(db); return [serialize(r,clicks) for r in db.execute("SELECT * FROM content_blocks WHERE archived=? ORDER BY CASE WHEN type IN ('promo','featured') THEN 0 ELSE 1 END,position,created_at",(1 if archived else 0,))]
@@ -124,14 +131,14 @@ def button_list():
     with connection() as db:
         clicks=totals(db); result=[]
         for row in db.execute("SELECT * FROM top_buttons ORDER BY position,created_at"):
-            item=dict(row);item["active"]=bool(item["active"]);item["clicks"]=clicks.get("button:"+item["id"],0)+clicks.get("Réseau · "+item["label"],0);result.append(item)
+            item=dict(row);item["active"]=bool(item["active"]);item["clicks"]=clicks.get(("click","button:"+item["id"]),0)+clicks.get(("click","Réseau · "+item["label"]),0);result.append(item)
         return result
 def public_config():
     with connection() as db:
-        blocks=[serialize(r) for r in db.execute("SELECT * FROM content_blocks WHERE archived=0 ORDER BY CASE WHEN type IN ('promo','featured') THEN 0 ELSE 1 END,position,created_at") if status_of(r)=="Actif"]
+        blocks=[serialize(r) for r in db.execute("SELECT * FROM content_blocks WHERE archived=0 ORDER BY CASE WHEN type IN ('promo','featured') THEN 0 ELSE 1 END,CASE WHEN priority='high' THEN 0 ELSE 1 END,position,created_at") if status_of(r)=="Actif"]
         buttons=[dict(r) for r in db.execute("SELECT * FROM top_buttons WHERE active=1 ORDER BY position,created_at")]
         result={"profile":profile(db),"socials":[{"id":x["id"],"platform":x["icon"],"label":x["label"],"url":x["url"],"metricKey":"button:"+x["id"]} for x in buttons],
-                "links":[{"id":x["id"],"type":x["type"],"title":x["title"],"description":x["description"],"url":x["url"],"icon":x["icon"],"image":x["image"],"badge":x["badge"],"cta":x["cta"],"metricKey":"block:"+x["id"]} for x in blocks]}
+                "links":[{"id":x["id"],"type":x["type"],"title":x["title"],"description":x["description"],"url":x["url"],"icon":x["icon"],"image":x["image"],"badge":x["badge"],"cta":x["cta"],"priority":x["priority"],"metricKey":"block:"+x["id"]} for x in blocks]}
     if CONFIG.get("latestVideo"):result["latestVideo"]=CONFIG["latestVideo"]
     return result
 
@@ -152,13 +159,66 @@ def block_data(data):
     if kind not in TYPES:raise ValueError("Type invalide")
     url=required(data,"url",2000)
     if not valid_url(url):raise ValueError("URL invalide")
-    icon=data.get("icon","website"); badge=optional(data,"badge",40); image=optional(data,"image",2000)
+    icon=data.get("icon","website"); badge=optional(data,"badge",40); image=optional(data,"image",2000); priority=data.get("priority","normal")
     if icon not in ICONS:icon="website"
     if badge not in BADGES:raise ValueError("Badge invalide")
+    if priority not in {"normal","high"}:raise ValueError("Priorité invalide")
     if image and not (image.startswith("/uploads/") or image.startswith("/assets/") or valid_url(image)):raise ValueError("Image invalide")
     start,end=instant(data.get("start_at")),instant(data.get("end_at"))
     if start and end and end<=start:raise ValueError("La fin doit suivre le début")
-    return {"type":kind,"internal_name":required(data,"internal_name"),"title":required(data,"title"),"description":optional(data,"description"),"url":url,"icon":icon,"image":image,"badge":badge,"cta":optional(data,"cta",80),"active":1 if data.get("active",True) else 0,"draft":1 if data.get("draft",False) else 0,"start_at":start.isoformat().replace("+00:00","Z") if start else None,"end_at":end.isoformat().replace("+00:00","Z") if end else None}
+    return {"type":kind,"internal_name":required(data,"internal_name"),"title":required(data,"title"),"description":optional(data,"description"),"url":url,"icon":icon,"image":image,"badge":badge,"cta":optional(data,"cta",80),"priority":priority,"active":1 if data.get("active",True) else 0,"draft":1 if data.get("draft",False) else 0,"start_at":start.isoformat().replace("+00:00","Z") if start else None,"end_at":end.isoformat().replace("+00:00","Z") if end else None}
+def promotion_rows(db,exclude_id=None):
+    query="SELECT * FROM content_blocks WHERE type IN ('promo','featured') AND active=1 AND draft=0 AND archived=0"
+    params=[]
+    if exclude_id:query+=" AND id<>?";params.append(exclude_id)
+    return list(db.execute(query,params))
+def promotion_interval(item,now):
+    start=instant(item["start_at"]) or now;end=instant(item["end_at"])
+    return max(start,now).timestamp(),end.timestamp() if end else float("inf")
+def promotion_snapshot(row,now):
+    start=instant(row["start_at"]);end=instant(row["end_at"])
+    age=max(0,(now-(start or datetime.fromisoformat(row["created_at"].replace("Z","+00:00")))).days) if status_of(row,now)=="Actif" else None
+    return {"id":row["id"],"internal_name":row["internal_name"],"status":status_of(row,now),"start_at":row["start_at"],"end_at":row["end_at"],"active_days":age}
+def concurrency(existing,start,end):
+    overlap=[]
+    for row in existing:
+        rs,re=promotion_interval(row,datetime.now(timezone.utc))
+        if rs<end and re>start:overlap.append((row,rs,re))
+    points={start}
+    for _,rs,re in overlap:
+        if start<rs<end:points.add(rs)
+        if start<re<end:points.add(re)
+    ordered=sorted(points);maximum=1;segments=[]
+    for index,point in enumerate(ordered):
+        count=1+sum(1 for _,rs,re in overlap if rs<=point<re)
+        maximum=max(maximum,count)
+        if count>3:
+            segment_end=ordered[index+1] if index+1<len(ordered) else end
+            segments.append({"start_at":datetime.fromtimestamp(point,timezone.utc).isoformat().replace("+00:00","Z"),"end_at":None if segment_end==float("inf") else datetime.fromtimestamp(segment_end,timezone.utc).isoformat().replace("+00:00","Z"),"count":count})
+    return maximum,overlap,segments
+def promotion_check(item,exclude_id=None):
+    now=datetime.now(timezone.utc)
+    with connection() as db:
+        rows=promotion_rows(db,exclude_id)
+        all_rows=list(db.execute("SELECT * FROM content_blocks WHERE type IN ('promo','featured') AND archived=0"))
+    active=sum(status_of(row,now)=="Actif" for row in all_rows);programmed=sum(status_of(row,now)=="Programmé" for row in all_rows)
+    if item["type"] not in {"promo","featured"} or not item["active"] or item["draft"]:
+        return {"allowed":True,"maximum":0,"overlaps":[],"segments":[],"next_start":None,"active":active,"programmed":programmed}
+    start,end=promotion_interval(item,now)
+    maximum,overlap,segments=concurrency(rows,start,end)
+    duration=None if end==float("inf") else end-start
+    next_start=None
+    if maximum>3:
+        candidates=sorted({start}|{re for row in rows for _,re in [promotion_interval(row,now)] if re!=float("inf") and re>=start})
+        for candidate in candidates:
+            candidate_end=float("inf") if duration is None else candidate+duration
+            if concurrency(rows,candidate,candidate_end)[0]<=3:
+                next_start=datetime.fromtimestamp(candidate,timezone.utc).isoformat().replace("+00:00","Z");break
+    return {"allowed":maximum<=3,"maximum":maximum,"overlaps":[promotion_snapshot(row,now) for row,_,_ in overlap],"segments":segments,"next_start":next_start,"active":active,"programmed":programmed}
+def ensure_promotion_capacity(item,exclude_id=None):
+    check=promotion_check(item,exclude_id)
+    if not check["allowed"]:raise ValueError("Limite de 3 promotions simultanées dépassée")
+    return check
 def button_data(data):
     icon=data.get("icon","website");url=required(data,"url",2000)
     if icon not in ICONS:raise ValueError("Icône invalide")
@@ -219,13 +279,15 @@ class Handler(BaseHTTPRequestHandler):
             if any(x in self.headers.get("User-Agent","").lower() for x in ["bot","spider","crawler","headless"]):return self.send(204)
             try:
                 data=self.body(2048);kind,key=data.get("kind"),data.get("link","")
-                if kind not in {"view","click"} or not isinstance(key,str) or (kind=="click" and not valid_metric(key)):raise ValueError()
-                record(kind,source_of(data),key if kind=="click" else "");return self.send(204)
+                if kind not in {"view","click","impression"} or not isinstance(key,str) or (kind in {"click","impression"} and not valid_metric(key)):raise ValueError()
+                record(kind,source_of(data),key if kind in {"click","impression"} else "");return self.send(204)
             except (ValueError,TypeError,json.JSONDecodeError):return self.send(400)
             except sqlite3.Error:return self.send(503)
         try:
             data=self.body()
             if path=="/api/content":return self.create_content(data)
+            if path=="/api/promotions/check":
+                item=block_data(data);return self.json(200,promotion_check(item,data.get("id") or None))
             if path=="/api/content/reorder":return self.reorder("content_blocks",data)
             match=re.fullmatch(r"/api/content/([\w-]+)/(duplicate|archive|restore)",path)
             if match:return self.content_action(match.group(1),match.group(2))
@@ -253,18 +315,20 @@ class Handler(BaseHTTPRequestHandler):
         with connection() as db:
             prefix="block:" if table=="content_blocks" else "button:"
             changed=db.execute(f"DELETE FROM {table} WHERE id=?",(match.group(1),)).rowcount
-            if changed:db.execute("DELETE FROM counts WHERE kind='click' AND link=?",(prefix+match.group(1),))
+            if changed:db.execute("DELETE FROM counts WHERE kind IN ('click','impression') AND link=?",(prefix+match.group(1),))
         return self.send(204) if changed else self.send(404)
     def create_content(self,data):
         item=block_data(data);item_id=str(uuid.uuid4());stamp=now_iso()
+        ensure_promotion_capacity(item)
         with connection() as db:
             pos=db.execute("SELECT COALESCE(MAX(position),-1)+1 FROM content_blocks WHERE archived=0").fetchone()[0]
-            db.execute("""INSERT INTO content_blocks(id,type,internal_name,title,description,url,icon,image,badge,cta,position,active,draft,start_at,end_at,archived,created_at,updated_at)
-              VALUES(:id,:type,:internal_name,:title,:description,:url,:icon,:image,:badge,:cta,:position,:active,:draft,:start_at,:end_at,0,:created_at,:updated_at)""",{**item,"id":item_id,"position":pos,"created_at":stamp,"updated_at":stamp})
+            db.execute("""INSERT INTO content_blocks(id,type,internal_name,title,description,url,icon,image,badge,cta,position,active,draft,start_at,end_at,archived,created_at,updated_at,priority)
+              VALUES(:id,:type,:internal_name,:title,:description,:url,:icon,:image,:badge,:cta,:position,:active,:draft,:start_at,:end_at,0,:created_at,:updated_at,:priority)""",{**item,"id":item_id,"position":pos,"created_at":stamp,"updated_at":stamp})
         return self.json(201,{"id":item_id})
     def update_content(self,item_id,data):
         item=block_data(data)
-        with connection() as db:changed=db.execute("""UPDATE content_blocks SET type=:type,internal_name=:internal_name,title=:title,description=:description,url=:url,icon=:icon,image=:image,badge=:badge,cta=:cta,active=:active,draft=:draft,start_at=:start_at,end_at=:end_at,updated_at=:updated_at WHERE id=:id""",{**item,"id":item_id,"updated_at":now_iso()}).rowcount
+        ensure_promotion_capacity(item,item_id)
+        with connection() as db:changed=db.execute("""UPDATE content_blocks SET type=:type,internal_name=:internal_name,title=:title,description=:description,url=:url,icon=:icon,image=:image,badge=:badge,cta=:cta,priority=:priority,active=:active,draft=:draft,start_at=:start_at,end_at=:end_at,updated_at=:updated_at WHERE id=:id""",{**item,"id":item_id,"updated_at":now_iso()}).rowcount
         return self.send(204) if changed else self.send(404)
     def content_action(self,item_id,action):
         with connection() as db:
@@ -272,7 +336,8 @@ class Handler(BaseHTTPRequestHandler):
             if not row:return self.send(404)
             if action=="duplicate":
                 new_id=str(uuid.uuid4());stamp=now_iso();pos=db.execute("SELECT COALESCE(MAX(position),-1)+1 FROM content_blocks").fetchone()[0]
-                db.execute("INSERT INTO content_blocks VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(new_id,row["type"],row["internal_name"]+" (copie)",row["title"],row["description"],row["url"],row["icon"],row["image"],row["badge"],row["cta"],pos,0,1,row["start_at"],row["end_at"],0,stamp,stamp));return self.json(201,{"id":new_id})
+                db.execute("""INSERT INTO content_blocks(id,type,internal_name,title,description,url,icon,image,badge,cta,position,active,draft,start_at,end_at,archived,created_at,updated_at,priority)
+                  VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",(new_id,row["type"],row["internal_name"]+" (copie)",row["title"],row["description"],row["url"],row["icon"],row["image"],row["badge"],row["cta"],pos,0,1,row["start_at"],row["end_at"],0,stamp,stamp,row["priority"]));return self.json(201,{"id":new_id})
             db.execute("UPDATE content_blocks SET archived=?,updated_at=? WHERE id=?",(1 if action=="archive" else 0,now_iso(),item_id))
         return self.send(204)
     def reorder(self,table,data):
