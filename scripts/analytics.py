@@ -102,6 +102,27 @@ def source_of(data):
     for domain,name in [("youtube.com","youtube"),("youtu.be","youtube"),("instagram.com","instagram"),("facebook.com","facebook"),("tiktok.com","tiktok"),("discord.com","discord"),("google.com","google"),("google.fr","google"),("domotik-studio.fr","domotik-studio.fr")]:
         if host==domain or host.endswith("."+domain):return name
     return "autre-site" if host else "direct-inconnu"
+def metric_aliases(db):
+    # Only seeded items have a known predecessor. Never merge distinct blocks
+    # merely because they share a display title; keep stored history untouched.
+    candidates={}
+    for config_key,table,prefix,id_prefix,label_key,label_prefix in [
+        ("links","content_blocks","block:","legacy-link-","title",""),
+        ("socials","top_buttons","button:","legacy-button-","label","Réseau · ")]:
+        existing={r["id"] for r in db.execute(f"SELECT id FROM {table}")}
+        for index,item in enumerate(CONFIG.get(config_key,[])):
+            item_id=id_prefix+str(index)
+            label=item.get(label_key) or item.get("platform","")
+            if label:
+                candidates.setdefault(label_prefix+label,set()).add(prefix+item_id)
+        for label,keys in list(candidates.items()):
+            # Missing or ambiguous predecessors must remain separate.
+            if len(keys)==1:
+                key=next(iter(keys))
+                if key.startswith(prefix) and key.removeprefix(prefix) not in existing:
+                    candidates[label]=set()
+    return {label:next(iter(keys)) for label,keys in candidates.items() if len(keys)==1}
+
 def report(start,end,source=""):
     a,b=date.fromisoformat(start),date.fromisoformat(end)
     if a>b or (b-a).days>399:raise ValueError("Période maximale : 400 jours")
@@ -112,7 +133,9 @@ def report(start,end,source=""):
         labels={"block:"+r["id"]:r["title"] for r in db.execute("SELECT id,title FROM content_blocks")}
         labels.update({"button:"+r["id"]:r["label"] for r in db.execute("SELECT id,label FROM top_buttons")})
         labels["latest-video"]="Dernière vidéo"
+        aliases=metric_aliases(db)
         for row in rows:
+            if row["kind"]=="click":row["link"]=aliases.get(row["link"],row["link"])
             row["label"]=labels.get(row["link"], "Ancien lien" if row["link"].startswith(("block:","button:")) else row["link"])
     return {"rows":rows,"timezone":"Europe/Paris"}
 
@@ -130,11 +153,16 @@ def status_of(row,at=None):
 def serialize(row,totals=None):
     item=dict(row); item.update(active=bool(item["active"]),draft=bool(item["draft"]),archived=bool(item["archived"]),status=status_of(row))
     if totals is not None:
-        item["clicks"]=totals.get(("click","block:"+item["id"]),0)+totals.get(("click",item["title"]),0)
+        item["clicks"]=totals.get(("click","block:"+item["id"]),0)
         item["impressions"]=totals.get(("impression","block:"+item["id"]),0)
         item["ctr"]=round(item["clicks"]*100/item["impressions"],1) if item["impressions"] else None
     return item
-def totals(db):return {(r["kind"],r["link"]):r["total"] for r in db.execute("SELECT kind,link,SUM(total) total FROM counts WHERE kind IN ('click','impression') GROUP BY kind,link")}
+def totals(db):
+    aliases=metric_aliases(db); result={}
+    for row in db.execute("SELECT kind,link,SUM(total) total FROM counts WHERE kind IN ('click','impression') GROUP BY kind,link"):
+        link=aliases.get(row["link"],row["link"]) if row["kind"]=="click" else row["link"]
+        key=(row["kind"],link); result[key]=result.get(key,0)+row["total"]
+    return result
 def content_list(archived=False):
     with connection() as db:
         clicks=totals(db); return [serialize(r,clicks) for r in db.execute("SELECT * FROM content_blocks WHERE archived=? ORDER BY CASE WHEN type IN ('promo','featured') THEN 0 ELSE 1 END,position,created_at",(1 if archived else 0,))]
@@ -142,7 +170,7 @@ def button_list():
     with connection() as db:
         clicks=totals(db); result=[]
         for row in db.execute("SELECT * FROM top_buttons ORDER BY position,created_at"):
-            item=dict(row);item["active"]=bool(item["active"]);item["clicks"]=clicks.get(("click","button:"+item["id"]),0)+clicks.get(("click","Réseau · "+item["label"]),0);result.append(item)
+            item=dict(row);item["active"]=bool(item["active"]);item["clicks"]=clicks.get(("click","button:"+item["id"]),0);result.append(item)
         return result
 def public_config():
     with connection() as db:
@@ -504,4 +532,3 @@ def serve(port,admin,host):
     server=ThreadingHTTPServer((host,port),Handler);server.admin=admin;return server
 if __name__=="__main__":
     init();public=serve(3003,False,"127.0.0.1");threading.Thread(target=public.serve_forever,daemon=True).start();serve(8081,True,"0.0.0.0").serve_forever()
-
