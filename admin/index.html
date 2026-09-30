@@ -3,9 +3,12 @@
 <title>Links · Back-office</title><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head>
 <body><main>
 <header class="masthead"><div><p class="eyebrow">DOMOTIK STUDIO · BACK-OFFICE</p><h1>Links</h1><p>Contenus, boutons et statistiques de la page publique.</p></div><span class="secure">Accès privé Pangolin</span></header>
-<nav class="tabs" aria-label="Navigation du back-office">
+<div class="navigation" id="navigation">
+<button type="button" class="menu-toggle" id="menu-toggle" aria-expanded="false" aria-controls="navigation-tabs"><span>Menu · <span id="menu-current">Dashboard</span></span><span class="menu-chevron" aria-hidden="true">⌄</span></button>
+<nav class="tabs" id="navigation-tabs" aria-label="Navigation du back-office">
  <button data-tab="dashboard" class="active">Dashboard</button><button data-tab="content">Liens</button><button data-tab="buttons">Boutons du haut</button><button data-tab="archives">Archives</button><button data-tab="settings">Réglages</button>
 </nav>
+</div>
 <p id="notice" role="status" aria-live="polite"></p>
 <section class="view active" id="dashboard">
  <div class="section-head"><div><h2>Vue d’ensemble</h2><p>Mesure agrégée, sans cookies ni identifiant visiteur.</p></div>
@@ -54,4 +57,3 @@
  <input type="hidden" name="id"><label>Icône<select name="icon"><option value="youtube">YouTube</option><option value="instagram">Instagram</option><option value="discord">Discord</option><option value="mail">E-mail</option><option value="website">Site</option></select></label><label>Libellé<input name="label" required maxlength="100"></label><label class="wide">URL ou ancre<input name="url" required placeholder="https://… ou #section"></label><label class="check wide"><input name="active" type="checkbox" checked> Activé</label></div><div class="dialog-actions"><button value="cancel" formnovalidate>Annuler</button><button type="submit" value="default" class="primary">Enregistrer</button></div></form></dialog>
 <dialog id="conflict-dialog"><div class="conflict-box"><header><div><p class="eyebrow">PLANIFICATION</p><h2>Limite de promotions simultanées atteinte</h2></div><button class="icon-button" data-conflict="dates" aria-label="Fermer">×</button></header><p>Maximum 3 promotions peuvent être affichées simultanément.</p><div id="conflict-period"></div><div id="conflict-items"></div><label>Promotion à remplacer<select id="replacement-promo"></select></label><div class="conflict-actions"><button data-conflict="next">Trouver le prochain créneau</button><button data-conflict="replace">Remplacer la promotion sélectionnée</button><button data-conflict="dates">Modifier les dates</button></div></div></dialog>
 </body></html>
-

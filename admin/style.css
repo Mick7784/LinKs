@@ -7,3 +7,16 @@
 
 
 .share-controls{display:grid;grid-template-columns:1fr 2fr auto;gap:12px;align-items:end}.share-controls label,.restore-label{display:grid;gap:8px;font-size:.85rem}.backup-controls{display:flex;gap:16px;flex-wrap:wrap;align-items:center}.restore-label input{max-width:320px}button:disabled{opacity:.55;cursor:wait}@media(max-width:760px){.share-controls{grid-template-columns:1fr}.backup-controls{display:grid}.restore-label input{max-width:100%}}
+
+/* Mobile navigation disclosure; desktop keeps the complete tab bar. */
+.menu-toggle{display:none}
+@media(max-width:760px){
+ .navigation{margin-bottom:28px}
+ .menu-toggle{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:48px;text-align:left;padding:13px 16px;border-radius:14px;background:linear-gradient(135deg,#244a78,#4a347c);font-weight:650}
+ .menu-chevron{font-size:1.3rem;line-height:1;transition:transform .15s}
+ .navigation.open .menu-chevron{transform:rotate(180deg)}
+ .navigation .tabs{display:none;margin:8px 0 0;overflow:visible;scroll-snap-type:none}
+ .navigation.open .tabs{display:grid;gap:5px}
+ .navigation .tabs button{width:100%;min-height:46px;text-align:left;white-space:normal}
+}
+@media(prefers-reduced-motion:reduce){.menu-chevron{transition:none}}
