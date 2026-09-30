@@ -18,9 +18,9 @@ class AnalyticsTests(unittest.TestCase):
         s=self.a.serve(0,admin,'127.0.0.1');self.servers.append(s)
         threading.Thread(target=s.serve_forever,daemon=True).start()
         return 'http://127.0.0.1:'+str(s.server_port)
-    def request(self,url,data=None,headers=None):
+    def request(self,url,data=None,headers=None,method=None):
         try:
-            with urlopen(Request(url,json.dumps(data).encode() if data is not None else None,headers or {})) as r:return r.status,r.read()
+            with urlopen(Request(url,json.dumps(data).encode() if data is not None else None,headers or {},method=method)) as r:return r.status,r.read()
         except HTTPError as e:return e.code,e.read()
     def test_aggregation_persistence_and_dates(self):
         self.a.record('view','youtube','','2026-09-30');self.a.record('view','youtube','','2026-09-30');self.a.record('click','instagram','Amazon','2026-09-30')
@@ -79,6 +79,8 @@ class AnalyticsTests(unittest.TestCase):
         self.assertEqual(next(x for x in self.a.content_list() if x['id']==item_id)['clicks'],1)
         self.assertEqual(self.request(admin+'/api/content/'+item_id+'/archive',{}, {'Content-Type':'application/json'})[0],204)
         self.assertNotIn(item_id,[x['id'] for x in self.a.public_config()['links']])
+        self.assertEqual(self.request(admin+'/api/content/'+item_id,headers={},method='DELETE')[0],204)
+        with self.a.connection() as db:self.assertEqual(db.execute("SELECT COUNT(*) FROM counts WHERE link=?",('block:'+item_id,)).fetchone()[0],0)
 
     def test_image_upload_is_persistent_and_publicly_readable(self):
         admin=self.server(True)

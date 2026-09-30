@@ -251,11 +251,9 @@ class Handler(BaseHTTPRequestHandler):
         if not match:match=re.fullmatch(r"/api/buttons/([\w-]+)",path);table="top_buttons"
         if not match:return self.send(404)
         with connection() as db:
-            if table=="content_blocks":
-                row=db.execute("SELECT archived FROM content_blocks WHERE id=?",(match.group(1),)).fetchone()
-                if not row:return self.send(404)
-                if not row["archived"]:return self.json(409,{"error":"Archive d’abord cet élément"})
+            prefix="block:" if table=="content_blocks" else "button:"
             changed=db.execute(f"DELETE FROM {table} WHERE id=?",(match.group(1),)).rowcount
+            if changed:db.execute("DELETE FROM counts WHERE kind='click' AND link=?",(prefix+match.group(1),))
         return self.send(204) if changed else self.send(404)
     def create_content(self,data):
         item=block_data(data);item_id=str(uuid.uuid4());stamp=now_iso()
