@@ -75,6 +75,11 @@ class Handler(BaseHTTPRequestHandler):
         return len(PASSWORD)>=16 and hmac.compare_digest(self.headers.get('Authorization','').encode(),expected.encode())
     def do_GET(self):
         if not self.server.admin: return self.send(404)
+        if self.path == '/healthz':
+            try:
+                with connection() as db: db.execute('SELECT total FROM counts LIMIT 1').fetchone()
+                return self.send(200, b'ok', 'text/plain')
+            except sqlite3.Error: return self.send(503)
         if not self.authorized():
             self.send_response(401);self.send_header('WWW-Authenticate','Basic realm="Links stats", charset="UTF-8"');self.send_header('Cache-Control','no-store');self.end_headers();return
         url=urlsplit(self.path)

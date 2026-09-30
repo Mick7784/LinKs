@@ -32,6 +32,7 @@ class AnalyticsTests(unittest.TestCase):
         with self.assertRaises(ValueError):self.a.report('2026-10-01','2026-09-01')
     def test_admin_private_and_fail_closed(self):
         url=self.server(True)
+        self.assertEqual(self.request(url+'/healthz'),(200,b'ok'))
         self.assertEqual(self.request(url+'/api/stats')[0],401)
         h={'Authorization':'Basic '+base64.b64encode(b'admin:test-password-only-123456').decode()}
         self.assertEqual(self.request(url+'/api/stats',headers=h)[0],200)
