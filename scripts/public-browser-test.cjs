@@ -66,6 +66,15 @@ const {tmpdir}=require('node:os');
   for(const width of [320,360,390,768,1440]){
    await page.setViewportSize({width,height:900});await page.locator('#offers').scrollIntoViewIfNeeded();
    assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Overflow at '+width);
+   const composition=await page.evaluate(()=>{
+    const box=s=>document.querySelector(s).getBoundingClientRect();
+    const image=box('.promo-visual'),copy=box('.promo-copy'),header=box('.profile');
+    const video=box('.video-visual'),details=box('.video-details');
+    return {imageRight:image.right,copyLeft:copy.left,headerHeight:header.height,videoRight:video.right,detailsLeft:details.left};
+   });
+   assert(composition.imageRight<=composition.copyLeft+1,'Campaign must remain horizontal at '+width);
+   if(width===390)assert(composition.headerHeight<220,'Compact mobile identity');
+   if(width===1440)assert(composition.videoRight<composition.detailsLeft,'Editorial desktop video composition');
    for(const selector of ['.social','#offers-prev','#offers-next','.carousel-dots button']){const box=await page.locator(selector).first().boundingBox();assert(box.width>=44&&box.height>=44,'Touch size '+selector)}
    const rects=await page.locator('.card-title,.card-description,.video-title').evaluateAll(nodes=>nodes.map(n=>({scroll:n.scrollWidth,width:n.clientWidth})));assert(rects.every(x=>x.scroll<=x.width),'Truncated text '+width);
   }
