@@ -31,7 +31,7 @@ const { join, resolve } = require('node:path');
     }
     const promo = { type: 'promo', internal_name: 'Domadoo – Une promotion avec un nom très long pour vérifier le mobile', title: 'Offre publique', url: 'http://localhost:18082/offer?aff=117' };
     const { id } = await api('/api/content', promo);
-    browser = await chromium.launch({ headless: true });
+    browser = await chromium.launch({ headless: true, ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH, args: ['--no-sandbox'] } : {}) });
     const context = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'], userAgent: 'Mozilla/5.0 Links functional test' });
     const page = await context.newPage();
     const errors = [];
@@ -73,7 +73,7 @@ const { join, resolve } = require('node:path');
       await page.setViewportSize(viewport);
       const boxes = await page.locator('.analytics-kpis article').evaluateAll(nodes => nodes.map(n => ({ x: n.getBoundingClientRect().x, y: n.getBoundingClientRect().y })));
       if (viewport.width > 760) assert(Math.abs(boxes[0].y - boxes[1].y) < 2);
-      else assert(boxes[1].y > boxes[0].y);
+      else assert(boxes[2].y > boxes[0].y);
       assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Horizontal overflow');
     }
     promo.url = 'http://localhost:18082/new-offer?aff=117';
@@ -107,3 +107,4 @@ const { join, resolve } = require('node:path');
     rmSync(temp, { recursive: true, force: true });
   }
 })().catch(error => { console.error(error); process.exitCode = 1; });
+

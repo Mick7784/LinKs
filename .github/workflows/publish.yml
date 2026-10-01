@@ -28,6 +28,7 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/story-browser" playwright
           "$RUNNER_TEMP/story-browser/node_modules/.bin/playwright" install --with-deps chromium
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/story-browser-test.cjs
+          NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/admin-browser-test.cjs
       - name: Build and smoke-test
         shell: bash
         run: |
@@ -69,5 +70,6 @@ jobs:
           set -euo pipefail
           docker buildx create --use --name links-builder
           docker buildx build --platform linux/amd64,linux/arm64 --tag "$IMAGE:latest" --tag "$IMAGE:sha-$COMMIT_SHA" --label "org.opencontainers.image.revision=$COMMIT_SHA" --push .
+
 
 
