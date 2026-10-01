@@ -348,7 +348,7 @@ h1 {
 .card.promo,
 .card.visual {
   display: grid;
-  grid-template-columns: minmax(0, 32%) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 40%) minmax(0, 1fr);
   align-items: stretch;
   padding: 0;
   overflow: hidden;
@@ -365,7 +365,7 @@ h1 {
   width: auto;
   height: auto;
   max-width: 100%;
-  max-height: 220px;
+  max-height: 320px;
   object-fit: contain;
 }
 .promo-copy {
@@ -374,7 +374,7 @@ h1 {
   align-content: center;
   align-items: start;
   gap: 10px;
-  padding: 15px 12px;
+  padding: 20px 14px;
 }
 .promo-meta {
   display: block;
@@ -577,10 +577,10 @@ footer p:last-child {
   .video-title { font-size: clamp(1.35rem, 2.1vw, 1.7rem); line-height: 1.35; letter-spacing: -.025em; }
   .video-details { padding: 0; }
   .video-date { margin-top: 16px; }
-  .offers, .links-section { min-width: 0; }
-  .links { grid-template-columns: minmax(0, 1fr); }
-  .promo-copy { padding: 22px 18px; }
-  .promo-visual img { max-height: 280px; }
+  .offers, .links-section { min-width: 0; grid-column: 1 / -1; }
+  .links { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 40px; }
+  .promo-copy { padding: 30px; }
+  .promo-visual img { max-height: 360px; }
   h1 { font-size: 2.25rem; }
   footer { margin-top: 24px; border-top: 1px solid #2a384c88; padding-top: 24px; }
 }
@@ -596,5 +596,17 @@ footer p:last-child {
 @media (min-width: 900px) {
   main:has(#offers[hidden]) .links-section { grid-column: 1 / -1; }
   main:has(#offers[hidden]) .links { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 40px; }
-  main:has(#links-section[hidden]) .offers { grid-column: 1 / -1; max-width: 680px; width: 100%; }
+  main:has(#links-section[hidden]) .offers { grid-column: 1 / -1; width: 100%; }
+}
+
+/* Give campaign artwork and the primary action more prominence. */
+.promo-visual img { width: 100%; }
+.promo-copy .card-title { font-size: 1.12rem; line-height: 1.35; }
+.promo-copy .card-description { font-size: .94rem; line-height: 1.5; margin-top: 7px; }
+.promo-copy .card-cta { min-height: 44px; display: inline-flex; align-items: center; font-size: .94rem; padding: 10px 14px; }
+@media (min-width: 900px) {
+  .carousel-slide .card { min-height: 280px; }
+  .promo-copy .card-title { font-size: 1.5rem; }
+  .promo-copy .card-description { font-size: 1rem; }
+  .promo-copy .card-cta { font-size: 1rem; }
 }
