@@ -3,14 +3,14 @@ const $=id=>document.getElementById(id),fmt=new Intl.NumberFormat("fr-FR");
 const names={"direct-inconnu":"Direct / inconnu","autre-site":"Autre site","autre-campagne":"Autre campagne",youtube:"YouTube",instagram:"Instagram","instagram-story":"Instagram Story","domotik-studio.fr":"DomotiK Studio",facebook:"Facebook",google:"Google",discord:"Discord",newsletter:"Newsletter",tiktok:"TikTok"};
 const state={content:[],buttons:[],archives:[],settings:{},chart:[]};
 const api=async(path,options={})=>{const response=await fetch(path,{cache:"no-store",...options,headers:{"Content-Type":"application/json",...(options.headers||{})}});if(!response.ok){let message="Une erreur est survenue.";try{message=(await response.json()).error||message}catch{}throw new Error(message)}return response.status===204?null:response.json()};
-const say=(message,error=false)=>{const node=$("notice");node.textContent=message;node.style.color=error?"#ff9daa":"";clearTimeout(say.timer);say.timer=setTimeout(()=>node.textContent="",4000)};
+const say=(message,error=false)=>{const node=$("notice");node.textContent=message;node.classList.toggle("notice-error",error);clearTimeout(say.timer);say.timer=setTimeout(()=>node.textContent="",4000)};
 const esc=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const typeName={classic:"Classique",featured:"Featured",promo:"Promo"};
 const statusClass=value=>({Actif:"active",Programmé:"scheduled",Expiré:"expired",Brouillon:"draft"}[value]||"");
-function activate(id){document.querySelectorAll(".view").forEach(x=>x.classList.toggle("active",x.id===id));document.querySelectorAll(".tabs button").forEach(x=>x.classList.toggle("active",x.dataset.tab===id));syncNavigation();if(id==="dashboard")loadStats();if(id==="content")loadContent();if(id==="buttons")loadButtons();if(id==="archives")loadArchives();if(id==="settings")loadSettings()}
+function activate(id){document.querySelectorAll(".view").forEach(x=>x.classList.toggle("active",x.id===id));document.querySelectorAll(".tabs button").forEach(x=>x.classList.toggle("active",x.dataset.tab===id));syncNavigation();$("topbar-current").textContent=document.querySelector(".tabs button.active")?.textContent.trim()||"Links";if(id==="dashboard"){loadStats();loadCampaigns()}if(id==="content")loadContent();if(id==="buttons")loadButtons();if(id==="archives")loadArchives();if(id==="settings")loadSettings()}
 const navigation=$("navigation"),menuToggle=$("menu-toggle"),mobileNavigation=matchMedia("(max-width:760px)");
 function closeMenu(restoreFocus=false){navigation.classList.remove("open");menuToggle.setAttribute("aria-expanded","false");if(restoreFocus)menuToggle.focus()}
-function syncNavigation(){document.querySelectorAll(".tabs button").forEach(button=>{const active=button.classList.contains("active");if(active){button.setAttribute("aria-current","page");$("menu-current").textContent=button.textContent}else button.removeAttribute("aria-current")})}
+function syncNavigation(){document.querySelectorAll(".tabs button").forEach(button=>{const active=button.classList.contains("active");if(active){button.setAttribute("aria-current","page");$("menu-current").textContent=button.textContent.trim()}else button.removeAttribute("aria-current")})}
 menuToggle.addEventListener("click",()=>{const open=navigation.classList.toggle("open");menuToggle.setAttribute("aria-expanded",String(open))});
 navigation.addEventListener("keydown",event=>{if(event.key==="Escape"&&navigation.classList.contains("open")){event.preventDefault();closeMenu(true)}});
 document.addEventListener("click",event=>{if(!navigation.contains(event.target))closeMenu()});
@@ -26,8 +26,10 @@ function chartBuckets(days){
  for(let i=0;i<days.length;i+=size){const slice=days.slice(i,i+size);result.push({start:slice[0][0],end:slice.at(-1)[0],views:slice.reduce((n,d)=>n+d[1],0),clicks:slice.reduce((n,d)=>n+d[2],0)})}
  return result;
 }
+let chartRenderedWidth=0;
 function chart(days){
  state.chart=days;const root=$("chart"),buckets=chartBuckets(days),width=Math.max(200,root.clientWidth),left=38,right=width-8,bottom=190,height=155,slot=(right-left)/Math.max(1,buckets.length),barWidth=Math.min(32,slot*.72),max=Math.max(1,...buckets.flatMap(x=>[x.views,x.clicks]));
+ chartRenderedWidth=root.clientWidth;
  const short=d=>d.slice(8,10)+"/"+d.slice(5,7),description=b=>`${short(b.start)}${b.start!==b.end?" – "+short(b.end):""} : ${fmt.format(b.views)} visites · ${fmt.format(b.clicks)} clics`;
  const stride=Math.max(1,Math.ceil(buckets.length/Math.max(2,Math.floor((right-left)/55))));
  const groups=buckets.map((b,i)=>{const center=left+slot*(i+.5),series=[{value:b.views,cls:"visits-bar"},{value:b.clicks,cls:"clicks-bar"}].sort((a,b)=>b.value-a.value);
@@ -36,10 +38,12 @@ function chart(days){
  const markers=active?series.map((s,j)=>{const y=bottom-s.value*height/max,labelY=close?bottom-series[0].value*height/max-20+j*14:y-7;return `<g class="chart-value ${s.cls}-value"><line x1="${center-barWidth/2}" x2="${center+barWidth/2}" y1="${y}" y2="${y}"/><text text-anchor="middle" x="${center}" y="${labelY}">${fmt.format(s.value)}</text></g>`}).join(""):"";
  const label=i%stride===0?`<text text-anchor="middle" x="${center}" y="213">${short(b.start)}</text>`:"";
  return `<g class="chart-bucket" role="button" tabindex="0" data-bucket="${i}" aria-label="${esc(description(b))}"><title>${esc(description(b))}</title><rect class="chart-hit" x="${left+i*slot}" y="25" width="${slot}" height="170"/>${bars}<g class="chart-values${slot>=34||buckets.filter(x=>x.views||x.clicks).length===1?" always":""}">${markers}</g>${label}</g>`}).join("");
- root.innerHTML=`<svg viewBox="0 0 ${width} 225" role="group" aria-label="Visites et clics ${days.length>30?"par semaine":"par jour"}"><defs><linearGradient id="visits-fill" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#7eeeff"/><stop offset="100%" stop-color="#159fc7"/></linearGradient><linearGradient id="clicks-fill" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#d5b5ff"/><stop offset="100%" stop-color="#8350d8"/></linearGradient><filter id="bar-shadow" x="-50%" y="-30%" width="200%" height="170%"><feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000" flood-opacity=".28"/></filter></defs><line class="chart-grid" x1="${left}" x2="${right}" y1="35" y2="35"/><line class="chart-grid" x1="${left}" x2="${right}" y1="${bottom}" y2="${bottom}"/><text x="2" y="39">${fmt.format(max)}</text><text x="2" y="194">0</text>${groups}</svg>`;
+ root.innerHTML=`<svg viewBox="0 0 ${width} 225" role="group" aria-label="Visites et clics ${days.length>30?"par semaine":"par jour"}"><defs><linearGradient id="visits-fill" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" class="visits-stop-start"/><stop offset="100%" class="visits-stop-end"/></linearGradient><linearGradient id="clicks-fill" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" class="clicks-stop-start"/><stop offset="100%" class="clicks-stop-end"/></linearGradient><filter id="bar-shadow" x="-50%" y="-30%" width="200%" height="170%"><feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000" flood-opacity=".28"/></filter></defs><line class="chart-grid" x1="${left}" x2="${right}" y1="35" y2="35"/><line class="chart-grid" x1="${left}" x2="${right}" y1="${bottom}" y2="${bottom}"/><text x="2" y="39">${fmt.format(max)}</text><text x="2" y="194">0</text>${groups}</svg>`;
  const show=index=>{const b=buckets[index];if(!b)return;$("chart-detail").textContent=description(b);root.querySelectorAll("[data-bucket]").forEach(g=>g.classList.toggle("selected",Number(g.dataset.bucket)===index))};
  root.onclick=event=>{const g=event.target.closest("[data-bucket]");if(g)show(Number(g.dataset.bucket))};
- root.onfocusin=event=>{const g=event.target.closest("[data-bucket]");if(g)show(Number(g.dataset.bucket))};
+ if(root.chartFocusHandler)root.removeEventListener("focusin",root.chartFocusHandler);
+ root.chartFocusHandler=event=>{const g=event.target.closest("[data-bucket]");if(g)show(Number(g.dataset.bucket))};
+ root.addEventListener("focusin",root.chartFocusHandler);
  root.onkeydown=event=>{const g=event.target.closest("[data-bucket]");if(!g)return;if(event.key==="Enter"||event.key===" "){event.preventDefault();show(Number(g.dataset.bucket))}else if(event.key==="ArrowRight"||event.key==="ArrowLeft"){event.preventDefault();const index=Math.max(0,Math.min(buckets.length-1,Number(g.dataset.bucket)+(event.key==="ArrowRight"?1:-1)));root.querySelector(`[data-bucket="${index}"]`).focus()}};
  $("chart-detail").textContent=buckets.length?"Touchez une barre pour afficher les chiffres." : "Aucune donnée sur cette période.";
 }
@@ -59,12 +63,12 @@ async function loadStats(){try{
  chart([...days].map(([day,value])=>[day,...value]));const sorted=map=>[...map].sort((a,b)=>b[1]-a[1]);bars("top-links",sorted(byLink).slice(0,5).map(([key,value])=>[labels.get(key)||key,value]));bars("sources",sorted(bySource).map(([key,value])=>[names[key]||key,value]));
  }catch(error){say(error.message,true)}}
 
-$("period").addEventListener("change",loadStats);$("source").addEventListener("change",loadStats);new ResizeObserver(()=>{if(state.chart.length)chart(state.chart)}).observe($("chart"));
+$("period").addEventListener("change",loadStats);$("source").addEventListener("change",loadStats);new ResizeObserver(()=>{const width=$("chart").clientWidth;if(width>0&&width!==chartRenderedWidth&&state.chart.length)chart(state.chart)}).observe($("chart"));
 
 function canStory(item){try{const url=new URL(item.url);return ["http:","https:"].includes(url.protocol)&&!url.username&&!url.password&&url.hostname!=="links.domotik-studio.fr"}catch{return false}}
 function storyButton(item){return item.type==="classic"?"":`<button data-action="copy-story" class="story-link-button" title="${canStory(item)?"Copier le lien Story tracké":"URL requise"}" aria-label="${canStory(item)?"Copier le lien Story tracké":"URL requise"}"${canStory(item)?"":" disabled"}>🔗</button>`}
 async function copyStory(action,id){if(action.disabled)return;action.disabled=true;try{const {url}=await api(`/api/content/${id}/story-link`,{method:"POST",body:"{}"});let copied=false;try{await navigator.clipboard.writeText(url);copied=true}catch{let input=action.parentNode.querySelector(".story-copy");if(!input){input=document.createElement("input");input.className="story-copy";input.readOnly=true;input.setAttribute("aria-label","Lien Story tracké");action.parentNode.append(input)}input.value=url;input.focus();input.select();try{copied=document.execCommand("copy")}catch{}if(copied)input.remove()}say(copied?"Lien Story copié":"Lien sélectionné : copie-le avec le menu de ton appareil.")}catch(error){say(error.message,true)}finally{action.disabled=false}}
-function itemHtml(item,archived=false){const performance=item.type==="classic"?`${fmt.format(item.clicks||0)} clics`:`${fmt.format(item.impressions||0)} impressions · ${fmt.format(item.clicks||0)} clics · CTR ${item.ctr===null?"—":item.ctr+" %"}`;return`<article class="list-item" draggable="${!archived}" data-id="${esc(item.id)}" data-group="${item.type==="classic"?"classic":"highlight"}"><span class="drag-handle">${archived?"◦":"⋮⋮"}</span><span class="type-mark">${item.type==="promo"?"▣":item.type==="featured"?"★":"↗"}</span><div class="item-copy"><strong>${esc(item.internal_name)}</strong><small>${esc(item.title)} · ${typeName[item.type]||item.type} · ${performance}</small><span class="status ${statusClass(item.status)}">${esc(item.status)}</span></div><div class="item-actions">${storyButton(item)}${archived?`<button data-action="restore">Restaurer</button>`:`<span class="move"><button data-action="up" aria-label="Monter">↑</button><button data-action="down" aria-label="Descendre">↓</button></span><button data-action="edit">Modifier</button><button data-action="duplicate">Dupliquer</button><button data-action="archive">Archiver</button>`}<button data-action="delete" class="trash" title="Supprimer définitivement" aria-label="Supprimer définitivement">🗑</button></div></article>`}
+function itemHtml(item,archived=false){const performance=item.type==="classic"?`${fmt.format(item.clicks||0)} clics`:`${fmt.format(item.impressions||0)} impressions · ${fmt.format(item.clicks||0)} clics · CTR ${item.ctr===null?"—":item.ctr+" %"}`;return`<article class="list-item" draggable="${!archived}" data-id="${esc(item.id)}" data-group="${item.type==="classic"?"classic":"highlight"}"><span class="drag-handle">${archived?"◦":"⋮⋮"}</span><span class="type-mark">${item.type==="promo"?"▣":item.type==="featured"?"★":"↗"}</span><div class="item-copy"><strong>${esc(item.internal_name)}</strong><small>${esc(item.title)} · ${typeName[item.type]||item.type} · ${performance}</small><span class="status ${statusClass(item.status)}">${esc(item.status)}</span></div><div class="item-actions">${storyButton(item)}${archived?`<button data-action="restore">Restaurer</button>`:`<span class="move"><button data-action="up" aria-label="Monter">↑</button><button data-action="down" aria-label="Descendre">↓</button></span><button data-action="edit">Modifier</button><details class="row-menu"><summary aria-label="Autres actions pour ${esc(item.internal_name)}" title="Autres actions">···</summary><div class="row-menu-content"><button data-action="duplicate">Dupliquer</button><button data-action="archive">Archiver</button>`}<button data-action="delete" class="trash" title="Supprimer définitivement" aria-label="Supprimer définitivement">Supprimer</button>${archived?"":"</div></details>"}</div></article>`}
 function renderContent(){const root=$("content-list"),high=state.content.filter(x=>x.type!=="classic"),classic=state.content.filter(x=>x.type==="classic"),active=high.filter(x=>x.status==="Actif").length,programmed=high.filter(x=>x.status==="Programmé").length;$("promo-count").textContent=`Promotions actives : ${active} / 3`;$("promo-scheduled").textContent=programmed?`• ${programmed} programmée${programmed>1?"s":""}`:"";const ordered=[...high].filter(x=>["Actif","Programmé"].includes(x.status)).sort((a,b)=>new Date(a.start_at||a.created_at)-new Date(b.start_at||b.created_at));$("promo-planning").innerHTML=ordered.length?ordered.map(x=>`<div class="planning-row"><span>${esc(periodText(x.start_at||x.created_at))} — ${esc(periodText(x.end_at))}</span><strong>${esc(x.internal_name)}</strong><small>${esc(x.status)}</small></div>`).join(""):'<p class="empty">Aucune promotion active ou programmée.</p>';root.innerHTML=(high.length?'<h3>Mises en avant et promos</h3>'+high.map(x=>itemHtml(x)).join(""):"")+(classic.length?'<h3>Liens permanents</h3>'+classic.map(x=>itemHtml(x)).join(""):"")||'<p class="empty">Aucun bloc. Ajoute ton premier lien.</p>';setupDrag(root)}
 async function loadContent(){try{state.content=(await api("/api/content")).items;renderContent()}catch(error){say(error.message,true)}}
 async function loadArchives(){try{state.archives=(await api("/api/content?archived=1")).items;$("archive-list").innerHTML=state.archives.length?state.archives.map(x=>itemHtml(x,true)).join(""):'<p class="empty">Aucune archive.</p>'}catch(error){say(error.message,true)}}
@@ -100,7 +104,7 @@ $("conflict-dialog").addEventListener("click",async event=>{const action=event.t
 
 async function loadSettings(){try{state.settings=await api("/api/settings");for(const key of ["name","tagline","description"])$("settings-form").elements[key].value=state.settings[key]||""}catch(error){say(error.message,true)}}
 $("settings-form").addEventListener("submit",async event=>{event.preventDefault();try{await api("/api/settings",{method:"POST",body:JSON.stringify(Object.fromEntries(new FormData(event.target)))});say("Réglages enregistrés.")}catch(error){say(error.message,true)}});
-loadStats();
+loadStats();loadCampaigns();
 
 
 // Sharing and backup remain in Settings, without another navigation section.
@@ -126,3 +130,40 @@ $('restore-backup').addEventListener('change',async event=>{
   await api('/api/restore',{method:'POST',body:content});await loadSettings();await loadStats();state.content=[];state.buttons=[];state.archives=[];$('backup-status').textContent='Sauvegarde restaurée. Tes données sont disponibles.';
  }catch(error){$('backup-status').textContent='Restauration non effectuée : '+error.message;}finally{input.disabled=false;$('download-backup').disabled=false;input.value='';}
 });
+
+
+// Interface preferences belong exclusively to the admin origin and use a distinct key.
+const themeKey="links-admin-theme",themeMedia=matchMedia("(prefers-color-scheme: dark)");
+function applyAdminTheme(preference){
+ const mode=["light","dark","system"].includes(preference)?preference:"system";
+ $("theme-select").value=mode;
+ document.documentElement.dataset.theme=mode==="system"?(themeMedia.matches?"dark":"light"):mode;
+}
+let themePreference="system";try{themePreference=localStorage.getItem(themeKey)||"system"}catch{}
+applyAdminTheme(themePreference);
+$("theme-select").addEventListener("change",event=>{applyAdminTheme(event.target.value);try{localStorage.setItem(themeKey,event.target.value)}catch{say("Thème appliqué. La mémorisation est indisponible dans ce navigateur.",true)}});
+themeMedia.addEventListener("change",()=>{if($("theme-select").value==="system")applyAdminTheme("system")});
+
+const iconPaths={
+ dashboard:'<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+ links:'<path d="m10 13 4-4m-6 6-1 1a4 4 0 0 1-6-6l4-4a4 4 0 0 1 6 0m2 3 1-1a4 4 0 0 1 6 6l-4 4a4 4 0 0 1-6 0"/>',
+ buttons:'<rect x="3" y="7" width="18" height="10" rx="3"/><path d="M8 12h8"/>',
+ archive:'<rect x="3" y="3" width="18" height="4" rx="1"/><path d="M5 7v13h14V7M10 11h4"/>',
+ settings:'<path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/>',
+ external:'<path d="M14 3h7v7m0-7L10 14M10 3H4v17h17v-6"/>',
+ theme:'<circle cx="12" cy="12" r="8"/><path d="M12 4v16"/>',
+ visits:'<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>',
+ click:'<path d="m5 3 14 9-6 1-3 6-5-16Zm8 11 4 6"/>',
+ chart:'<path d="M4 3v17h17M8 16v-4m5 4V8m5 8V5"/>',
+ story:'<rect x="6" y="2" width="12" height="20" rx="3"/><path d="M10 18h4m-3-12 4 3-4 3V6Z"/>'
+};
+document.querySelectorAll("[data-icon]").forEach(node=>{node.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${iconPaths[node.dataset.icon]||""}</svg>`});
+async function loadCampaigns(){try{
+ const items=(await api("/api/content")).items.filter(item=>item.type!=="classic"&&item.status==="Actif");
+ $("active-campaigns").innerHTML=items.length?items.map(item=>`<article class="campaign-card">${item.image?`<img src="${esc(item.image)}" alt="" loading="lazy">`:'<span class="type-mark" aria-hidden="true">↗</span>'}<div><strong>${esc(item.internal_name)}</strong><small>${esc(periodText(item.start_at||item.created_at))} → ${esc(periodText(item.end_at))}</small><span class="status active">Actif</span><p>${fmt.format(item.clicks||0)} clics · CTR ${item.ctr==null?"—":esc(item.ctr)+" %"}</p></div><button type="button" data-open-content aria-label="Gérer ${esc(item.internal_name)}">→</button></article>`).join(""):'<p class="empty">Aucune campagne en cours.</p>';
+ }catch(error){$("active-campaigns").textContent=error.message}}
+document.addEventListener("click",event=>{
+ if(event.target.closest("[data-open-content]")){activate("content");document.querySelector("#content h2").setAttribute("tabindex","-1");document.querySelector("#content h2").focus()}
+ document.querySelectorAll(".row-menu[open]").forEach(menu=>{if(!menu.contains(event.target)||event.target.closest("[data-action]"))menu.open=false});
+});
+document.addEventListener("keydown",event=>{if(event.key==="Escape")document.querySelectorAll(".row-menu[open]").forEach(menu=>{menu.open=false;menu.querySelector("summary").focus()})});
