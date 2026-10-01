@@ -22,3 +22,5 @@
 @media(prefers-reduced-motion:reduce){.menu-chevron{transition:none}}
 
 .visits-bar{fill:#4fd9f5}.clicks-bar{fill:#b586ff}.chart-grid{stroke:#293b57;stroke-width:1}.chart-hit{fill:transparent}.chart-bucket{cursor:pointer}.chart-bucket:hover .chart-hit,.chart-bucket:focus .chart-hit,.chart-bucket.selected .chart-hit{fill:#ffffff0d}.chart-bucket:focus{outline:none}.chart-bucket:focus .chart-hit{stroke:#edf4ff;stroke-width:1}#chart-detail{min-height:2.5em;margin:8px 0 0;font-size:.8rem}
+
+.visits-bar{fill:url(#visits-fill);filter:url(#bar-shadow)}.clicks-bar{fill:url(#clicks-fill);filter:url(#bar-shadow)}.chart-value{pointer-events:none}.chart-value line{stroke-width:1.5}.chart-value text{font-size:10px;font-weight:750;paint-order:stroke;stroke:#101b2d;stroke-width:3px;stroke-linejoin:round}.visits-bar-value line{stroke:#8befff}.visits-bar-value text{fill:#8befff}.clicks-bar-value line{stroke:#dbc0ff}.clicks-bar-value text{fill:#dbc0ff}.chart-values{visibility:hidden}.chart-values.always,.chart-bucket.selected .chart-values,.chart-bucket:focus .chart-values,.chart-bucket:hover .chart-values{visibility:visible}
