@@ -13,9 +13,12 @@
 <section class="view active" id="dashboard">
  <div class="section-head"><div><h2>Vue d’ensemble</h2><p>Mesure agrégée, sans cookies ni identifiant visiteur.</p></div>
  <form id="filters"><select id="period" aria-label="Période"><option value="7" selected>7 jours</option><option value="30">30 jours</option><option value="90">90 jours</option></select><select id="source" aria-label="Source"><option value="">Toutes les sources</option></select></form></div>
- <section class="kpis" aria-label="Indicateurs"><article><span>Pages vues</span><strong id="views">—</strong></article><article><span>Clics</span><strong id="clicks">—</strong></article><article><span>Clics pour 100 vues</span><strong id="ratio">—</strong></article></section>
+ <section class="kpis analytics-kpis" aria-label="Indicateurs">
+  <article class="activity-card"><h3>Activité globale</h3><div class="kpi-values"><div><strong id="views">—</strong><span>Pages vues</span></div><div><strong id="clicks">—</strong><span>Clics</span></div><div><strong id="ratio">—</strong><span>Taux de clic</span></div></div><p class="kpi-note">Activité sur la page Links · hors redirections Story.</p></article>
+  <article class="stories-card"><h3>Stories Instagram</h3><div class="story-summary"><div><strong id="story-clicks">—</strong><span>Clics Story</span></div><div><strong id="story-promos">—</strong><span>Promotions</span></div></div><div id="story-list" aria-live="polite"></div></article>
+ </section>
  <section class="panel"><div class="panel-title"><h3>Évolution</h3><span class="legend">● Visites &nbsp; <i>●</i> Clics</span></div><div id="chart"></div><p id="chart-detail" role="status" aria-live="polite"></p></section>
- <div class="dashboard-grid"><section class="panel"><h3>Top 5 des liens</h3><div id="top-links"></div></section><section class="panel"><h3>Sources principales</h3><div id="sources"></div></section></div>
+ <div class="dashboard-grid"><section class="panel"><h3>Top 5 des liens</h3><div id="top-links"></div></section><section class="panel"><h3>Sources principales</h3><p class="kpi-note">Visites de la page et clics Story directs.</p><div id="sources"></div></section></div>
 </section>
 <section class="view" id="content">
  <div class="section-head"><div><h2>Liens et mises en avant</h2><p>La dernière vidéo reste verrouillée au-dessus de cette liste.</p></div><button class="primary" data-action="new-block">Ajouter un bloc</button></div>

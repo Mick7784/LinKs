@@ -49,3 +49,18 @@ La restauration remplace les données actuelles après confirmation dans l'inter
 Limites : 64 Mo pour le JSON complet, 40 Mo d'images avant encodage et 4 Mo par image. Au-delà, sauvegarder le volume `/data` avec les outils du serveur. Le téléchargement et la restauration ne sont accessibles que sur le port privé 8081.
 
 L'import initial depuis `links.json` est désormais marqué en base : vider les listes ne provoque plus leur réapparition au redémarrage. La restauration des archives respecte la limite des trois promotions et le remplacement d'une promotion est atomique. Le dashboard conserve les identifiants stables en base et affiche leurs noms publics ; le ratio global est libellé « Clics pour 100 vues ».
+
+
+## Liens Stories Instagram
+
+Dans les mises en avant et promos, le bouton 🔗 génère puis copie un lien stable `/go/st_…`. Les 16 caractères aléatoires identifient la promotion, pas un visiteur. Une duplication reçoit un lien différent. L’URL doit être HTTP(S), sans identifiants, et ne peut pas pointer vers Links lui-même.
+
+La route publique répond en HTTP 302 avec `Cache-Control: no-store`, vers l’URL partenaire actuelle. Elle conserve les paramètres d’affiliation. Modifier la destination ou le nom ne change pas le lien. Une promotion archivée, désactivée, programmée ou expirée peut encore être atteinte via sa Story : l’accès direct est indépendant de sa visibilité sur la page. Une promotion supprimée ou dont l’URL devient invalide répond 410 ; un identifiant inconnu répond 404. Aucun de ces cas n’enregistre de clic. HEAD et les robots de prévisualisation connus ne sont pas comptés.
+
+`story_links` conserve seulement l’association permanente token/promotion, son nom de secours et sa date de création. Les métriques réutilisent `counts` avec `kind=story`, `source=instagram-story` et `link=story:TOKEN:HH`. Les clics sont agrégés par date et heure de Paris, sans cookies, IP, empreinte ou identifiant visiteur. L’heure est donc une tranche agrégée, pas un journal d’événements individuels. La conservation des compteurs reste de 400 jours. Les codes réservés ne sont jamais réattribués.
+
+Le dashboard présente séparément l’activité de la page Links et les redirections Story. Les clics Story ne créent pas de page vue, ne gonflent pas les clics de la page, son graphique, son Top 5 ni son taux de clic. La carte Story suit la période et le filtre source : Instagram inclut les Stories ; Instagram Story permet de les isoler. Sources principales regroupe les visites de la page et les clics directs Story, une fois chacun, avec une note qui explique cette mesure.
+
+Les statistiques utilisent le nom interne actuel de la promotion, y compris après archivage. Lors d’une suppression définitive, ce dernier nom est conservé comme libellé historique et tous les clics Story restent accessibles. Les sauvegardes version 2 incluent les associations Story et les compteurs. Les anciennes sauvegardes version 1 restent acceptées et préservent l’historique Story existant. Une restauration ne peut jamais attribuer un code réservé à une autre promotion.
+
+Validation : `python3 scripts/analytics_test.py`. Le parcours navigateur `scripts/story-browser-test.cjs` vérifie copie, redirection, statistiques, filtres, URL dynamique, archivage et suppression aux tailles desktop/mobile ; il est exécuté par GitHub Actions avec Playwright.

@@ -1,6 +1,6 @@
 import base64, importlib.util, json, os, tempfile, threading, unittest
 from datetime import date
-from urllib.request import Request, urlopen
+from urllib.request import Request, urlopen, build_opener, HTTPRedirectHandler
 from urllib.error import HTTPError
 from pathlib import Path
 
@@ -23,6 +23,94 @@ class AnalyticsTests(unittest.TestCase):
         try:
             with urlopen(Request(url,json.dumps(data).encode() if data is not None else None,headers or {},method=method)) as r:return r.status,r.read()
         except HTTPError as e:return e.code,e.read()
+    def promo(self,name='Domadoo - Aquara days',url='https://partner.example/offer?aff=117'):
+        with self.a.connection() as db:
+            return self.a.save_content(db,self.a.block_data({'type':'promo','internal_name':name,'title':'Offre publique','url':url}))
+    def redirect(self,url,method=None,agent='Mozilla/5.0'):
+        class NoRedirect(HTTPRedirectHandler):
+            def redirect_request(self,*args):return None
+        try:
+            response=build_opener(NoRedirect).open(Request(url,headers={'User-Agent':agent},method=method))
+        except HTTPError as exc:response=exc
+        with response:return response.code,dict(response.headers)
+
+    def test_story_complete_journey_and_preserved_page_metrics(self):
+        admin=self.server(True);public=self.server();item_id=self.promo()
+        endpoint=admin+'/api/content/'+item_id+'/story-link'
+        status,body=self.request(endpoint,{});self.assertEqual(status,200)
+        link=json.loads(body)['url'];token=link.rsplit('/',1)[-1]
+        self.assertRegex(token,r'^st_[A-Za-z0-9_-]{16}$')
+        self.assertEqual(json.loads(self.request(endpoint,{})[1])['url'],link)
+        self.a.init();self.assertEqual(self.a.story_link(item_id)['url'],link)
+        day=self.a.datetime.now(self.a.PARIS).date().isoformat()
+        self.a.record('view','instagram','',day);self.a.record('click','instagram','block:'+item_id,day)
+        code,headers=self.redirect(public+'/go/'+token)
+        self.assertEqual(code,302);self.assertEqual(headers['Location'],'https://partner.example/offer?aff=117')
+        self.assertEqual(headers['Cache-Control'],'no-store')
+        report=self.a.report(day,day)
+        self.assertEqual(sum(x['total'] for x in report['rows']),2)
+        self.assertEqual(sum(x['total'] for x in report['stories']),1)
+        row=report['stories'][0];self.assertEqual(row['label'],'Domadoo - Aquara days');self.assertEqual(row['promotion_id'],item_id);self.assertRegex(row['hour'],r'^\d{2}$')
+        self.assertEqual(len(self.a.report(day,day,'instagram')['stories']),1)
+        self.assertEqual(self.a.report(day,day,'youtube')['stories'],[])
+        self.assertEqual(self.a.report('2000-01-01','2000-01-01')['stories'],[])
+        with self.a.connection() as db:db.execute('UPDATE content_blocks SET url=?,internal_name=? WHERE id=?',('https://partner.example/new?aff=117','Promotion renommée',item_id))
+        self.assertEqual(self.redirect(public+'/go/'+token)[1]['Location'],'https://partner.example/new?aff=117')
+        self.assertEqual(self.a.report(day,day)['stories'][0]['label'],'Promotion renommée')
+        self.assertEqual(self.request(admin+'/api/content/'+item_id+'/archive',{})[0],204)
+        self.assertEqual(self.redirect(public+'/go/'+token)[0],302)
+        self.assertEqual(sum(x['total'] for x in self.a.report(day,day)['stories']),3)
+        self.assertEqual(self.request(admin+'/api/content/'+item_id,method='DELETE')[0],204)
+        self.assertEqual(self.redirect(public+'/go/'+token)[0],410)
+        self.assertEqual(self.a.report(day,day)['stories'][0]['label'],'Promotion renommée')
+        self.assertEqual(sum(x['total'] for x in self.a.report(day,day)['stories']),3)
+
+    def test_story_concurrency_unique_codes_and_no_bot_counts(self):
+        admin=self.server(True);item_id=self.promo();results=[]
+        threads=[threading.Thread(target=lambda:results.append(self.a.story_link(item_id)['url'])) for _ in range(8)]
+        for thread in threads:thread.start()
+        for thread in threads:thread.join()
+        self.assertEqual(len(set(results)),1)
+        token=results[0].rsplit('/',1)[-1];url=self.server()+'/go/'+token
+        for agent in ['facebookexternalhit/1.1','meta-externalagent','Googlebot','HeadlessChrome']:
+            self.assertEqual(self.redirect(url,agent=agent)[0],302)
+        self.assertEqual(self.redirect(url,method='HEAD')[0],302)
+        with self.a.connection() as db:self.assertEqual(db.execute("SELECT COUNT(*) FROM counts WHERE kind='story'").fetchone()[0],0)
+        for invalid in ['missing','st_'+'x'*16]:self.assertEqual(self.redirect(self.server()+'/go/'+invalid)[0],404)
+        second=self.promo('Une autre promotion')
+        self.assertNotEqual(self.a.story_link(second)['url'],results[0])
+        status,body=self.request(admin+'/api/content/'+item_id+'/duplicate',{});self.assertEqual(status,201)
+        self.assertNotEqual(self.a.story_link(json.loads(body)['id'])['url'],results[0])
+
+    def test_restore_before_story_creation_keeps_published_link_usable(self):
+        item_id=self.promo()
+        before=json.loads(self.a.export_backup())
+        link=self.a.story_link(item_id)['url']
+        self.a.restore_backup(before)
+        self.assertEqual(self.a.story_link(item_id)['url'],link)
+        public=self.server()
+        self.assertEqual(self.redirect(public+'/go/'+link.rsplit('/',1)[-1])[0],302)
+
+    def test_story_invalid_destination_and_backup_compatibility(self):
+        item_id=self.promo();link=self.a.story_link(item_id)['url'];token=link.rsplit('/',1)[-1];public=self.server()
+        for url in ['', 'mailto:a@example.com','https://links.domotik-studio.fr/go/'+token,'https://partner.example:bad','https://partner.example/\nheader']:
+            with self.a.connection() as db:db.execute('UPDATE content_blocks SET url=? WHERE id=?',(url,item_id))
+            with self.assertRaises(ValueError):self.a.story_link(item_id)
+            self.assertEqual(self.redirect(public+'/go/'+token)[0],410)
+        with self.a.connection() as db:db.execute('UPDATE content_blocks SET url=? WHERE id=?',('https://partner.example/été?aff=117',item_id))
+        self.assertEqual(self.redirect(public+'/go/'+token)[1]['Location'],'https://partner.example/%C3%A9t%C3%A9?aff=117')
+        day=self.a.datetime.now(self.a.PARIS).date().isoformat()
+        backup=json.loads(self.a.export_backup());self.a.restore_backup(backup)
+        self.assertEqual(self.a.story_link(item_id)['url'],link)
+        self.assertEqual(sum(x['total'] for x in self.a.report(day,day)['stories']),1)
+        legacy=json.loads(self.a.export_backup());legacy['version']=1;del legacy['tables']['story_links'];legacy['tables']['counts']=[x for x in legacy['tables']['counts'] if x['kind']!='story']
+        self.a.restore_backup(legacy)
+        self.assertEqual(self.a.story_link(item_id)['url'],link)
+        self.assertEqual(sum(x['total'] for x in self.a.report(day,day)['stories']),1)
+        bad=json.loads(self.a.export_backup());bad['tables']['story_links'][0]['promotion_id']='different'
+        with self.assertRaises(ValueError):self.a.restore_backup(bad)
+        self.assertEqual(self.a.story_link(item_id)['url'],link)
+
     def test_aggregation_persistence_and_dates(self):
         self.a.record('view','youtube','','2026-09-30');self.a.record('view','youtube','','2026-09-30');self.a.record('click','instagram','Amazon','2026-09-30')
         self.a.init()
