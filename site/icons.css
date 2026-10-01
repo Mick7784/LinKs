@@ -1,2 +1,10 @@
-.card-icon svg{width:27px;height:27px}.card-icon img{width:100%;height:100%;object-fit:cover}
-.latest-video{margin:0 0 12px}.latest-video .card{animation:block-in .48s cubic-bezier(.2,.72,.25,1) .12s both}body{background:#07101c;background-image:radial-gradient(ellipse 700px 410px at -5% -10%,#08bfe022,transparent 67%),radial-gradient(ellipse 550px 420px at 106% 28%,#7a3ee91f,transparent 65%),linear-gradient(145deg,#07111d 0%,#0b1628 52%,#080e19 100%)}body:before{background-image:linear-gradient(120deg,transparent 0 46%,#37d8f008 46.2% 46.5%,transparent 46.7% 100%),linear-gradient(120deg,transparent 0 65%,#8a4ee308 65.2% 65.4%,transparent 65.6% 100%);background-size:420px 300px,570px 410px;opacity:.9}@keyframes block-in{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}.profile{animation:block-in .52s ease-out both}.links .card{animation:block-in .48s cubic-bezier(.2,.72,.25,1) both}.links .card:nth-child(1){animation-delay:.2s}.links .card:nth-child(2){animation-delay:.27s}.links .card:nth-child(3){animation-delay:.34s}.links .card:nth-child(4){animation-delay:.41s}.links .card:nth-child(5){animation-delay:.48s}@media(prefers-reduced-motion:reduce){.latest-video .card,.links .card,.profile{animation:none}}
+/* Keep public icon sizing separate; no decorative backgrounds or entrance effects. */
+.card-icon svg {
+  width: 24px;
+  height: 24px;
+}
+.card-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
