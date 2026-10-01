@@ -408,11 +408,12 @@ def restore_backup(data):
                     elif row['key'] not in {'content.initialized','profile.name','profile.tagline','profile.description','profile.avatar','profile.logo'}:raise ValueError('Réglage inconnu')
             # Codes are never reassigned, even when restoring a different backup.
             incoming={r['token']:r for r in tables['story_links']}
+            restored_ids={r['id'] for r in tables['content_blocks']}
             for old in db.execute('SELECT * FROM story_links'):
                 if old['token'] in incoming:
                     if incoming[old['token']]['promotion_id']!=old['promotion_id']:raise ValueError('Un identifiant Story ne peut pas changer de promotion')
                 elif any(r['promotion_id']==old['promotion_id'] for r in incoming.values()):raise ValueError('Identifiants Story incompatibles avec les liens existants')
-                else:tables['story_links'].append({**dict(old),'deleted':1})
+                else:tables['story_links'].append({**dict(old),'deleted':int(old['promotion_id'] not in restored_ids)})
             tokens={r['token'] for r in tables['story_links']}
             if any(r['kind']=='story' and r['link'].split(':')[1] not in tokens for r in tables['counts']):raise ValueError('Référent Story manquant')
             # Every uploaded image used by the restored content must exist in this backup.

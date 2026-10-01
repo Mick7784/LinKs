@@ -82,6 +82,15 @@ class AnalyticsTests(unittest.TestCase):
         status,body=self.request(admin+'/api/content/'+item_id+'/duplicate',{});self.assertEqual(status,201)
         self.assertNotEqual(self.a.story_link(json.loads(body)['id'])['url'],results[0])
 
+    def test_restore_before_story_creation_keeps_published_link_usable(self):
+        item_id=self.promo()
+        before=json.loads(self.a.export_backup())
+        link=self.a.story_link(item_id)['url']
+        self.a.restore_backup(before)
+        self.assertEqual(self.a.story_link(item_id)['url'],link)
+        public=self.server()
+        self.assertEqual(self.redirect(public+'/go/'+link.rsplit('/',1)[-1])[0],302)
+
     def test_story_invalid_destination_and_backup_compatibility(self):
         item_id=self.promo();link=self.a.story_link(item_id)['url'];token=link.rsplit('/',1)[-1];public=self.server()
         for url in ['', 'mailto:a@example.com','https://links.domotik-studio.fr/go/'+token,'https://partner.example:bad','https://partner.example/\nheader']:
