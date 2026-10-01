@@ -15,6 +15,8 @@ const { join, resolve } = require('node:path');
     env: { ...process.env, ANALYTICS_DB: database, UPLOAD_DIR: join(temp, 'uploads'), ANALYTICS_ORIGIN: publicOrigin },
     stdio: 'inherit'
   });
+  const partner = require('node:http').createServer((request, response) => {response.writeHead(200, {'Content-Type':'text/html'});response.end('<h1>Partner destination</h1>')});
+  await new Promise(r => partner.listen(18082, r));
   let browser;
   const api = async (path, data, method = 'POST') => {
     const response = await fetch(admin + path, { method, headers: { 'Content-Type': 'application/json' }, body: data === undefined ? undefined : JSON.stringify(data) });
@@ -27,14 +29,13 @@ const { join, resolve } = require('node:path');
       await new Promise(r => setTimeout(r, 100));
       if (i === 99) throw Error('Backend did not start');
     }
-    const promo = { type: 'promo', internal_name: 'Domadoo – Une promotion avec un nom très long pour vérifier le mobile', title: 'Offre publique', url: 'https://partner.example/offer?aff=117' };
+    const promo = { type: 'promo', internal_name: 'Domadoo – Une promotion avec un nom très long pour vérifier le mobile', title: 'Offre publique', url: 'http://localhost:18082/offer?aff=117' };
     const { id } = await api('/api/content', promo);
     browser = await chromium.launch({ headless: true });
     const context = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'], userAgent: 'Mozilla/5.0 Links functional test' });
     const page = await context.newPage();
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
-    await page.route('https://partner.example/**', route => route.fulfill({ contentType: 'text/html', body: '<h1>Partner destination</h1>' }));
     await page.goto(admin);
     await page.locator('[data-tab="content"]').click();
     const copy = page.locator(`[data-id="${id}"] [data-action="copy-story"]`);
@@ -75,7 +76,7 @@ const { join, resolve } = require('node:path');
       else assert(boxes[1].y > boxes[0].y);
       assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Horizontal overflow');
     }
-    promo.url = 'https://partner.example/new-offer?aff=117';
+    promo.url = 'http://localhost:18082/new-offer?aff=117';
     promo.internal_name = 'Promotion renommée';
     await api('/api/content/' + id, promo, 'PUT');
     await page.goto(link);
@@ -88,7 +89,7 @@ const { join, resolve } = require('node:path');
     await api('/api/content/' + id, undefined, 'DELETE');
     assert.equal((await fetch(link, { redirect: 'manual' })).status, 410);
     await stats(3);
-    const second = await api('/api/content', { ...promo, internal_name: 'Deuxième campagne', url: 'https://partner.example/second' });
+    const second = await api('/api/content', { ...promo, internal_name: 'Deuxième campagne', url: 'http://localhost:18082/second' });
     const secondLink = await api('/api/content/' + second.id + '/story-link', {});
     await page.goto(secondLink.url);
     await page.goto(admin);
@@ -102,6 +103,7 @@ const { join, resolve } = require('node:path');
     if (browser) await browser.close();
     server.kill();
     await new Promise(r => server.exitCode !== null ? r() : server.once('exit', r));
+    await new Promise(r => partner.close(r));
     rmSync(temp, { recursive: true, force: true });
   }
 })().catch(error => { console.error(error); process.exitCode = 1; });

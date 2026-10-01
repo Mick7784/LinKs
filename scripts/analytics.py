@@ -154,14 +154,15 @@ def report(start,end,source=""):
 
 STORY_TOKEN=re.compile(r'st_[A-Za-z0-9_-]{16}')
 def story_url_valid(url):
-    if not isinstance(url,str) or any(ord(c)<=32 for c in url):return False
+    if not isinstance(url,str) or any(ord(c)<=32 for c in url) or '\\' in url:return False
     try:
         parsed=urlsplit(url)
         parsed.port
+        parsed.hostname.encode('idna') if parsed.hostname else None
         if parsed.scheme not in {'http','https'} or not parsed.hostname or parsed.username or parsed.password:return False
         # Do not allow a tracked redirect to point back into this application.
-        return parsed.hostname.lower()!=urlsplit(ORIGIN).hostname
-    except ValueError:return False
+        return parsed.hostname.lower().rstrip('.')!=(urlsplit(ORIGIN).hostname or '').lower().rstrip('.')
+    except (ValueError,UnicodeError):return False
 
 def story_destination(url):
     parsed=urlsplit(url)
