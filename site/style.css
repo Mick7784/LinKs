@@ -10,8 +10,8 @@
   --muted: #b0bdd0;
   --cyan: #7acfe5;
   --purple: #b19bdc;
-  --radius: 16px;
-  --section-gap: 32px;
+  --radius: 10px;
+  --section-gap: 28px;
   font-family:
     Inter,
     ui-sans-serif,
@@ -51,9 +51,9 @@ body::before {
   background-size: 220px 280px;
 }
 main {
-  width: min(calc(100% - 28px), 640px);
+  width: min(calc(100% - 32px), 1080px);
   margin: 0 auto;
-  padding: 32px 0 28px;
+  padding: 24px 0 28px;
 }
 [hidden] {
   display: none !important;
@@ -94,91 +94,85 @@ p,
 .card-cta {
   overflow-wrap: anywhere;
 }
-/* Preserve the existing portrait, DK badge, profile copy and configured socials. */
+/* Compact identity composition; all configured profile fields remain visible. */
 .profile {
-  text-align: center;
+  display: grid;
+  grid-template-columns: 68px minmax(0, 1fr);
+  column-gap: 18px;
+  text-align: left;
+  align-items: start;
+  margin-bottom: 28px;
 }
 .portrait-wrap {
+  grid-column: 1;
+  grid-row: 1 / 3;
   position: relative;
-  width: 124px;
-  height: 124px;
-  margin: 0 auto 22px;
-  padding: 2px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #289ec1, #7960b3);
+  width: 68px;
+  height: 68px;
+  margin: 0;
 }
 .portrait {
   display: block;
   width: 100%;
   height: 100%;
-  border-radius: 50%;
+  border-radius: 18px;
   object-fit: cover;
   object-position: center 27%;
-  border: 4px solid var(--page);
 }
 .logo-badge {
   position: absolute;
-  bottom: 0;
-  right: -4px;
-  width: 46px;
-  height: 46px;
+  bottom: -8px;
+  right: -8px;
+  width: 32px;
+  height: 32px;
   display: grid;
   place-items: center;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 12px;
+  background: var(--page);
+  border-radius: 7px;
 }
-.logo-badge img {
-  width: 38px;
-  height: 38px;
-  object-fit: contain;
-}
+.logo-badge img { width: 30px; height: 30px; object-fit: contain; }
 h1 {
-  font-size: clamp(1.85rem, 7vw, 2.5rem);
+  grid-column: 2;
+  font-size: clamp(1.4rem, 5.6vw, 2rem);
   line-height: 1.18;
   letter-spacing: -0.045em;
-  margin: 0;
+  margin: 1px 0 5px;
   font-weight: 750;
 }
 .tagline {
-  color: var(--cyan);
-  font-size: 1.04rem;
+  grid-column: 2;
+  color: var(--text);
+  font-size: .94rem;
   line-height: 1.5;
-  font-weight: 550;
-  margin: 12px 0 6px;
-}
-.topics {
-  color: var(--muted);
-  font-size: 0.94rem;
-  line-height: 1.65;
+  font-weight: 500;
   margin: 0;
 }
+.topics {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: .9rem;
+  line-height: 1.6;
+  margin: 18px 0 4px;
+}
 .socials {
+  grid-column: 1 / -1;
   display: flex;
-  justify-content: center;
   flex-wrap: wrap;
-  gap: 10px;
-  margin: 22px 0 34px;
+  gap: 4px;
+  margin: 0 0 0 -10px;
 }
 .social {
   display: grid;
   place-items: center;
-  width: 46px;
-  height: 46px;
-  border-radius: 13px;
-  color: #dce4f0;
-  background: var(--panel);
-  border: 1px solid var(--line);
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  color: var(--muted);
+  background: transparent;
   text-decoration: none;
-  transition:
-    background-color 0.16s,
-    border-color 0.16s,
-    color 0.16s;
+  transition: background-color .16s, color .16s;
 }
-.social svg {
-  width: 22px;
-  height: 22px;
-}
+.social svg { width: 21px; height: 21px; }
 /* Sections are separated by space, with no surrounding decorative frame. */
 .latest-video,
 .offers,
@@ -192,30 +186,31 @@ h1 {
   gap: 9px;
   margin: 0 0 13px;
   padding: 0 2px;
-  color: var(--cyan);
-  font-size: 0.87rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  font-size: 0.75rem;
   font-weight: 650;
   line-height: 1.4;
-  letter-spacing: 0.01em;
+  letter-spacing: 0.1em;
 }
 .section-heading svg,
 .video-heading svg {
   width: 19px;
   height: 19px;
   flex: 0 0 19px;
+  color: var(--cyan);
 }
 .links {
   display: grid;
-  gap: 10px;
+  gap: 0;
 }
 .card,
 .video-card {
   color: inherit;
   text-decoration: none;
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: var(--radius);
   background: var(--panel);
-  box-shadow: 0 2px 6px #00000012;
   transition:
     border-color 0.16s,
     background-color 0.16s;
@@ -224,18 +219,18 @@ h1 {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 16px 14px;
-  min-height: 88px;
+  padding: 13px 8px;
+  min-height: 76px;
   min-width: 0;
 }
 .card-icon {
-  flex: 0 0 40px;
-  width: 40px;
-  height: 40px;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
   display: grid;
   place-items: center;
   overflow: hidden;
-  background: #1b2a3d;
+  background: transparent;
   border-radius: 11px;
   color: var(--cyan);
 }
@@ -254,8 +249,8 @@ h1 {
   display: block;
   color: var(--muted);
   font-size: 0.9rem;
-  line-height: 1.55;
-  margin-top: 4px;
+  line-height: 1.45;
+  margin-top: 3px;
 }
 .external-action {
   display: grid;
@@ -288,11 +283,13 @@ h1 {
 /* Same real video thumbnail and link, with a neutral content surface. */
 .video-card {
   display: block;
-  overflow: hidden;
+  overflow: visible;
+  background: transparent;
 }
 .video-visual {
   position: relative;
   aspect-ratio: 16/9;
+  border-radius: var(--radius);
   overflow: hidden;
   background: #101b2b;
   display: grid;
@@ -330,7 +327,7 @@ h1 {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 17px 16px 18px;
+  padding: 14px 0 0;
 }
 .video-title {
   margin: 0;
@@ -350,7 +347,9 @@ h1 {
 /* Campaign images retain their full proportions; no crop and no invented art. */
 .card.promo,
 .card.visual {
-  display: block;
+  display: grid;
+  grid-template-columns: minmax(0, 32%) minmax(0, 1fr);
+  align-items: stretch;
   padding: 0;
   overflow: hidden;
 }
@@ -366,24 +365,22 @@ h1 {
   width: auto;
   height: auto;
   max-width: 100%;
-  max-height: 560px;
+  max-height: 220px;
   object-fit: contain;
 }
 .promo-copy {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px;
-  padding: 18px 16px;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: center;
+  align-items: start;
+  gap: 10px;
+  padding: 15px 12px;
 }
 .promo-meta {
   display: block;
   min-width: 0;
 }
-.promo-copy .external-action {
-  grid-column: 2;
-  grid-row: 1/3;
-}
+.promo-copy .external-action { display: none; }
 .promo-copy .card-cta {
   grid-column: 1;
   justify-self: start;
@@ -403,12 +400,12 @@ h1 {
 }
 .card-cta {
   display: inline-block;
-  margin-top: 9px;
-  padding: 9px 13px;
-  border: 1px solid #48617d;
+  margin-top: 0;
+  padding: 8px 11px;
+  border: 0;
   border-radius: 9px;
-  color: var(--text);
-  background: #263c52;
+  color: #0a111e;
+  background: var(--cyan);
   font-size: 0.87rem;
   line-height: 1.5;
   font-weight: 600;
@@ -438,7 +435,7 @@ h1 {
   align-items: center;
   justify-content: center;
   gap: 10px;
-  margin-top: 12px;
+  margin-top: 4px;
 }
 .carousel-controls > button {
   display: grid;
@@ -446,10 +443,10 @@ h1 {
   width: 44px;
   height: 44px;
   padding: 0;
-  border: 1px solid var(--line);
-  border-radius: 12px;
+  border: 0;
+  border-radius: 8px;
   color: #d3deed;
-  background: var(--panel);
+  background: transparent;
   font-size: 1.4rem;
   line-height: 1;
   cursor: pointer;
@@ -519,43 +516,6 @@ footer p:last-child {
 .fallback a {
   color: var(--cyan);
 }
-@media (min-width: 480px) {
-  main {
-    width: min(calc(100% - 40px), 640px);
-    padding-top: 44px;
-  }
-  .portrait-wrap {
-    width: 138px;
-    height: 138px;
-  }
-  .tagline {
-    font-size: 1.12rem;
-  }
-  .card {
-    gap: 15px;
-    padding: 18px;
-  }
-  .card-icon {
-    flex-basis: 44px;
-    width: 44px;
-    height: 44px;
-  }
-  .card-title {
-    font-size: 1.07rem;
-  }
-  .card-description {
-    font-size: 0.94rem;
-  }
-  .video-details {
-    padding: 20px;
-  }
-  .video-title {
-    font-size: 1.14rem;
-  }
-  .promo-copy {
-    padding: 20px;
-  }
-}
 @media (hover: hover) and (pointer: fine) {
   .social:hover,
   .card:hover,
@@ -595,3 +555,46 @@ footer p:last-child {
 
 /* Keep keyboard focus visible inside the clipped carousel viewport. */
 .carousel .card:focus-visible { outline-offset: -3px; }
+
+/* Link rows use rhythm and separators rather than individual framed boxes. */
+.links .card { background: transparent; border-radius: 0; border-bottom: 1px solid #2a384c88; }
+.links .card:last-child { border-bottom: 0; }
+.video-card:hover { background: transparent; }
+@media (min-width: 600px) {
+  main { width: min(calc(100% - 64px), 1080px); padding-top: 40px; }
+  .profile { grid-template-columns: 86px minmax(0, 1fr) auto; column-gap: 24px; margin-bottom: 40px; }
+  .portrait-wrap { width: 86px; height: 86px; grid-row: 1 / 4; }
+  .topics { grid-column: 2; margin: 8px 0 0; }
+  .socials { grid-column: 3; grid-row: 1 / 4; align-self: center; max-width: 144px; margin: 0; }
+  .links { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 28px; }
+  .links .card:last-child { border-bottom: 1px solid #2a384c88; }
+}
+@media (min-width: 900px) {
+  main { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); column-gap: 40px; align-items: start; padding-top: 54px; }
+  .profile, .latest-video, footer, .fallback { grid-column: 1 / -1; }
+  .latest-video { margin-bottom: 44px; }
+  .video-card { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 32px; align-items: center; }
+  .video-title { font-size: clamp(1.35rem, 2.1vw, 1.7rem); line-height: 1.35; letter-spacing: -.025em; }
+  .video-details { padding: 0; }
+  .video-date { margin-top: 16px; }
+  .offers, .links-section { min-width: 0; }
+  .links { grid-template-columns: minmax(0, 1fr); }
+  .promo-copy { padding: 22px 18px; }
+  .promo-visual img { max-height: 280px; }
+  h1 { font-size: 2.25rem; }
+  footer { margin-top: 24px; border-top: 1px solid #2a384c88; padding-top: 24px; }
+}
+@media (hover: hover) and (pointer: fine) {
+  .links .card:hover { background: var(--panel-hover); }
+  .video-card:hover { background: transparent; }
+}
+
+/* Optional campaign artwork and CTA keep their existing configuration semantics. */
+.card.promo:not(.visual) { grid-template-columns: minmax(0, 1fr); }
+.card.promo:not(.visual) .promo-visual { display: none; }
+.promo-copy:not(:has(.card-cta)) .external-action { display: grid; grid-column: 1; }
+@media (min-width: 900px) {
+  main:has(#offers[hidden]) .links-section { grid-column: 1 / -1; }
+  main:has(#offers[hidden]) .links { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 40px; }
+  main:has(#links-section[hidden]) .offers { grid-column: 1 / -1; max-width: 680px; width: 100%; }
+}
