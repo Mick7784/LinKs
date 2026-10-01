@@ -21,6 +21,13 @@ jobs:
       IMAGE: ghcr.io/mick7784/links
     steps:
       - uses: actions/checkout@v6
+      - name: Story journey on desktop and mobile
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --prefix "$RUNNER_TEMP/story-browser" playwright
+          "$RUNNER_TEMP/story-browser/node_modules/.bin/playwright" install --with-deps chromium
+          NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/story-browser-test.cjs
       - name: Build and smoke-test
         shell: bash
         run: |
@@ -44,6 +51,10 @@ jobs:
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18080/api/stats)" = 404
           curl -fsS -H 'Origin: https://links.domotik-studio.fr' -H 'Content-Type: application/json' -d '{"kind":"view","source":"youtube"}' http://127.0.0.1:18080/metrics
           curl -fsS http://127.0.0.1:18081/api/stats | python3 -c 'import json,sys; assert sum(r["total"] for r in json.load(sys.stdin)["rows"]) == 1'
+          story_id=$(curl -fsS -H 'Content-Type: application/json' -d '{"type":"promo","internal_name":"Story smoke","title":"Offre","url":"https://partner.example/offer"}' http://127.0.0.1:18081/api/content | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+          story_token=$(curl -fsS -H 'Content-Type: application/json' -d '{}' "http://127.0.0.1:18081/api/content/$story_id/story-link" | python3 -c 'import json,sys; print(json.load(sys.stdin)["url"].rsplit("/",1)[-1])')
+          test "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:18080/go/$story_token")" = 302
+          curl -fsS http://127.0.0.1:18081/api/stats | python3 -c 'import json,sys; data=json.load(sys.stdin); assert sum(r["total"] for r in data["rows"]) == 1; assert sum(r["total"] for r in data["stories"]) == 1'
       - name: Log in to GHCR
         if: github.event_name != 'pull_request'
         env:

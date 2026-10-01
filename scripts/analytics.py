@@ -1,10 +1,10 @@
 """Small SQLite content manager and aggregate analytics service."""
-import base64, binascii, json, mimetypes, os, re, sqlite3, threading, uuid
+import base64, binascii, json, mimetypes, os, re, secrets, sqlite3, threading, uuid
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, unquote, urlsplit
+from urllib.parse import parse_qs, quote, unquote, urlsplit, urlunsplit
 from zoneinfo import ZoneInfo
 
 ROOT=Path(__file__).resolve().parent
@@ -63,6 +63,9 @@ def init():
           id TEXT PRIMARY KEY,icon TEXT NOT NULL,label TEXT NOT NULL,url TEXT NOT NULL,position INTEGER NOT NULL,
           active INTEGER NOT NULL DEFAULT 1,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)""")
         db.execute("CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL)")
+        db.execute("""CREATE TABLE IF NOT EXISTS story_links(
+          token TEXT PRIMARY KEY,promotion_id TEXT NOT NULL UNIQUE,name TEXT NOT NULL,
+          created_at TEXT NOT NULL,deleted INTEGER NOT NULL DEFAULT 0)""")
         seed(db)
 
 def seed(db):
@@ -87,8 +90,10 @@ def seed(db):
 def record(kind,source,link,day=None):
     day=day or datetime.now(PARIS).date().isoformat()
     with connection() as db:
-        db.execute("INSERT INTO counts VALUES(?,?,?,?,1) ON CONFLICT(day,source,kind,link) DO UPDATE SET total=total+1",(day,source,kind,link))
-        db.execute("DELETE FROM counts WHERE day < ?",((date.fromisoformat(day)-timedelta(days=400)).isoformat(),))
+        increment(db,kind,source,link,day)
+def increment(db,kind,source,link,day):
+    db.execute("INSERT INTO counts VALUES(?,?,?,?,1) ON CONFLICT(day,source,kind,link) DO UPDATE SET total=total+1",(day,source,kind,link))
+    db.execute("DELETE FROM counts WHERE day < ?",((date.fromisoformat(day)-timedelta(days=400)).isoformat(),))
 def source_of(data):
     source=data.get("source","")
     if not isinstance(source,str):raise ValueError()
@@ -137,7 +142,49 @@ def report(start,end,source=""):
         for row in rows:
             if row["kind"]=="click":row["link"]=aliases.get(row["link"],row["link"])
             row["label"]=labels.get(row["link"], "Ancien lien" if row["link"].startswith(("block:","button:")) else row["link"])
-    return {"rows":rows,"timezone":"Europe/Paris"}
+        story_where="c.day BETWEEN ? AND ? AND c.kind='story'";story_params=[start,end]
+        if source and source not in {'instagram','instagram-story'}:story_where+=" AND 0"
+        stories=[dict(r) for r in db.execute("""SELECT c.day,c.total,c.source,c.link,
+          s.promotion_id,s.token,COALESCE(b.internal_name,s.name) label
+          FROM counts c JOIN story_links s ON substr(c.link,7,length(s.token))=s.token
+          LEFT JOIN content_blocks b ON b.id=s.promotion_id
+          WHERE """+story_where+" ORDER BY c.day",story_params)]
+        for row in stories:row['hour']=row.pop('link').rsplit(':',1)[-1]
+    return {"rows":rows,"stories":stories,"timezone":"Europe/Paris"}
+
+STORY_TOKEN=re.compile(r'st_[A-Za-z0-9_-]{16}')
+def story_url_valid(url):
+    if not isinstance(url,str) or any(ord(c)<=32 for c in url):return False
+    try:
+        parsed=urlsplit(url)
+        parsed.port
+        if parsed.scheme not in {'http','https'} or not parsed.hostname or parsed.username or parsed.password:return False
+        # Do not allow a tracked redirect to point back into this application.
+        return parsed.hostname.lower()!=urlsplit(ORIGIN).hostname
+    except ValueError:return False
+
+def story_destination(url):
+    parsed=urlsplit(url)
+    host=parsed.hostname.encode('idna').decode('ascii')
+    if ':' in host:host='['+host+']'
+    netloc=host+(':'+str(parsed.port) if parsed.port is not None else '')
+    return urlunsplit((parsed.scheme,netloc,quote(parsed.path,safe="/%:@!$&'()*+,;=-._~"),quote(parsed.query,safe="%/?@:!$&'()*+,;=-._~"),quote(parsed.fragment,safe="%/?@:!$&'()*+,;=-._~")))
+
+def story_link(promotion_id):
+    with connection() as db:
+        db.execute('BEGIN IMMEDIATE')
+        item=db.execute("SELECT * FROM content_blocks WHERE id=? AND type IN ('promo','featured')",(promotion_id,)).fetchone()
+        if not item:raise ValueError('Promotion introuvable')
+        if not story_url_valid(item['url']):raise ValueError('URL partenaire HTTP(S) valide requise')
+        link=db.execute('SELECT * FROM story_links WHERE promotion_id=?',(promotion_id,)).fetchone()
+        if not link:
+            for _ in range(5):
+                token='st_'+secrets.token_urlsafe(12)
+                try:db.execute('INSERT INTO story_links VALUES(?,?,?,?,0)',(token,promotion_id,item['internal_name'],now_iso()));break
+                except sqlite3.IntegrityError:continue
+            else:raise ValueError('Impossible de générer le lien Story')
+            link=db.execute('SELECT * FROM story_links WHERE promotion_id=?',(promotion_id,)).fetchone()
+        return {'url':ORIGIN+'/go/'+link['token']}
 
 def profile(db):
     values={r["key"]:r["value"] for r in db.execute("SELECT key,value FROM settings")}
@@ -287,7 +334,7 @@ def save_content(db,item,item_id=None):
         db.execute("INSERT INTO content_blocks ("+",".join(values)+") VALUES ("+",".join("?" for _ in values)+")",list(values.values()))
     return item_id
 
-BACKUP_TABLES=('content_blocks','top_buttons','settings','counts')
+BACKUP_TABLES=('content_blocks','top_buttons','settings','counts','story_links')
 BACKUP_LIMIT=64*1024*1024
 UPLOAD_NAME=re.compile(r'[a-f0-9-]{36}\.(jpg|png|webp|gif)')
 
@@ -306,14 +353,19 @@ def export_backup():
             size+=len(raw)
             if size>40*1024*1024:raise ValueError('Sauvegarde trop volumineuse : sauvegarder le volume serveur')
             images[name]=base64.b64encode(raw).decode('ascii')
-        result={'format':'domotik-links-backup','version':1,'created_at':now_iso(),'tables':tables,'images':images}
+        result={'format':'domotik-links-backup','version':2,'created_at':now_iso(),'tables':tables,'images':images}
         encoded=json.dumps(result,ensure_ascii=False).encode()
         if len(encoded)>BACKUP_LIMIT:raise ValueError('Sauvegarde supérieure à 64 Mo : sauvegarder le volume serveur')
         return encoded
 
 def restore_backup(data):
-    if data.get('format')!='domotik-links-backup' or data.get('version')!=1:raise ValueError('Ce fichier n’est pas une sauvegarde Links compatible')
+    if data.get('format')!='domotik-links-backup' or data.get('version') not in {1,2}:raise ValueError('Ce fichier n’est pas une sauvegarde Links compatible')
     tables=data.get('tables');images=data.get('images')
+    if data.get('version')==1 and isinstance(tables,dict) and set(tables)==set(BACKUP_TABLES)-{'story_links'}:
+        # An old backup predates Stories: retain the new history and reserved codes.
+        with connection() as db:
+            tables={**tables,'story_links':[dict(r) for r in db.execute('SELECT * FROM story_links')]}
+            if isinstance(tables.get('counts'),list):tables['counts']=tables['counts']+[dict(r) for r in db.execute("SELECT * FROM counts WHERE kind='story'")]
     if not isinstance(tables,dict) or set(tables)!=set(BACKUP_TABLES) or not isinstance(images,dict):raise ValueError('Sauvegarde incomplète')
     decoded={};mapping={};written=[];size=0
     for name,encoded in images.items():
@@ -347,8 +399,21 @@ def restore_backup(data):
                         button_data({**row,'icon':'mail' if row['icon']=='email' else row['icon']})
                     elif table=='counts':
                         date.fromisoformat(row['day'])
-                        if row['kind'] not in {'view','click','impression'} or row['total']<1:raise ValueError('Statistique invalide')
+                        if row['kind'] not in {'view','click','impression','story'} or row['total']<1:raise ValueError('Statistique invalide')
+                        if row['kind']=='story' and (row['source']!='instagram-story' or not re.fullmatch(r'story:st_[A-Za-z0-9_-]{16}:\d{2}',row['link']) or int(row['link'][-2:])>23):raise ValueError('Statistique Story invalide')
+                    elif table=='story_links':
+                        if not STORY_TOKEN.fullmatch(row['token']) or row['deleted'] not in (0,1) or not row['name'] or not row['promotion_id']:raise ValueError('Lien Story invalide')
+                        instant(row['created_at'])
                     elif row['key'] not in {'content.initialized','profile.name','profile.tagline','profile.description','profile.avatar','profile.logo'}:raise ValueError('Réglage inconnu')
+            # Codes are never reassigned, even when restoring a different backup.
+            incoming={r['token']:r for r in tables['story_links']}
+            for old in db.execute('SELECT * FROM story_links'):
+                if old['token'] in incoming:
+                    if incoming[old['token']]['promotion_id']!=old['promotion_id']:raise ValueError('Un identifiant Story ne peut pas changer de promotion')
+                elif any(r['promotion_id']==old['promotion_id'] for r in incoming.values()):raise ValueError('Identifiants Story incompatibles avec les liens existants')
+                else:tables['story_links'].append({**dict(old),'deleted':1})
+            tokens={r['token'] for r in tables['story_links']}
+            if any(r['kind']=='story' and r['link'].split(':')[1] not in tokens for r in tables['counts']):raise ValueError('Référent Story manquant')
             # Every uploaded image used by the restored content must exist in this backup.
             for row in tables['content_blocks']:
                 if row['image'].startswith('/uploads/'):
@@ -392,6 +457,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send(200,data,mime or mimetypes.guess_type(path.name)[0] or "application/octet-stream")
     def do_GET(self):
         url=urlsplit(self.path)
+        if url.path.startswith('/go/'):
+            return self.redirect_story(url.path.removeprefix('/go/'))
         if url.path=="/healthz":
             try:
                 with connection() as db:db.execute("SELECT total FROM counts LIMIT 1").fetchone()
@@ -433,6 +500,8 @@ class Handler(BaseHTTPRequestHandler):
             if path=="/api/promotions/check":
                 item=block_data(data);return self.json(200,promotion_check(item,data.get("id") or None))
             if path=="/api/content/reorder":return self.reorder("content_blocks",data)
+            match=re.fullmatch(r"/api/content/([\w-]+)/story-link",path)
+            if match:return self.json(200,story_link(match.group(1)))
             match=re.fullmatch(r"/api/content/([\w-]+)/(duplicate|archive|restore)",path)
             if match:return self.content_action(match.group(1),match.group(2))
             if path=="/api/buttons":return self.create_button(data)
@@ -459,9 +528,31 @@ class Handler(BaseHTTPRequestHandler):
         if not match:return self.send(404)
         with connection() as db:
             prefix="block:" if table=="content_blocks" else "button:"
+            if table=='content_blocks':
+                db.execute('UPDATE story_links SET name=COALESCE((SELECT internal_name FROM content_blocks WHERE id=?),name),deleted=1 WHERE promotion_id=?',(match.group(1),match.group(1)))
             changed=db.execute(f"DELETE FROM {table} WHERE id=?",(match.group(1),)).rowcount
             if changed:db.execute("DELETE FROM counts WHERE kind IN ('click','impression') AND link=?",(prefix+match.group(1),))
         return self.send(204) if changed else self.send(404)
+    def do_HEAD(self):
+        path=urlsplit(self.path).path
+        return self.redirect_story(path.removeprefix('/go/'),count=False) if path.startswith('/go/') else self.send(404)
+    def redirect_story(self,token,count=True):
+        if not STORY_TOKEN.fullmatch(token):return self.send(404)
+        try:
+            with connection() as db:
+                db.execute('BEGIN IMMEDIATE')
+                item=db.execute('''SELECT b.url,b.internal_name,s.deleted FROM story_links s
+                  LEFT JOIN content_blocks b ON b.id=s.promotion_id WHERE s.token=?''',(token,)).fetchone()
+                if not item:return self.send(404)
+                if item['deleted'] or not item['url']:return self.send(410)
+                if not story_url_valid(item['url']):return self.send(410)
+                agent=self.headers.get('User-Agent','').lower()
+                if count and not any(x in agent for x in ['bot','spider','crawler','headless','facebookexternalhit','meta-externalagent','preview']):
+                    now=datetime.now(PARIS)
+                    increment(db,'story','instagram-story','story:'+token+':'+now.strftime('%H'),now.date().isoformat())
+                target=story_destination(item['url'])
+            self.send_response(302);self.send_header('Location',target);self.send_header('Cache-Control','no-store');self.send_header('Referrer-Policy','no-referrer');self.send_header('Content-Length','0');self.end_headers()
+        except (sqlite3.Error,OSError):return self.send(503)
     def create_content(self,data):
         item=block_data(data)
         with connection() as db:
