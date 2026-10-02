@@ -15,7 +15,7 @@ class InstanceTests(unittest.TestCase):
         for s in self.servers:s.shutdown();s.server_close()
         self.env.stop();self.temp.cleanup()
     def server(self,admin=True):
-        s=self.a.serve(0,admin,'127.0.0.1');self.servers.append(s);threading.Thread(target=s.serve_forever,daemon=True).start();return 'http://127.0.0.1:'+str(s.server_port)
+        s=self.a.serve(0,admin,'127.0.0.1');s.daemon_threads=False;self.servers.append(s);threading.Thread(target=s.serve_forever,daemon=True).start();return 'http://127.0.0.1:'+str(s.server_port)
     def request(self,url,data=None,method=None,headers=None):
         h={'X-Links-Request':'1','Cookie':self.cookie,**(headers or {})}
         try:r=urlopen(Request(url,json.dumps(data).encode() if data is not None else None,h,method=method))
