@@ -8,7 +8,7 @@ const {resolve,join}=require('node:path');
 const {tmpdir}=require('node:os');
 (async()=>{
  const temp=mkdtempSync(join(tmpdir(),'links-public-')),origin='http://127.0.0.1:18080',admin='http://127.0.0.1:8081';
- const backend=spawn('python3',[resolve(__dirname,'analytics.py')],{env:{...process.env,ANALYTICS_DB:join(temp,'stats.db'),UPLOAD_DIR:join(temp,'uploads'),ANALYTICS_ORIGIN:origin},stdio:'inherit'});
+ const backend=spawn(process.env.PYTHON_PATH||'python3',[resolve(__dirname,'analytics.py')],{env:{...process.env,ANALYTICS_DB:join(temp,'stats.db'),UPLOAD_DIR:join(temp,'uploads'),ANALYTICS_ORIGIN:origin},stdio:'inherit'});
  // Recorded real video metadata. Network-independent image responses reuse a real repo asset in tests only.
  const video={title:'Levoit Eleva 300X : enfin un purificateur vraiment autonome ?',url:'https://www.youtube.com/watch?v=B-v11zKyr8U',thumbnail:'https://i.ytimg.com/vi/B-v11zKyr8U/mqdefault.jpg',published:'2026-09-23T16:37:02.000Z'};
  const asset=readFileSync(resolve(__dirname,'../site/assets/portrait.webp'));
@@ -23,7 +23,7 @@ const {tmpdir}=require('node:os');
    const r=await fetch('http://127.0.0.1:3003'+req.url,{method:req.method,headers:{'Content-Type':req.headers['content-type']||'application/json',Origin:req.headers.origin||origin,'User-Agent':req.headers['user-agent']||'Mozilla/5.0'},body:body.length?body:undefined,redirect:'manual'});
    res.statusCode=r.status;for(const name of ['content-type','location'])if(r.headers.has(name))res.setHeader(name,r.headers.get(name));return res.end(Buffer.from(await r.arrayBuffer()))
   }
-  const files={'/':['index.html','text/html'],'/style.css':['style.css','text/css'],'/icons.css':['icons.css','text/css'],'/app.js':['app.js','application/javascript'],'/config.js':['config.js','application/javascript'],'/metrics.js':['metrics.js','application/javascript'],'/assets/logo.webp':['assets/logo.webp','image/webp'],'/assets/portrait.webp':['assets/portrait.webp','image/webp']};const file=files[url.pathname];if(!file){res.writeHead(404);return res.end()}
+  const files={'/':['index.html','text/html'],'/style.css':['style.css','text/css'],'/icons.css':['icons.css','text/css'],'/app.js':['app.js','application/javascript'],'/config.js':['config.js','application/javascript'],'/metrics.js':['metrics.js','application/javascript'],'/assets/studio-links.webp':['assets/studio-links.webp','image/webp'],'/assets/logo.webp':['assets/logo.webp','image/webp'],'/assets/portrait.webp':['assets/portrait.webp','image/webp']};const file=files[url.pathname];if(!file){res.writeHead(404);return res.end()}
   res.setHeader('Content-Type',file[1]);res.end(readFileSync(resolve(__dirname,'../site',file[0])));
  }catch(e){res.writeHead(500);res.end(e.message)}});
  try{
@@ -72,12 +72,11 @@ const {tmpdir}=require('node:os');
     const video=box('.video-visual'),details=box('.video-details');
     return {imageRight:image.right,imageBottom:image.bottom,imageWidth:image.width,copyLeft:copy.left,copyTop:copy.top,slideWidth:box(".carousel-slide .card").width,headerHeight:header.height,videoRight:video.right,detailsLeft:details.left};
    });
-   if(width<900){
-    assert(composition.copyTop>=composition.imageBottom-1,'Offer details below artwork at '+width);
-    assert(Math.abs(composition.imageWidth-composition.slideWidth)<=2,'Full-width offer artwork at '+width);
-   }else assert(composition.imageRight<composition.copyLeft,'Editorial desktop offer at '+width);
-   if(width===390)assert(composition.headerHeight<220,'Compact mobile identity');
-   if(width===1440)assert(composition.videoRight<composition.detailsLeft,'Editorial desktop video composition');
+   assert(composition.copyTop<composition.imageBottom,'Offer copy overlays artwork at '+width);
+   assert(Math.abs(composition.imageWidth-composition.slideWidth)<=2,'Full-width offer artwork at '+width);
+   assert(composition.slideWidth<=680,'Contained vertical column at '+width);
+   const videoOverlay=await page.evaluate(()=>{const a=document.querySelector('.video-visual').getBoundingClientRect(),b=document.querySelector('.video-details').getBoundingClientRect();return b.top>=a.top&&b.bottom<=a.bottom+1});
+   assert(videoOverlay,'Video text stays inside image at '+width);
    for(const selector of ['.social','#offers-prev','#offers-next','.carousel-dots button']){const box=await page.locator(selector).first().boundingBox();assert(box.width>=44&&box.height>=44,'Touch size '+selector)}
    const rects=await page.locator('.card-title,.card-description,.video-title').evaluateAll(nodes=>nodes.map(n=>({scroll:n.scrollWidth,width:n.clientWidth})));assert(rects.every(x=>x.scroll<=x.width),'Truncated text '+width);
   }
