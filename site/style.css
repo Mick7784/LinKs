@@ -81,3 +81,11 @@ body{background-image:radial-gradient(ellipse 560px 450px at 8% 0%,#315b8860,tra
 .carousel-slide .card.visual .promo-copy:not(:has(.card-cta))>.external-action{display:grid}
 .promo-dates{display:block;color:var(--muted);font-size:.75rem;line-height:1.5;margin-top:8px}
 @media(min-width:600px){.carousel-slide .card.visual{padding-top:0}.carousel-slide .card.visual .promo-copy{padding-inline:24px}.carousel-slide .card.visual .offer-label{margin-left:24px}}
+/* Image-first campaigns, without duplicating the partner's embedded copy. */
+.carousel-slide .card.visual{grid-template-rows:auto auto;padding:12px 0 52px}
+.carousel-slide .card.visual::after{display:none}
+.carousel-slide .card.visual .offer-label{grid-row:1;margin:0 16px 10px}
+.carousel-slide .card.visual .promo-visual{grid-row:2;max-width:340px}
+.carousel-slide .card.visual .promo-copy{position:absolute;clip:rect(0,0,0,0);width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;white-space:nowrap}
+body{background-image:radial-gradient(ellipse 700px 560px at 12% 0%,#24547730,transparent 78%),radial-gradient(ellipse 700px 650px at 95% 40%,#214b6520,transparent 80%),radial-gradient(ellipse 800px 750px at 8% 78%,#283b651b,transparent 82%);background-attachment:scroll}
+@media(min-width:600px){.carousel-slide .card.visual{padding-top:12px}.carousel-slide .card.visual .offer-label{margin-left:20px}}
