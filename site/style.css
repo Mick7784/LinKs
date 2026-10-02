@@ -1,6 +1,11 @@
 /* Public presentation only; carousel transforms and all content stay in app.js. */
 :root{color-scheme:dark;--page:#0a111e;--panel:#131e2e;--text:#f1f4fa;--muted:#b0bdd0;--cyan:#7acfe5;--purple:#b19bdc;--radius:20px;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--page);color:var(--text)}
-*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;min-height:100vh;background-color:var(--page);background-image:radial-gradient(ellipse at 8% 0%,#23436580,transparent 48%),radial-gradient(ellipse at 95% 12%,#26364b55,transparent 38%);color:var(--text);-webkit-font-smoothing:antialiased}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;min-height:100vh;background-color:var(--page);background-image:
+  radial-gradient(ellipse at 15% 8%,rgba(0,150,255,.13),transparent 42%),
+  radial-gradient(ellipse at 90% 38%,rgba(40,170,220,.09),transparent 38%),
+  radial-gradient(ellipse at 70% 72%,rgba(110,80,230,.075),transparent 40%),
+  radial-gradient(ellipse at 8% 96%,rgba(40,130,230,.06),transparent 36%);
+background-repeat:no-repeat;background-attachment:scroll;color:var(--text);-webkit-font-smoothing:antialiased}
 main{width:min(calc(100% - 28px),680px);margin:auto;padding:26px 0 30px}[hidden]{display:none!important}
 .sr-only,.links-section>.section-heading,.offers>.section-heading{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 a,button{-webkit-tap-highlight-color:transparent;touch-action:manipulation}a{color:inherit}button{font:inherit}a:focus-visible,button:focus-visible{outline:2px solid var(--cyan);outline-offset:4px}h1,h2,h3,p,.card-title,.card-description,.card-cta{overflow-wrap:anywhere}
@@ -33,7 +38,6 @@ footer{text-align:center;display:flex;flex-direction:column;align-items:center;g
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 
 /* Focused visual corrections: distinct link artwork and localized editorial fades. */
-body{background-image:radial-gradient(ellipse 560px 450px at 8% 0%,#315b8860,transparent 72%),radial-gradient(ellipse 480px 400px at 92% 120px,#43526730,transparent 75%),radial-gradient(ellipse 620px 700px at 50% 650px,#18334b22,transparent 75%);background-attachment:fixed}
 .links .card::before{background-image:var(--link-art);opacity:1;background-position:center}
 .links .card[data-icon="discord"]{--link-art:url("assets/link-community.webp")}
 .links .card[data-icon="instagram"],.links .card[data-icon="tiktok"]{--link-art:url("assets/link-instagram.webp")}
@@ -87,5 +91,4 @@ body{background-image:radial-gradient(ellipse 560px 450px at 8% 0%,#315b8860,tra
 .carousel-slide .card.visual .offer-label{grid-row:1;margin:0 16px 10px}
 .carousel-slide .card.visual .promo-visual{grid-row:2;max-width:340px}
 .carousel-slide .card.visual .promo-copy{position:absolute;clip:rect(0,0,0,0);width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;white-space:nowrap}
-body{background-image:radial-gradient(ellipse 700px 560px at 12% 0%,#24547730,transparent 78%),radial-gradient(ellipse 700px 650px at 95% 40%,#214b6520,transparent 80%),radial-gradient(ellipse 800px 750px at 8% 78%,#283b651b,transparent 82%);background-attachment:scroll}
 @media(min-width:600px){.carousel-slide .card.visual{padding-top:12px}.carousel-slide .card.visual .offer-label{margin-left:20px}}
