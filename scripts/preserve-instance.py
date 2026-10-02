@@ -9,7 +9,7 @@ def preserve(root,data_dir):
     if destination.exists():raise SystemExit('Transfert déjà présent : conserver ce fichier et sa sauvegarde.')
     config_path=root/'links.json'
     config=json.loads(config_path.read_text())
-    public=Path('/usr/share/nginx/html') if Path('/usr/share/nginx/html').exists() else root/'site'
+    public=root/'site' if (root/'site'/'assets').is_dir() else Path('/usr/share/nginx/html')
     assets=public/'assets';target=data/'assets';target.mkdir(exist_ok=True)
     for path in assets.iterdir():
         if path.is_file():
