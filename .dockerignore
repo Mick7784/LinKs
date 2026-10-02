@@ -1,5 +1,6 @@
 *
 !Dockerfile
+!VERSION
 !nginx.conf
 !links.json
 !links.schema.json
