@@ -44,6 +44,8 @@ Le format version 3 comprend contenus, boutons, paramètres, statistiques, liens
 
 Les comptes et sessions administrateur ne sont pas exportés. Une restauration conserve le mode d’accès et les identifiants du système qui reçoit la sauvegarde, puis invalide les sessions locales. Garder les sauvegardes privées.
 
+Pour restaurer sur une nouvelle installation, terminer d’abord son assistant et créer son administrateur, puis importer la sauvegarde depuis ce compte.
+
 L’export applicatif ne remplace pas une sauvegarde du volume. La restauration remplace les données incluses après validation ; les uploads reçoivent de nouveaux noms pour éviter d’écraser les fichiers courants.
 
 ## Vidéo facultative

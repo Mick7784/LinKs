@@ -98,12 +98,16 @@ class InstanceTests(unittest.TestCase):
         # Restore into a separate actual database/storage, not merely the source.
         olddb,olduploads=self.a.DB,self.a.UPLOADS;self.a.DB=str(self.root/'restore'/'analytics.db');self.a.DATA_DIR=Path(self.a.DB).parent;self.a.UPLOADS=self.a.DATA_DIR/'uploads'
         with contextlib.redirect_stdout(io.StringIO()):self.a.init()
+        self.cookie=''
+        self.assertEqual(self.setup(admin,bootstrap=(self.a.DATA_DIR/'setup-code').read_text().strip(),username='receiver')[0],200)
         self.a.restore_backup(json.loads(json.dumps(before)))
+        self.assertEqual(self.request(admin+'/api/content')[0],401)
+        self.assertEqual(self.request(admin+'/api/auth/login',{'username':'receiver','password':'A-long-test-password'})[0],200)
         restored=json.loads(self.a.export_backup())
         for table in ['top_buttons','counts','story_links','footer_quotes']:self.assertEqual(restored['tables'][table],before['tables'][table])
         self.assertEqual(len(restored['tables']['content_blocks']),2);item=self.a.content_list(True)[0];self.assertEqual(item['promo_code'],'NEW');self.assertEqual((self.a.UPLOADS/item['image'][9:]).read_bytes(),raw)
         with self.a.connection() as db:
-            copy=db.execute("SELECT link FROM counts WHERE kind='promo_code_copy'").fetchone();self.assertEqual(json.loads(copy[0])['code'],'OLD');self.assertEqual(self.a.instance.get(db,'profile.name'),'Example Creator');self.assertEqual(self.a.instance.get(db,'auth.mode'),'local')
+            copy=db.execute("SELECT link FROM counts WHERE kind='promo_code_copy'").fetchone();self.assertEqual(json.loads(copy[0])['code'],'OLD');self.assertEqual(self.a.instance.get(db,'profile.name'),'Example Creator');self.assertEqual(self.a.instance.get(db,'auth.mode'),'local');self.assertEqual(db.execute('SELECT username FROM admin_accounts').fetchone()[0],'receiver')
         legacy=json.loads(json.dumps(restored));legacy['format']='domotik-links-backup';legacy['version']=1;del legacy['tables']['footer_quotes'];del legacy['tables']['story_links'];legacy['tables']['counts']=[];legacy['tables']['settings']=[r for r in legacy['tables']['settings'] if r['key'].startswith('profile.')]
         self.a.restore_backup(legacy);self.assertEqual(len(self.a.quote_list()),1)
         with self.a.connection() as db:self.assertEqual(db.execute('SELECT COUNT(*) FROM story_links').fetchone()[0],1);self.assertEqual(db.execute("SELECT COUNT(*) FROM counts WHERE kind='promo_code_copy'").fetchone()[0],1);self.assertEqual(self.a.instance.get(db,'app.timezone'),'Europe/Paris')
