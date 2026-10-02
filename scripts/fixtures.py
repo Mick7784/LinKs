@@ -19,7 +19,7 @@ def populate(a):
         for i,(name,url,icon) in enumerate(links):
             key=a.save_content(db,a.block_data({'type':'classic','internal_name':name,'title':name,'url':url,'icon':icon}))
             db.execute('UPDATE content_blocks SET id=? WHERE id=?',('legacy-link-'+str(i),key))
-        for i,(label,icon,url) in enumerate([('YouTube','youtube','https://youtube.com/@example'),('Instagram','instagram','https://instagram.com/example'),('Me contacter par e-mail','email','mailto:contact@example.com')]):
+        for i,(label,icon,url) in enumerate([('YouTube','youtube','https://www.youtube.com/@example'),('Instagram','instagram','https://instagram.com/example'),('Me contacter par e-mail','email','mailto:contact@example.com')]):
             db.execute('INSERT INTO top_buttons VALUES(?,?,?,?,?,1,?,?)',('legacy-button-'+str(i),icon,label,url,i,a.now_iso(),a.now_iso()))
 
 if __name__=='__main__':

@@ -19,6 +19,7 @@ const {tmpdir}=require('node:os');
  const site=createServer(async(req,res)=>{try{
   const url=new URL(req.url,origin);res.setHeader('Content-Security-Policy',"default-src 'self';script-src 'self';style-src 'self';img-src 'self' https://i.ytimg.com;object-src 'none';base-uri 'self';frame-ancestors 'none'");
   if(url.pathname==='/latest-video.json'){res.writeHead(videoAvailable?200:502,{'Content-Type':'application/json'});return res.end(JSON.stringify(videoAvailable?video:{error:'unavailable'}))}
+  if(url.pathname==='/public-fallback.json'){res.setHeader('Content-Type','application/json');return res.end(readFileSync(join(temp,'public-fallback.json')))}
   if(url.pathname==='/api/public-config'||url.pathname==='/metrics'||url.pathname.startsWith('/go/')||url.pathname.startsWith('/uploads/')){
    const chunks=[];for await(const c of req)chunks.push(c);const body=Buffer.concat(chunks);
    const r=await fetch('http://127.0.0.1:3003'+req.url,{method:req.method,headers:{'Content-Type':req.headers['content-type']||'application/json',Origin:req.headers.origin||origin,'User-Agent':req.headers['user-agent']||'Mozilla/5.0'},body:body.length?body:undefined,redirect:'manual'});
