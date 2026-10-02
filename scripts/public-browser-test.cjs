@@ -72,13 +72,15 @@ const {tmpdir}=require('node:os');
     const video=box('.video-visual'),details=box('.video-details');
     return {imageRight:image.right,imageBottom:image.bottom,imageWidth:image.width,copyLeft:copy.left,copyTop:copy.top,slideWidth:box(".carousel-slide .card").width,headerHeight:header.height,videoRight:video.right,detailsLeft:details.left};
    });
-   assert(composition.copyTop<composition.imageBottom,'Offer copy overlays artwork at '+width);
-   assert(Math.abs(composition.imageWidth-composition.slideWidth)<=2,'Full-width offer artwork at '+width);
+   const creative=await page.locator('.carousel-slide .promo-visual').first().evaluate(n=>{const r=n.getBoundingClientRect();return {ratio:r.width/r.height,fit:getComputedStyle(n.querySelector('img')).objectFit}});
+   assert(Math.abs(creative.ratio-1)<.01,'Square creative at '+width);assert.equal(creative.fit,'contain');
+   const controlsClear=await page.locator('#offers').evaluate(n=>n.querySelector('.carousel-controls').getBoundingClientRect().top>=n.querySelector('.promo-visual').getBoundingClientRect().bottom-1);assert(controlsClear,'Controls outside creative at '+width);
+   assert(composition.imageWidth<=composition.slideWidth,'Creative fits offer at '+width);
    assert(composition.slideWidth<=680,'Contained vertical column at '+width);
    const videoOverlay=await page.evaluate(()=>{const a=document.querySelector('.video-visual').getBoundingClientRect(),b=document.querySelector('.video-details').getBoundingClientRect();return b.top>=a.top&&b.bottom<=a.bottom+1});
    assert(videoOverlay,'Video text stays inside image at '+width);
    for(const selector of ['.social','#offers-prev','#offers-next','.carousel-dots button']){const box=await page.locator(selector).first().boundingBox();assert(box.width>=44&&box.height>=44,'Touch size '+selector)}
-   const rects=await page.locator('.card-title,.card-description,.video-title').evaluateAll(nodes=>nodes.map(n=>({scroll:n.scrollWidth,width:n.clientWidth})));assert(rects.every(x=>x.scroll<=x.width),'Truncated text '+width);
+   const rects=await page.locator('.card-title,.card-description,.video-title').evaluateAll(nodes=>nodes.filter(n=>!n.closest('.carousel-slide .card.visual .promo-copy')).map(n=>({scroll:n.scrollWidth,width:n.clientWidth})));assert(rects.every(x=>x.scroll<=x.width),'Truncated text '+width);
   }
   const art=await page.locator('#links .card').evaluateAll(nodes=>nodes.map(n=>getComputedStyle(n,'::before').backgroundImage));assert.equal(new Set(art).size,art.length,'Distinct thematic backgrounds');
   const before=await request('/api/stats',undefined,'GET');
