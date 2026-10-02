@@ -66,3 +66,18 @@ body{background-image:radial-gradient(ellipse 560px 450px at 8% 0%,#315b8860,tra
 .carousel-controls>button{top:4px;transform:none;background:#101925cc}
 .carousel-dots{bottom:4px}
 @media(min-width:600px){.carousel-slide .card.visual{padding-top:16px}.carousel-slide .card.visual .offer-label{margin-left:20px}}
+
+/* Restore campaign information in the lower fade, clear of the complete artwork. */
+.carousel-slide .card.visual{grid-template-rows:auto auto auto;padding:0 0 52px}
+.carousel-slide .card.visual .promo-visual{grid-row:1}
+.carousel-slide .card.visual::after{display:block;background:linear-gradient(0deg,#08111bf5 0%,#08111bd9 28%,#08111b45 48%,transparent 65%)}
+.carousel-slide .card.visual .offer-label{grid-row:2;margin:17px 20px 0;background:#152a38b3}
+.carousel-slide .card.visual .promo-copy{position:relative;grid-row:3;clip:auto;white-space:normal;width:100%;height:auto;margin:0;padding:12px 20px 16px;overflow:visible;text-shadow:none}
+.carousel-slide .card.visual .card-title{font-size:clamp(1.16rem,3.8vw,1.55rem);line-height:1.25}
+.carousel-slide .card.visual .card-description{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;font-size:.85rem;line-height:1.5;color:var(--muted)}
+.carousel-slide .card.visual .content-badge{font-size:.67rem;margin-bottom:7px}
+.carousel-slide .card.visual .card-cta{font-size:.82rem}
+.carousel-slide .card.visual .promo-copy>.external-action{display:none}
+.carousel-slide .card.visual .promo-copy:not(:has(.card-cta))>.external-action{display:grid}
+.promo-dates{display:block;color:var(--muted);font-size:.75rem;line-height:1.5;margin-top:8px}
+@media(min-width:600px){.carousel-slide .card.visual{padding-top:0}.carousel-slide .card.visual .promo-copy{padding-inline:24px}.carousel-slide .card.visual .offer-label{margin-left:24px}}
