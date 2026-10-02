@@ -113,6 +113,17 @@ const {tmpdir}=require('node:os');
   const contrast=(a,b)=>{const x=luminance(a),y=luminance(b);return (Math.max(x,y)+.05)/(Math.min(x,y)+.05)};
   for(const [fg,bg] of [['#f1f4fa','#131e2e'],['#b0bdd0','#131e2e'],['#9aabc2','#0a111e'],['#7acfe5','#0a111e'],['#b8e6f1','#213547']])assert(contrast(fg,bg)>=4.5,'Text contrast '+fg);
   assert.deepEqual(errors,[]);
+  // Resolution selection only: actual browser load/error events, including HTTP-200 placeholders.
+  const thumbnail=page.locator('.video-visual img');
+  assert((await thumbnail.getAttribute('src')).endsWith('/maxresdefault.jpg'));
+  const imageStyle=await thumbnail.evaluate(n=>({fit:getComputedStyle(n).objectFit,filter:getComputedStyle(n).filter,transform:getComputedStyle(n).transform}));
+  assert.deepEqual(imageStyle,{fit:'cover',filter:'none',transform:'none'});
+  await page.route('https://i.ytimg.com/**',r=>r.request().url().endsWith('/maxresdefault.jpg')?r.abort():r.fulfill({contentType:'image/webp',body:asset}));
+  await load();await page.waitForFunction(()=>document.querySelector('.video-visual img')?.src.endsWith('/sddefault.jpg')&&document.querySelector('.video-visual img').complete);
+  await page.unroute('https://i.ytimg.com/**');
+  await page.route('https://i.ytimg.com/**',r=>{const url=r.request().url();if(url.endsWith('/maxresdefault.jpg'))return r.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="120" height="90"></svg>'});if(url.endsWith('/sddefault.jpg'))return r.abort();return r.fulfill({contentType:'image/webp',body:asset})});
+  await load();await page.waitForFunction(()=>document.querySelector('.video-visual img')?.src.endsWith('/hqdefault.jpg')&&document.querySelector('.video-visual img').complete);
+  await page.unroute('https://i.ytimg.com/**');
   if(process.env.PUBLIC_SCREENSHOTS){mkdirSync(process.env.PUBLIC_SCREENSHOTS,{recursive:true});for(const width of [390,1440]){await page.setViewportSize({width,height:900});await page.goto(origin);await page.waitForSelector('.video-title');await page.screenshot({path:join(process.env.PUBLIC_SCREENSHOTS,'public-'+width+'.png'),fullPage:true,animations:'disabled'})}}
   console.log('Public config/profile/assets/socials/video, dates/statuses, 0/1/2/3 campaigns, controls/touch/keyboard/rotation, sources/clicks/impressions, Story redirects/stats, admin edits, fallback, five widths: OK');
  }finally{if(browser)await browser.close();await new Promise(r=>site.listening?site.close(r):r());await new Promise(r=>partner.listening?partner.close(r):r());backend.kill();await new Promise(r=>backend.exitCode!==null?r():backend.once('exit',r));rmSync(temp,{recursive:true,force:true})}
