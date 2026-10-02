@@ -114,3 +114,15 @@ footer{text-align:center;display:flex;flex-direction:column;align-items:center;g
 .carousel-dots{bottom:0}.carousel-dots button::after{width:6px;height:6px}
 @media(max-width:599px){.carousel-slide .offer-card{padding:140px 20px 44px;min-height:440px}.offer-title{max-width:none}.offer-code{gap:8px;padding:10px 12px}.offer-code-feedback{flex-basis:100%;padding-left:27px}}
 @media(hover:hover) and (pointer:fine){.offer-cta:hover{background:#1268ff}.offer-code:hover{border-color:#7acfe5}}
+
+/* Offer reading area and independent stretched link. */
+.carousel-slide .offer-card{cursor:pointer}
+.offer-link{position:absolute;inset:0;z-index:1;border-radius:inherit}
+.offer-link:focus-visible{outline-offset:-4px}
+.offer-copy{pointer-events:none;z-index:2}
+.offer-copy::before{content:"";position:absolute;inset:-45px -35px -35px;z-index:-1;pointer-events:none;background:radial-gradient(ellipse at 30% 65%,#050b14bb 5%,#050b1470 45%,transparent 75%)}
+.offer-code{position:relative;pointer-events:auto;z-index:3}
+.carousel-slide .offer-card::after{background:linear-gradient(180deg,transparent 8%,#07101b22 25%,#07101b99 52%,#07101bf2 82%,#07101bfc 100%),linear-gradient(90deg,#07101b66,transparent 80%)}
+.offer-title,.offer-dates,.offer-kicker{text-shadow:0 2px 8px #0009}
+.offer-dates{color:#e0e9f5}
+@media(hover:hover) and (pointer:fine){.offer-card:hover{border-color:#9bd5ef88}}

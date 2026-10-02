@@ -3,14 +3,16 @@ from datetime import date
 from urllib.request import Request, urlopen, build_opener, HTTPRedirectHandler
 from urllib.error import HTTPError
 from pathlib import Path
+from fixtures import prepare,populate
 
 class AnalyticsTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory()
         os.environ['ANALYTICS_DB']=self.tmp.name+'/stats.db'
         os.environ['UPLOAD_DIR']=self.tmp.name+'/uploads'
+        prepare(os.environ['ANALYTICS_DB'])
         spec=importlib.util.spec_from_file_location('analytics',Path(__file__).with_name('analytics.py'))
-        self.a=importlib.util.module_from_spec(spec);spec.loader.exec_module(self.a);self.a.init()
+        self.a=importlib.util.module_from_spec(spec);spec.loader.exec_module(self.a);self.a.init();populate(self.a)
         self.servers=[]
     def tearDown(self):
         for s in self.servers:s.shutdown();s.server_close()
@@ -21,7 +23,7 @@ class AnalyticsTests(unittest.TestCase):
         return 'http://127.0.0.1:'+str(s.server_port)
     def request(self,url,data=None,headers=None,method=None):
         try:
-            with urlopen(Request(url,json.dumps(data).encode() if data is not None else None,headers or {},method=method)) as r:return r.status,r.read()
+            with urlopen(Request(url,json.dumps(data).encode() if data is not None else None,{'X-Links-Request':'1',**(headers or {})},method=method)) as r:return r.status,r.read()
         except HTTPError as e:return e.code,e.read()
     def promo(self,name='Domadoo - Aquara days',url='https://partner.example/offer?aff=117'):
         with self.a.connection() as db:
@@ -93,7 +95,7 @@ class AnalyticsTests(unittest.TestCase):
 
     def test_story_invalid_destination_and_backup_compatibility(self):
         item_id=self.promo();link=self.a.story_link(item_id)['url'];token=link.rsplit('/',1)[-1];public=self.server()
-        for url in ['', 'mailto:a@example.com','https://links.domotik-studio.fr/go/'+token,'https://partner.example:bad','https://partner.example/\nheader']:
+        for url in ['', 'mailto:a@example.com','https://links.example/go/'+token,'https://partner.example:bad','https://partner.example/\nheader']:
             with self.a.connection() as db:db.execute('UPDATE content_blocks SET url=? WHERE id=?',(url,item_id))
             with self.assertRaises(ValueError):self.a.story_link(item_id)
             self.assertEqual(self.redirect(public+'/go/'+token)[0],410)
@@ -154,9 +156,8 @@ class AnalyticsTests(unittest.TestCase):
         self.assertEqual(items[new_id]['clicks'],1)
         rows=self.a.report('2026-09-30','2026-09-30')['rows']
         self.assertEqual({r['link'] for r in rows},{'block:legacy-link-3','block:'+new_id})
-        self.a.CONFIG['links'].append(dict(self.a.CONFIG['links'][3]))
-        with self.a.connection() as db:self.assertNotIn('Domadoo',self.a.metric_aliases(db))
-        self.a.CONFIG['links'].pop()
+        # Persisted aliases remain stable even when the static config is neutral.
+        with self.a.connection() as db:self.assertEqual(self.a.metric_aliases(db)['Domadoo'],'block:legacy-link-3')
         with self.a.connection() as db:
             db.execute("DELETE FROM content_blocks WHERE id='legacy-link-3'")
             self.assertNotIn('Domadoo',self.a.metric_aliases(db))
@@ -192,7 +193,7 @@ class AnalyticsTests(unittest.TestCase):
 
     def test_seed_public_config_and_scheduling(self):
         config=self.a.public_config()
-        self.assertEqual(config['profile']['name'],'DomotiK Studio')
+        self.assertEqual(config['profile']['name'],'Test Creator')
         self.assertEqual(config['links'][0]['id'],'legacy-link-0')
         self.assertEqual(config['socials'][0]['metricKey'],'button:legacy-button-0')
         with self.a.connection() as db:
@@ -255,7 +256,7 @@ class AnalyticsTests(unittest.TestCase):
         self.a.record('click','youtube','block:legacy-link-0','2026-09-30')
         row=self.a.report('2026-09-30','2026-09-30')['rows'][0]
         self.assertEqual(row['link'],'block:legacy-link-0')
-        self.assertEqual(row['label'],self.a.CONFIG['links'][0]['title'])
+        self.assertEqual(row['label'],'Communauté')
 
     def test_promotion_restore_and_atomic_replacement(self):
         admin=self.server(True)
@@ -323,7 +324,7 @@ class AnalyticsTests(unittest.TestCase):
         admin=self.server(True)
         status,body=self.request(admin+'/api/quotes/analyze',{'text':' Alpha \nAlpha\nBeta\n '})
         self.assertEqual(status,200)
-        self.assertEqual(json.loads(body),{'detected':3,'new':2,'duplicates':1})
+        self.assertEqual(json.loads(body),{'detected':3,'new':2,'duplicates':1,'allowed':2,'excess':0,'added':0})
         self.assertEqual(self.a.quote_list(),[])
         status,body=self.request(admin+'/api/quotes',{'text':' Alpha \nAlpha\nBeta\n '})
         self.assertEqual(status,200);self.assertEqual(json.loads(body)['new'],2)
@@ -356,11 +357,11 @@ class AnalyticsTests(unittest.TestCase):
     def test_application_version_manual_and_release_restart(self):
         from unittest.mock import patch
         admin=self.server(True)
-        self.assertEqual(self.a.public_config()['profile']['app_version'],'V1.046')
+        self.assertEqual(self.a.public_config()['profile']['app_version'],(self.a.ROOT/'VERSION').read_text().strip())
         for value in ['V2.001','V1.1000','V1.060']:
             status,body=self.request(admin+'/api/app-version',{'app_version':value})
             self.assertEqual(status,200);self.assertEqual(self.a.public_config()['profile']['app_version'],value)
-        for value in ['1.046','V1.46','V1.046<script>',None]:
+        for value in ['1.046','V1.','V1.046<script>',None]:
             self.assertEqual(self.request(admin+'/api/app-version',{'app_version':value})[0],400)
         with patch.dict(os.environ,{'APP_RELEASE_VERSION':'V1.047','APP_RELEASE_ID':'release-a'}):
             self.a.init()
@@ -379,6 +380,55 @@ class AnalyticsTests(unittest.TestCase):
         self.assertEqual(module.choose('ordinary commit'),'')
         self.assertEqual(module.choose('Release V1.046'),'V1.046')
 
+
+    def test_quote_capacity_preview_partial_and_clear(self):
+        admin=self.server(True)
+        self.a.add_quotes({'text':'\n'.join('Quote '+str(i) for i in range(285))})
+        data={'text':'\n'.join('New '+str(i) for i in range(20))}
+        status,body=self.request(admin+'/api/quotes/analyze',data)
+        summary=json.loads(body);self.assertEqual(status,200)
+        self.assertEqual((summary['new'],summary['allowed'],summary['excess']),(20,15,5))
+        self.assertEqual(len(self.a.quote_list()),285)
+        status,body=self.request(admin+'/api/quotes',{**data,'limit':15})
+        self.assertEqual(status,200);self.assertEqual(json.loads(body)['added'],15)
+        self.assertEqual(len(self.a.quote_list()),300)
+        self.assertEqual(self.request(admin+'/api/quotes',{'text':'Extra','single':True})[0],400)
+        self.assertEqual(self.a.add_quotes({'text':'Bulk extra'})['added'],0)
+        self.assertEqual(len(self.a.quote_list()),300)
+        with self.a.connection() as db:db.execute('UPDATE footer_quotes SET active=0')
+        self.assertEqual(self.a.add_quotes({'text':'Inactive still counts'})['added'],0)
+        self.assertEqual(self.request(admin+'/api/quotes',method='DELETE')[0],204)
+        self.assertEqual(self.a.quote_list(),[])
+        self.assertEqual(self.a.public_config()['profile']['footer_quote'],'')
+        self.assertEqual(self.a.add_quotes({'text':'After clear'})['added'],1)
+
+
+    def test_promo_code_copy_snapshot_filters_and_history(self):
+        public=self.server(False);item={'id':self.promo(),'internal_name':'Domadoo - Aquara days'}
+        with self.a.connection() as db:db.execute("UPDATE content_blocks SET promo_code='OLD' WHERE id=?",(item['id'],))
+        payload={'kind':'promo_code_copy','link':'block:'+item['id'],'code':'OLD','source':'instagram'}
+        headers={'Origin':self.a.ORIGIN,'User-Agent':'Mozilla/5.0'}
+        self.assertEqual(self.request(public+'/metrics',payload,headers)[0],204)
+        self.assertEqual(self.request(public+'/metrics',payload,headers)[0],204)
+        with self.a.connection() as db:
+            db.execute("UPDATE content_blocks SET promo_code='NEW',internal_name='Renamed',archived=1 WHERE id=?",(item['id'],))
+            db.execute("INSERT INTO counts VALUES('2001-01-01','instagram','promo_code_copy',?,99)",(json.dumps({'id':item['id'],'name':'Old','code':'EXCLUDED','timestamp':'2001-01-01T00:00:00+00:00'}),))
+        day=self.a.datetime.now(self.a.PARIS).date().isoformat()
+        report=self.a.report(day,day,'instagram')
+        self.assertEqual(sum(x['total'] for x in report['promo_code_copies']),2)
+        self.assertEqual(report['promo_code_copies'][0]['code'],'OLD')
+        self.assertEqual(report['promo_code_copies'][0]['name'],item['internal_name'])
+        self.assertFalse(any(x['kind']=='click' for x in report['rows']))
+        self.assertEqual(self.a.report(day,day,'youtube')['promo_code_copies'],[])
+        self.a.record('impression','instagram','block:'+item['id'],day)
+        report=self.a.report(day,day,'instagram')
+        self.assertEqual(report['campaign_metrics'][0]['total'],1)
+        self.assertEqual(report['campaign_metrics'][0]['kind'],'impression')
+        backup=json.loads(self.a.export_backup());self.a.restore_backup(backup)
+        self.assertEqual(sum(x['total'] for x in self.a.report(day,day)['promo_code_copies']),2)
+        self.assertEqual(self.request(public+'/metrics',{**payload,'code':''},headers)[0],400)
+
 if __name__=='__main__':unittest.main()
+
 
 

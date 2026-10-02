@@ -16,13 +16,10 @@ function stop(code) {
   if (!nginx) process.exit(code);
   else nginx.once("exit", () => process.exit(code));
 }
-// STATS_PASSWORD is retained only as a legacy enable flag; VPN controls access.
-const analyticsEnabled = process.env.ANALYTICS_ENABLED ?? (process.env.STATS_PASSWORD ? "true" : "false");
-if (analyticsEnabled === "true") {
-  analytics = spawn("python3", ["/app/analytics.py"], { stdio: "inherit" });
-  analytics.on("error", () => stop(1));
-  analytics.on("exit", () => { if (!stopping) stop(1); });
-}
+// Content/admin are always available; analytics.enabled controls collection only.
+analytics = spawn("python3", ["/app/analytics.py"], { stdio: "inherit" });
+analytics.on("error", () => stop(1));
+analytics.on("exit", () => { if (!stopping) stop(1); });
 server.on("error", () => stop(1));
 server.listen(3002, "127.0.0.1", () => {
   nginx = spawn("nginx", ["-g", "daemon off;"], { stdio: "inherit" });

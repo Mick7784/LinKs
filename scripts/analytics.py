@@ -1,20 +1,26 @@
 """Small SQLite content manager and aggregate analytics service."""
-import base64, binascii, json, mimetypes, os, re, secrets, sqlite3, threading, uuid
+import base64, binascii, json, mimetypes, os, re, secrets, sqlite3, threading, uuid, sys, time, shutil
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlsplit, urlunsplit
 from zoneinfo import ZoneInfo
+sys.path.insert(0,str(Path(__file__).resolve().parent))
+import instance
 
 ROOT=Path(__file__).resolve().parent
 if not (ROOT/"links.json").exists(): ROOT=ROOT.parent
 DB=os.environ.get("ANALYTICS_DB","/data/analytics.db")
-ORIGIN=os.environ.get("ANALYTICS_ORIGIN","https://links.domotik-studio.fr").rstrip("/")
+ORIGIN=os.environ.get("ANALYTICS_ORIGIN","").rstrip("/")
 ADMIN=ROOT/"admin"; UPLOADS=Path(os.environ.get("UPLOAD_DIR","/data/uploads"))
 CONFIG=json.loads((ROOT/"links.json").read_text(encoding="utf-8"))
 DATA_LOCK=threading.RLock()
-PARIS=ZoneInfo("Europe/Paris")
+PARIS=ZoneInfo("UTC")
+DATA_DIR=Path(DB).parent
+STATIC=ROOT/"site" if (ROOT/"site").exists() else Path("/usr/share/nginx/html")
+AUTH_ATTEMPTS=[]
+AUTH_LOCK=threading.Lock()
 TYPES={"classic","promo","featured"}; ICONS={"youtube","instagram","tiktok","discord","mail","website","cart","home"}
 BADGES={"","Promo","Nouveau","Partenaire","Bon plan"}
 IMAGE_TYPES={"image/jpeg":".jpg","image/png":".png","image/webp":".webp","image/gif":".gif"}
@@ -46,7 +52,18 @@ def legacy_expiry(value):
     except ValueError:return None
 
 def init():
+    global ORIGIN,PARIS
     Path(DB).parent.mkdir(parents=True,exist_ok=True); UPLOADS.mkdir(parents=True,exist_ok=True)
+    existed=Path(DB).exists() and Path(DB).stat().st_size>0
+    if existed:
+        with sqlite3.connect(DB) as before:
+            tables={r[0] for r in before.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            legacy="settings" in tables and not before.execute("SELECT 1 FROM settings WHERE key='app.config_schema_version'").fetchone()
+            if legacy:
+                target=DATA_DIR/"pre-v11-database.db"
+                if not target.exists():
+                    with sqlite3.connect(target) as backup:before.backup(backup)
+    else:legacy=False
     with connection() as db:
         db.execute("PRAGMA journal_mode=WAL")
         db.execute("CREATE TABLE IF NOT EXISTS counts(day TEXT,source TEXT,kind TEXT,link TEXT,total INTEGER NOT NULL,PRIMARY KEY(day,source,kind,link))")
@@ -69,44 +86,47 @@ def init():
           token TEXT PRIMARY KEY,promotion_id TEXT NOT NULL UNIQUE,name TEXT NOT NULL,
           created_at TEXT NOT NULL,deleted INTEGER NOT NULL DEFAULT 0)""")
         db.execute("CREATE TABLE IF NOT EXISTS footer_quotes(id TEXT PRIMARY KEY,text TEXT NOT NULL UNIQUE,active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),created_at TEXT NOT NULL)")
-        seed(db)
+        instance.initialize(db,legacy,CONFIG,[DATA_DIR/"assets",STATIC/"assets"],DATA_DIR)
         init_version(db)
+        ORIGIN=instance.get(db,"site.url")
+        PARIS=ZoneInfo(instance.get(db,"app.timezone","UTC"))
 
 def checked_version(value):
-    if not isinstance(value,str) or not re.fullmatch(r"V[0-9]+\.[0-9]{3,}",value) or len(value)>40:
-        raise ValueError("Format attendu : V1.046 ou V2.001")
+    if not isinstance(value,str) or not re.fullmatch(r"V[0-9]+\.[0-9]+",value) or len(value)>40:
+        raise ValueError("Format attendu : V1.1, V1.046 ou V2.001")
     return value
 
 def init_version(db):
     release=os.environ.get("APP_RELEASE_VERSION","")
     release_id=os.environ.get("APP_RELEASE_ID","")
     if release:checked_version(release)
-    db.execute("INSERT OR IGNORE INTO settings VALUES('app.version',?)",(release or "V1.046",))
+    db.execute("INSERT OR IGNORE INTO settings VALUES('app.version',?)",(release or (ROOT/"VERSION").read_text().strip(),))
     applied=db.execute("SELECT value FROM settings WHERE key='app.release_id'").fetchone()
     if release and release_id and (not applied or applied[0]!=release_id):
         db.execute("INSERT INTO settings VALUES('app.version',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(release,))
         db.execute("INSERT INTO settings VALUES('app.release_id',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(release_id,))
 
-def seed(db):
-    if db.execute("SELECT 1 FROM settings WHERE key='content.initialized'").fetchone():return
-    stamp=now_iso()
-    if db.execute("SELECT COUNT(*) FROM content_blocks").fetchone()[0]==0:
-        for i,item in enumerate(CONFIG.get("links",[])):
-            db.execute("""INSERT INTO content_blocks(id,type,internal_name,title,description,url,icon,image,badge,cta,position,active,draft,start_at,end_at,archived,created_at,updated_at,priority)
-              VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",(
-              f"legacy-link-{i}","featured" if item.get("featured") else "classic",item.get("title",f"Lien {i+1}"),
-              item.get("title",""),item.get("description",""),item.get("url",""),item.get("icon","website"),
-              item.get("image",""),"","Découvrir",i,1,0,None,legacy_expiry(item.get("expiresAt")),0,stamp,stamp,"normal"))
-    if db.execute("SELECT COUNT(*) FROM top_buttons").fetchone()[0]==0:
-        for i,item in enumerate(CONFIG.get("socials",[])):
-            db.execute("INSERT INTO top_buttons VALUES(?,?,?,?,?,?,?,?)",(f"legacy-button-{i}",item.get("platform","website"),item.get("label",item.get("platform","Lien")),item.get("url",""),i,1,stamp,stamp))
-    profile=CONFIG.get("profile",{})
-    for key,value in {"name":profile.get("name","DomotiK Studio"),"tagline":profile.get("tagline",""),"description":profile.get("description",""),"avatar":profile.get("avatar","/assets/portrait.webp"),"logo":profile.get("logo","/assets/logo.webp")}.items():
-        db.execute("INSERT OR IGNORE INTO settings VALUES(?,?)",("profile."+key,value))
+def analytics_enabled():
+    with connection() as db:return instance.get(db,"analytics.enabled")=="true"
 
-    db.execute("INSERT OR REPLACE INTO settings VALUES('content.initialized','1')")
+def sync_configuration(db):
+    global ORIGIN,PARIS
+    ORIGIN=instance.get(db,"site.url");PARIS=ZoneInfo(instance.get(db,"app.timezone","UTC"))
+
+def record_promo_copy(data):
+    if not analytics_enabled():return
+    key=data.get("link","")
+    code=data.get("code")
+    if not isinstance(key,str) or not key.startswith("block:") or not isinstance(code,str) or not code.strip() or len(code)>80:raise ValueError()
+    with connection() as db:
+        row=db.execute("SELECT id,internal_name,type FROM content_blocks WHERE id=?",(key[6:],)).fetchone()
+        if not row or row["type"] not in {"promo","featured"}:raise ValueError()
+        stamp=datetime.now(timezone.utc).replace(minute=0,second=0,microsecond=0).isoformat()
+        snapshot=json.dumps({"id":row["id"],"name":row["internal_name"],"code":code,"timestamp":stamp},sort_keys=True,ensure_ascii=False)
+        increment(db,"promo_code_copy",source_of(data),snapshot,datetime.now(PARIS).date().isoformat())
 
 def record(kind,source,link,day=None):
+    if not analytics_enabled():return
     day=day or datetime.now(PARIS).date().isoformat()
     with connection() as db:
         increment(db,kind,source,link,day)
@@ -117,35 +137,25 @@ def source_of(data):
     source=data.get("source","")
     if not isinstance(source,str):raise ValueError()
     source=source.strip().lower()
-    known={"yt","ig","youtube","instagram","facebook","tiktok","discord","google","newsletter","domotik-studio","domotik-studio.fr"}
-    if source:return {"yt":"youtube","ig":"instagram","domotik-studio":"domotik-studio.fr"}.get(source,source) if source in known else "autre-campagne"
+    known={"yt","ig","youtube","instagram","facebook","tiktok","discord","google","newsletter","site","mail","qr"}
+    with connection() as db:rules=json.loads(instance.get(db,"analytics.source_rules","[]"))
+    if source:
+        for rule in rules:
+            if source==rule["key"] or source in rule["aliases"]:return rule["key"]
+        return {"yt":"youtube","ig":"instagram"}.get(source,source) if source in known else "autre-campagne"
     ref=data.get("referrer","")
     if not isinstance(ref,str):raise ValueError()
     host=(urlsplit(ref).hostname or "").lower()
     if host==urlsplit(ORIGIN).hostname:return "direct-inconnu"
-    for domain,name in [("youtube.com","youtube"),("youtu.be","youtube"),("instagram.com","instagram"),("facebook.com","facebook"),("tiktok.com","tiktok"),("discord.com","discord"),("google.com","google"),("google.fr","google"),("domotik-studio.fr","domotik-studio.fr")]:
+    for domain,name in [("youtube.com","youtube"),("youtu.be","youtube"),("instagram.com","instagram"),("facebook.com","facebook"),("tiktok.com","tiktok"),("discord.com","discord"),("google.com","google"),("google.fr","google")]:
         if host==domain or host.endswith("."+domain):return name
+    for rule in rules:
+        if any(host==domain or host.endswith("."+domain) for domain in rule["domains"]):return rule["key"]
     return "autre-site" if host else "direct-inconnu"
 def metric_aliases(db):
-    # Only seeded items have a known predecessor. Never merge distinct blocks
-    # merely because they share a display title; keep stored history untouched.
-    candidates={}
-    for config_key,table,prefix,id_prefix,label_key,label_prefix in [
-        ("links","content_blocks","block:","legacy-link-","title",""),
-        ("socials","top_buttons","button:","legacy-button-","label","Réseau · ")]:
-        existing={r["id"] for r in db.execute(f"SELECT id FROM {table}")}
-        for index,item in enumerate(CONFIG.get(config_key,[])):
-            item_id=id_prefix+str(index)
-            label=item.get(label_key) or item.get("platform","")
-            if label:
-                candidates.setdefault(label_prefix+label,set()).add(prefix+item_id)
-        for label,keys in list(candidates.items()):
-            # Missing or ambiguous predecessors must remain separate.
-            if len(keys)==1:
-                key=next(iter(keys))
-                if key.startswith(prefix) and key.removeprefix(prefix) not in existing:
-                    candidates[label]=set()
-    return {label:next(iter(keys)) for label,keys in candidates.items() if len(keys)==1}
+    saved=json.loads(instance.get(db,"analytics.metric_aliases","{}"))
+    existing={"block:"+r[0] for r in db.execute("SELECT id FROM content_blocks")}|{"button:"+r[0] for r in db.execute("SELECT id FROM top_buttons")}
+    return {name:key for name,key in saved.items() if key in existing}
 
 def report(start,end,source=""):
     a,b=date.fromisoformat(start),date.fromisoformat(end)
@@ -169,7 +179,16 @@ def report(start,end,source=""):
           LEFT JOIN content_blocks b ON b.id=s.promotion_id
           WHERE """+story_where+" ORDER BY c.day",story_params)]
         for row in stories:row['hour']=row.pop('link').rsplit(':',1)[-1]
-    return {"rows":rows,"stories":stories,"timezone":"Europe/Paris"}
+        metric_where="day BETWEEN ? AND ? AND kind IN ('impression','click','promo_code_copy')";metric_params=[start,end]
+        if source:metric_where+=" AND source=?";metric_params.append(source)
+        copies=[];campaign_metrics=[]
+        for metric in db.execute("SELECT * FROM counts WHERE "+metric_where,metric_params):
+            if metric["kind"]=="promo_code_copy":
+                snapshot=json.loads(metric["link"])
+                copies.append({"day":metric["day"],"source":metric["source"],"total":metric["total"],**snapshot})
+            elif metric["link"].startswith("block:"):
+                campaign_metrics.append({"day":metric["day"],"source":metric["source"],"id":metric["link"][6:],"kind":metric["kind"],"total":metric["total"]})
+    return {"rows":rows,"stories":stories,"promo_code_copies":copies,"campaign_metrics":campaign_metrics,"timezone":str(PARIS)}
 
 STORY_TOKEN=re.compile(r'st_[A-Za-z0-9_-]{16}')
 def story_url_valid(url):
@@ -207,8 +226,13 @@ def story_link(promotion_id):
         return {'url':ORIGIN+'/go/'+link['token']}
 
 def profile(db):
-    values={r["key"]:r["value"] for r in db.execute("SELECT key,value FROM settings")}
-    return {**{k:values.get("profile."+k,"") for k in ["name","tagline","description","avatar","logo"]},"app_version":values.get("app.version","")}
+    values=instance.settings(db)
+    return {**{k:values.get("profile."+k,"") for k in ["name","tagline","description","avatar","logo"]},
+      "app_version":values.get("app.version",""),"footer_owner":values.get("footer.owner",values.get("profile.name","")),
+      "site_url":values.get("site.url",""),"timezone":values.get("app.timezone","UTC"),
+      "analytics_enabled":values.get("analytics.enabled")=="true","video_enabled":values.get("video.enabled")=="true",
+      "video_channel_id":values.get("video.channel_id",""),"auth_mode":values.get("auth.mode","local"),
+      "setup_completed":values.get("app.setup_completed")=="true","source_rules":json.loads(values.get("analytics.source_rules","[]"))}
 def status_of(row,at=None):
     if row["archived"]:return "Archivé"
     if row["draft"]:return "Brouillon"
@@ -247,8 +271,19 @@ def public_config():
         result={"profile":profile(db),"socials":[{"id":x["id"],"platform":x["icon"],"label":x["label"],"url":x["url"],"metricKey":"button:"+x["id"]} for x in buttons],
                 "links":[{"id":x["id"],"type":x["type"],"title":x["title"],"description":x["description"],"url":x["url"],"icon":x["icon"],"image":x["image"],"badge":x["badge"],"cta":x["cta"],"priority":x["priority"],"start_at":x["start_at"],"end_at":x["end_at"],"promo_code":x["promo_code"],"metricKey":"block:"+x["id"]} for x in blocks]}
         result["profile"]["footer_quote"]=quote["text"] if quote else ""
-    if CONFIG.get("latestVideo"):result["latestVideo"]=CONFIG["latestVideo"]
+    if result["profile"]["video_enabled"]:result["latestVideo"]={"enabled":True}
+    result["setup_completed"]=result["profile"]["setup_completed"]
+    result["timezone"]=result["profile"]["timezone"]
+    result["analytics_enabled"]=result["profile"]["analytics_enabled"]
+    for key in ["auth_mode","source_rules","video_channel_id"]:result["profile"].pop(key,None)
     return result
+
+def write_public_fallback():
+    """Public-only snapshot for static fallback; never serialize private settings."""
+    with DATA_LOCK:
+        temporary=DATA_DIR/'public-fallback.tmp';target=DATA_DIR/'public-fallback.json'
+        temporary.write_text(json.dumps(public_config(),ensure_ascii=False),encoding='utf-8')
+        temporary.replace(target)
 
 
 def quote_list():
@@ -269,10 +304,15 @@ def add_quotes(data,preview=False):
         if not preview:db.execute("BEGIN IMMEDIATE")
         existing={r[0] for r in db.execute("SELECT text FROM footer_quotes")}
         new=list(dict.fromkeys(s for s in entries if s not in existing))
+        available=max(0,300-len(existing))
+        cap=data.get("limit",300)
+        if type(cap) is not int or not 0<=cap<=300:raise ValueError("Limite invalide")
+        allowed=min(len(new),available,cap)
+        if not preview and data.get("single") is True and new and not available:raise ValueError("Limite de 300 citations atteinte.")
         if not preview:
-            for value in new:
+            for value in new[:allowed]:
                 db.execute("INSERT INTO footer_quotes VALUES(?,?,1,?)",(str(uuid.uuid4()),value,now_iso()))
-        return {"detected":len(entries),"new":len(new),"duplicates":len(entries)-len(new)}
+        return {"detected":len(entries),"new":len(new),"duplicates":len(entries)-len(new),"allowed":allowed,"excess":len(new)-allowed,"added":0 if preview else allowed}
 
 def required(data,key,limit=300):
     value=data.get(key,"")
@@ -380,7 +420,7 @@ def save_content(db,item,item_id=None):
         db.execute("INSERT INTO content_blocks ("+",".join(values)+") VALUES ("+",".join("?" for _ in values)+")",list(values.values()))
     return item_id
 
-BACKUP_TABLES=('content_blocks','top_buttons','settings','counts','story_links')
+BACKUP_TABLES=('content_blocks','top_buttons','settings','counts','story_links','footer_quotes')
 BACKUP_LIMIT=64*1024*1024
 UPLOAD_NAME=re.compile(r'[a-f0-9-]{36}\.(jpg|png|webp|gif)')
 
@@ -399,20 +439,39 @@ def export_backup():
             size+=len(raw)
             if size>40*1024*1024:raise ValueError('Sauvegarde trop volumineuse : sauvegarder le volume serveur')
             images[name]=base64.b64encode(raw).decode('ascii')
-        result={'format':'domotik-links-backup','version':2,'created_at':now_iso(),'tables':tables,'images':images}
+        assets={}
+        for path in (DATA_DIR/'assets').glob('*'):
+            if path.is_file():assets[path.name]=base64.b64encode(path.read_bytes()).decode('ascii')
+        result={'format':'links-backup','version':3,'created_at':now_iso(),'tables':tables,'images':images,'assets':assets}
         encoded=json.dumps(result,ensure_ascii=False).encode()
         if len(encoded)>BACKUP_LIMIT:raise ValueError('Sauvegarde supérieure à 64 Mo : sauvegarder le volume serveur')
         return encoded
 
 def restore_backup(data):
-    if data.get('format')!='domotik-links-backup' or data.get('version') not in {1,2}:raise ValueError('Ce fichier n’est pas une sauvegarde Links compatible')
+    if data.get('format') not in {'links-backup','domotik-links-backup'} or data.get('version') not in {1,2,3}:raise ValueError('Ce fichier n’est pas une sauvegarde Links compatible')
     tables=data.get('tables');images=data.get('images')
-    if data.get('version')==1 and isinstance(tables,dict) and set(tables)==set(BACKUP_TABLES)-{'story_links'}:
-        # An old backup predates Stories: retain the new history and reserved codes.
+    if not isinstance(tables,dict) or not isinstance(images,dict):raise ValueError('Sauvegarde incomplète')
+    if data.get('version')<3:
+        expected={'content_blocks','top_buttons','settings','counts'}
+        if not expected<=set(tables) or set(tables)-set(BACKUP_TABLES):raise ValueError('Sauvegarde incomplète')
         with connection() as db:
-            tables={**tables,'story_links':[dict(r) for r in db.execute('SELECT * FROM story_links')]}
-            if isinstance(tables.get('counts'),list):tables['counts']=tables['counts']+[dict(r) for r in db.execute("SELECT * FROM counts WHERE kind='story'")]
-    if not isinstance(tables,dict) or set(tables)!=set(BACKUP_TABLES) or not isinstance(images,dict):raise ValueError('Sauvegarde incomplète')
+            for table in {'footer_quotes','story_links'}-set(tables):tables[table]=[dict(r) for r in db.execute('SELECT * FROM '+table)]
+            # Older formats did not know these event types. Preserve them once.
+            existing={(r['day'],r['source'],r['kind'],r['link']) for r in tables['counts']}
+            for r in db.execute("SELECT * FROM counts WHERE kind IN ('story','promo_code_copy')"):
+                if (r['day'],r['source'],r['kind'],r['link']) not in existing:tables['counts'].append(dict(r))
+    if set(tables)!=set(BACKUP_TABLES):raise ValueError('Sauvegarde incomplète')
+    assets=data.get('assets',{})
+    if not isinstance(assets,dict):raise ValueError('Assets invalides')
+    asset_bytes={}
+    for name,encoded in assets.items():
+        if not isinstance(name,str) or not re.fullmatch(r'[A-Za-z0-9._-]+\.(webp|jpg|jpeg|png|gif)',name) or not isinstance(encoded,str):raise ValueError('Asset invalide')
+        raw=base64.b64decode(encoded,validate=True)
+        if not 0<len(raw)<=4*1024*1024:raise ValueError('Asset trop volumineux')
+        old=DATA_DIR/'assets'/name
+        if old.exists() and old.read_bytes()!=raw:raise ValueError('Asset historique différent : restauration refusée pour conserver son URL')
+        asset_bytes[name]=raw
+    if sum(map(len,asset_bytes.values()))>40*1024*1024:raise ValueError('Assets trop volumineux')
     decoded={};mapping={};written=[];size=0
     for name,encoded in images.items():
         if not isinstance(name,str) or not UPLOAD_NAME.fullmatch(name) or not isinstance(encoded,str):raise ValueError('Nom ou format image invalide')
@@ -429,6 +488,9 @@ def restore_backup(data):
                 rows=tables[table]
                 if not isinstance(rows,list) or len(rows)>500000:raise ValueError('Table invalide : '+table)
                 schema=list(db.execute('PRAGMA table_info('+table+')'));columns=[c['name'] for c in schema]
+                primary=[c['name'] for c in schema if c['pk']]
+                keys=[tuple(row.get(k) for k in primary) for row in rows if isinstance(row,dict)]
+                if len(keys)!=len(set(keys)):raise ValueError('Identifiants en double : '+table)
                 for row in rows:
                     if table=='content_blocks' and isinstance(row,dict) and 'promo_code' not in row:row['promo_code']=''
                     if not isinstance(row,dict) or set(row)!=set(columns):raise ValueError('Structure incompatible : '+table)
@@ -446,16 +508,28 @@ def restore_backup(data):
                         button_data({**row,'icon':'mail' if row['icon']=='email' else row['icon']})
                     elif table=='counts':
                         date.fromisoformat(row['day'])
-                        if row['kind'] not in {'view','click','impression','story'} or row['total']<1:raise ValueError('Statistique invalide')
+                        if row['kind'] not in {'view','click','impression','story','promo_code_copy'} or row['total']<1:raise ValueError('Statistique invalide')
+                        if row['kind']=='promo_code_copy':
+                            snapshot=json.loads(row['link'])
+                            if not isinstance(snapshot,dict) or set(snapshot)!={'id','name','code','timestamp'} or any(not isinstance(v,str) for v in snapshot.values()) or not snapshot['code'] or len(snapshot['code'])>80:raise ValueError('Copie de code invalide')
+                            instant(snapshot['timestamp'])
                         if row['kind']=='story' and (row['source']!='instagram-story' or not re.fullmatch(r'story:st_[A-Za-z0-9_-]{16}:\d{2}',row['link']) or int(row['link'][-2:])>23):raise ValueError('Statistique Story invalide')
                     elif table=='story_links':
                         if not STORY_TOKEN.fullmatch(row['token']) or row['deleted'] not in (0,1) or not row['name'] or not row['promotion_id']:raise ValueError('Lien Story invalide')
                         instant(row['created_at'])
-                    elif row['key'] not in {'content.initialized','profile.name','profile.tagline','profile.description','profile.avatar','profile.logo','app.version','app.release_id'}:raise ValueError('Réglage inconnu')
+                    elif table=='footer_quotes':
+                        if not row['text'].strip() or len(row['text'])>1000 or row['active'] not in (0,1):raise ValueError('Citation invalide')
+                        instant(row['created_at'])
+                    elif row['key'] not in instance.CONFIG_KEYS:raise ValueError('Réglage inconnu')
+            if len(tables["footer_quotes"])>300:raise ValueError("Maximum 300 citations")
+            incoming_settings={r["key"]:r["value"] for r in tables["settings"]}
+            validate_settings(incoming_settings)
             for row in tables["settings"]:
                 if row["key"]=="app.version":checked_version(row["value"])
             setting_keys={row["key"] for row in tables["settings"]}
-            for row in db.execute("SELECT * FROM settings WHERE key IN ('app.version','app.release_id')"):
+            for row in db.execute("SELECT * FROM settings"):
+                if row["key"] in {"auth.mode","app.setup_completed","app.config_schema_version"}:
+                    tables["settings"]=[r for r in tables["settings"] if r["key"]!=row["key"]];tables["settings"].append(dict(row));continue
                 if row["key"] not in setting_keys:tables["settings"].append(dict(row))
             # Codes are never reassigned, even when restoring a different backup.
             incoming={r['token']:r for r in tables['story_links']}
@@ -476,6 +550,9 @@ def restore_backup(data):
                 if row['key'] in {'profile.avatar','profile.logo'} and row['value'].startswith('/uploads/'):
                     if row['value'] not in mapping:raise ValueError('Image de profil manquante')
                     row['value']=mapping[row['value']]
+            refs=[r['image'] for r in tables['content_blocks']]+[r['value'] for r in tables['settings'] if r['key'] in {'profile.logo','profile.avatar'}]
+            for ref in refs:
+                if ref.startswith('/assets/') and not (STATIC/ref[1:]).is_file() and not (DATA_DIR/ref[1:]).is_file() and ref[8:] not in asset_bytes:raise ValueError('Asset référencé manquant')
             for table in BACKUP_TABLES:
                 db.execute('DELETE FROM '+table)
                 columns=[c['name'] for c in db.execute('PRAGMA table_info('+table+')')]
@@ -486,13 +563,173 @@ def restore_backup(data):
             # New filenames ensure that a failed restore cannot overwrite current images.
             for name,raw in decoded.items():
                 target=UPLOADS/name;written.append(target);target.write_bytes(raw)
+            (DATA_DIR/'assets').mkdir(exist_ok=True)
+            for name,raw in asset_bytes.items():
+                target=DATA_DIR/'assets'/name
+                if not target.exists():written.append(target);target.write_bytes(raw)
+            db.execute('DELETE FROM admin_sessions')
+        with connection() as db:sync_configuration(db)
         return {'blocks':len(tables['content_blocks']),'buttons':len(tables['top_buttons']),'images':len(images)}
     except Exception:
         for path in written:path.unlink(missing_ok=True)
         raise
 
 
+def validate_settings(values):
+    if 'site.url' in values:instance.site_url(values['site.url'],allow_empty=True)
+    if 'app.timezone' in values:instance.timezone_name(values['app.timezone'])
+    if 'analytics.source_rules' in values:instance.source_rules(values['analytics.source_rules'])
+    for key in ['analytics.enabled','video.enabled','app.setup_completed']:
+        if key in values and values[key] not in {'true','false'}:raise ValueError('Valeur booléenne invalide')
+    if 'auth.mode' in values and values['auth.mode'] not in {'external','local'}:raise ValueError('Mode d’accès invalide')
+    if 'analytics.metric_aliases' in values:
+        aliases=json.loads(values['analytics.metric_aliases'])
+        if not isinstance(aliases,dict) or any(not isinstance(k,str) or not isinstance(v,str) or not v.startswith(('block:','button:')) for k,v in aliases.items()):raise ValueError('Correspondances statistiques invalides')
+
+def configuration_input(data):
+    values={'profile.name':required(data,'name',120),'profile.tagline':optional(data,'tagline',200),'profile.description':optional(data,'description',300)}
+    for key,limit in [('avatar',2048),('logo',2048),('footer_owner',120),('site_url',2048),('timezone',100),('video_channel_id',100)]:
+        if key in data:values[{'avatar':'profile.avatar','logo':'profile.logo','footer_owner':'footer.owner','site_url':'site.url','timezone':'app.timezone','video_channel_id':'video.channel_id'}[key]]=optional(data,key,limit)
+    for key,target in [('analytics_enabled','analytics.enabled'),('video_enabled','video.enabled')]:
+        if key in data:
+            if type(data[key]) is not bool:raise ValueError('Choix invalide')
+            values[target]='true' if data[key] else 'false'
+    if 'source_rules' in data:values['analytics.source_rules']=instance.source_rules(data['source_rules'])
+    for key in ['profile.logo','profile.avatar']:
+        if key in values and values[key] and not (re.fullmatch(r'/uploads/[a-f0-9-]{36}\.(jpg|png|webp|gif)',values[key]) or re.fullmatch(r'/assets/[A-Za-z0-9._-]+',values[key])):raise ValueError('Importer une image locale pour le profil')
+        if key in values and values[key] and not (UPLOADS/values[key][9:]).is_file() and not (DATA_DIR/values[key][1:]).is_file() and not (STATIC/values[key][1:]).is_file():raise ValueError('Image de profil introuvable')
+    if 'video.channel_id' in values and values['video.channel_id'] and not re.fullmatch(r'UC[\w-]{22}',values['video.channel_id']):raise ValueError('Identifiant YouTube invalide')
+    validate_settings(values)
+    return values
+
 class Handler(BaseHTTPRequestHandler):
+    def handle_one_request(self):
+        self.response_status=0
+        super().handle_one_request()
+        if self.server.admin and getattr(self,'command','') in {'POST','PUT','DELETE'} and 200<=self.response_status<300:
+            try:write_public_fallback()
+            except (OSError,sqlite3.Error):print('Links : actualisation du secours public indisponible.',flush=True)
+    def send_response(self,code,message=None):
+        self.response_status=code
+        return super().send_response(code,message)
+    def auth_redirect(self,path):
+        self.send_response(303);self.send_header('Location',path);self.send_header('Cache-Control','no-store');self.send_header('Content-Length','0');self.end_headers()
+    def request_safe(self):
+        # An unguessable CSRF token protects local sessions. The custom header
+        # and same-origin check also protect external-auth deployments.
+        origin=self.headers.get('Origin')
+        if self.headers.get('X-Links-Request')!='1':return False
+        return not origin or urlsplit(origin).netloc==self.headers.get('Host')
+    def authorized(self,mutation=False):
+        with connection() as db:
+            ready=instance.get(db,'app.setup_completed')=='true'
+            mode=instance.get(db,'auth.mode','local');session=instance.session(db,self.headers)
+        if not ready:
+            self.json(403,{'error':'Configuration initiale requise.'});return False
+        if mode=='local' and not session:
+            self.json(401,{'error':'Connexion requise.'});return False
+        if mutation and (not self.request_safe() or (mode=='local' and not secrets.compare_digest(self.headers.get('X-Links-CSRF',''),session['csrf']))):
+            self.json(403,{'error':'Requête de sécurité invalide.'});return False
+        return True
+    def auth_get(self):
+        path=urlsplit(self.path).path
+        if path in {'/healthz','/api/public-config'} or path.startswith(('/uploads/','/assets/')):return False
+        with connection() as db:
+            ready=instance.get(db,'app.setup_completed')=='true';mode=instance.get(db,'auth.mode','local');session=instance.session(db,self.headers)
+        if path=='/api/auth/status':
+            self.json(200,{'setup_completed':ready,'mode':mode,'authenticated':ready and (mode=='external' or bool(session)),'csrf':session['csrf'] if session else ''});return True
+        if path in {'/access.js','/access.css'}:
+            self.file(ADMIN/path[1:]);return True
+        if path in {'/setup','/login'}:
+            if ready and (mode=='external' or session):self.auth_redirect('/')
+            elif path=='/login' and not ready:self.auth_redirect('/setup')
+            elif path=='/setup' and ready:self.auth_redirect('/login')
+            else:self.file(ADMIN/'access.html','text/html;charset=utf-8')
+            return True
+        if path=='/' and (not ready or (mode=='local' and not session)):
+            self.auth_redirect('/setup' if not ready else '/login');return True
+        return not self.authorized()
+    def auth_cookie(self,token):
+        with connection() as db:origin=os.environ.get('ADMIN_ORIGIN') or instance.get(db,'site.url')
+        return instance.cookie_header(token,secure=origin.startswith('https://'),clear=not token)
+    def auth_reply(self,token):
+        body=b'{"ok":true}';self.send_response(200);self.send_header('Content-Type','application/json');self.send_header('Cache-Control','no-store');self.send_header('Set-Cookie',self.auth_cookie(token));self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body)
+    def auth_post(self):
+        path=urlsplit(self.path).path
+        if path not in {'/api/setup','/api/setup/check','/api/auth/login','/api/auth/logout','/api/auth/access'}:return not self.authorized(mutation=True)
+        if not self.request_safe():self.json(403,{'error':'Origine de requête invalide.'});return True
+        try:
+            data=self.body(16384)
+            if path in {'/api/setup','/api/setup/check','/api/auth/login'}:
+                with AUTH_LOCK:
+                    now=time.monotonic();AUTH_ATTEMPTS[:]=[x for x in AUTH_ATTEMPTS if x>now-300]
+                    if len(AUTH_ATTEMPTS)>=20:self.json(429,{'error':'Trop de tentatives. Réessayer dans quelques minutes.'});return True
+                    AUTH_ATTEMPTS.append(now)
+            with connection() as db:
+                db.execute('BEGIN IMMEDIATE')
+                ready=instance.get(db,'app.setup_completed')=='true'
+                if path=='/api/setup/check':
+                    saved=db.execute("SELECT value FROM auth_state WHERE key='bootstrap_hash'").fetchone();code=data.get('bootstrap','')
+                    if ready or not isinstance(code,str) or len(code)>100 or not saved or not secrets.compare_digest(instance.digest(code),saved[0]):raise ValueError('Code de configuration invalide.')
+                    self.json(200,{'ok':True});return True
+                if path=='/api/setup':
+                    if ready:raise ValueError('Configuration déjà terminée.')
+                    saved=db.execute("SELECT value FROM auth_state WHERE key='bootstrap_hash'").fetchone()
+                    code=data.get('bootstrap','')
+                    if not isinstance(code,str) or len(code)>100 or not saved or not secrets.compare_digest(instance.digest(code),saved[0]):raise ValueError('Code de configuration invalide.')
+                    if data.get('password')!=data.get('confirmation'):raise ValueError('Les mots de passe ne correspondent pas.')
+                    values=configuration_input(data)
+                    if not values.get('site.url'):raise ValueError('Adresse publique requise.')
+                    first=block_data({'type':'classic','internal_name':required(data,'link_title',300),'title':required(data,'link_title',300),'url':required(data,'link_url',2048)})
+                    logo=data.get('logo_upload');logo_raw=None
+                    if logo is not None:
+                        if not isinstance(logo,dict) or logo.get('type') not in IMAGE_TYPES or not isinstance(logo.get('data'),str):raise ValueError('Logo invalide.')
+                        logo_raw=base64.b64decode(logo['data'].split(',',1)[-1],validate=True)
+                        if not 0<len(logo_raw)<=4*1024*1024:raise ValueError('Logo vide ou supérieur à 4 Mo.')
+                        name=str(uuid.uuid4())+IMAGE_TYPES[logo['type']];values['profile.logo']='/uploads/'+name
+                    # No writes happen until all fields and credentials validate.
+                    instance.account(db,data.get('username'),data.get('password'))
+                    for key,value in values.items():instance.put(db,key,value)
+                    save_content(db,first)
+                    instance.put(db,'auth.mode','local');instance.put(db,'app.setup_completed','true');instance.put(db,'content.initialized','1')
+                    db.execute("DELETE FROM auth_state WHERE key='bootstrap_hash'")
+                    token=instance.new_session(db)
+                    if logo_raw is not None:
+                        self.setup_upload=UPLOADS/name;self.setup_upload.write_bytes(logo_raw)
+                elif path=='/api/auth/login':
+                    if not ready or instance.get(db,'auth.mode')!='local':raise ValueError('Connexion indisponible.')
+                    row=db.execute('SELECT * FROM admin_accounts WHERE id=1').fetchone()
+                    username=data.get('username','');password=data.get('password','')
+                    valid=instance.password_ok(password,row['password_hash'] if row else 'pbkdf2-sha256$600000$'+('00'*24)+'$'+('00'*32))
+                    if not row or not isinstance(username,str) or not secrets.compare_digest(username.encode(),row['username'].encode()) or not valid:raise ValueError('Identifiant ou mot de passe incorrect.')
+                    token=instance.new_session(db)
+                else:
+                    current=instance.get(db,'auth.mode');session=instance.session(db,self.headers)
+                    if not ready or (current=='local' and (not session or not secrets.compare_digest(data.get('csrf',''),session['csrf']))):raise ValueError('Session invalide.')
+                    if path=='/api/auth/logout':
+                        if session:db.execute('DELETE FROM admin_sessions WHERE token_hash=?',(session['token_hash'],))
+                        token=''
+                    else:
+                        mode=data.get('mode')
+                        if mode not in {'local','external'}:raise ValueError('Mode invalide.')
+                        if mode=='external' and data.get('confirm_external') is not True:raise ValueError('Confirmer la protection externe avant de changer de mode.')
+                        if current=='local':
+                            old=db.execute('SELECT password_hash FROM admin_accounts WHERE id=1').fetchone()
+                            if not old or not instance.password_ok(data.get('current_password',''),old[0]):raise ValueError('Mot de passe actuel incorrect.')
+                        if mode=='local':
+                            if data.get('password')!=data.get('confirmation'):raise ValueError('Confirmation incorrecte.')
+                            instance.account(db,data.get('username'),data.get('password'))
+                        instance.put(db,'auth.mode',mode);db.execute('DELETE FROM admin_sessions');token=instance.new_session(db) if mode=='local' else ''
+            with connection() as db:sync_configuration(db)
+            if path=='/api/setup':(DATA_DIR/'setup-code').unlink(missing_ok=True)
+            self.auth_reply(token)
+        except (ValueError,TypeError,KeyError,json.JSONDecodeError,binascii.Error,sqlite3.IntegrityError) as exc:
+            if getattr(self,'setup_upload',None):self.setup_upload.unlink(missing_ok=True)
+            self.json(400,{'error':str(exc) or 'Requête invalide.'})
+        except (OSError,sqlite3.OperationalError):
+            if getattr(self,'setup_upload',None):self.setup_upload.unlink(missing_ok=True)
+            self.json(503,{'error':'Stockage indisponible. Configuration non terminée.'})
+        return True
     def log_message(self,*_):pass
     def setup(self):super().setup();self.connection.settimeout(15)
     def send(self,status,body=b"",mime="application/json; charset=utf-8"):
@@ -509,6 +746,7 @@ class Handler(BaseHTTPRequestHandler):
         except OSError:return self.send(404)
         self.send(200,data,mime or mimetypes.guess_type(path.name)[0] or "application/octet-stream")
     def do_GET(self):
+        if self.server.admin and self.auth_get():return
         url=urlsplit(self.path)
         if url.path.startswith('/go/'):
             return self.redirect_story(url.path.removeprefix('/go/'))
@@ -517,6 +755,11 @@ class Handler(BaseHTTPRequestHandler):
                 with connection() as db:db.execute("SELECT total FROM counts LIMIT 1").fetchone()
                 return self.send(200,b"ok","text/plain")
             except sqlite3.Error:return self.send(503)
+        if url.path.startswith("/assets/"):
+            name=url.path.removeprefix("/assets/")
+            if not re.fullmatch(r"[A-Za-z0-9._-]+",name):return self.send(404)
+            target=DATA_DIR/"assets"/name
+            return self.file(target if target.is_file() else STATIC/"assets"/name)
         if url.path.startswith("/uploads/"):
             name=unquote(url.path.removeprefix("/uploads/"))
             return self.file(UPLOADS/name) if re.fullmatch(r"[a-f0-9-]{36}\.(jpg|png|webp|gif)",name) else self.send(404)
@@ -534,16 +777,19 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError,TypeError) as exc:return self.json(400,{"error":str(exc) or "Paramètres invalides"})
         if url.path=="/preview/style.css":return self.file(ROOT/"site"/"style.css" if (ROOT/"site"/"style.css").exists() else Path("/usr/share/nginx/html/style.css"),"text/css")
         if url.path=="/preview/preview.css":return self.file(ADMIN/"promo-preview.css","text/css")
-        files={"/":("index.html","text/html;charset=utf-8"),"/app.js":("app.js","application/javascript"),"/style.css":("style.css","text/css")}
+        files={"/":("index.html","text/html;charset=utf-8"),"/app.js":("app.js","application/javascript"),"/dates.js":("dates.js","application/javascript"),"/style.css":("style.css","text/css")}
         return self.file(ADMIN/files[url.path][0],files[url.path][1]) if url.path in files else self.send(404)
     def do_POST(self):
+        if self.server.admin and self.auth_post():return
         path=urlsplit(self.path).path
         if not self.server.admin:
             if path!="/metrics":return self.send(404)
+            if not analytics_enabled():return self.send(204)
             if self.headers.get("Origin")!=ORIGIN:return self.send(403)
             if any(x in self.headers.get("User-Agent","").lower() for x in ["bot","spider","crawler","headless"]):return self.send(204)
             try:
                 data=self.body(2048);kind,key=data.get("kind"),data.get("link","")
+                if kind=="promo_code_copy":record_promo_copy(data);return self.send(204)
                 if kind not in {"view","click","impression"} or not isinstance(key,str) or (kind in {"click","impression"} and not valid_metric(key)):raise ValueError()
                 record(kind,source_of(data),key if kind in {"click","impression"} else "");return self.send(204)
             except (ValueError,TypeError,json.JSONDecodeError):return self.send(400)
@@ -574,6 +820,7 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError,TypeError,json.JSONDecodeError,binascii.Error,sqlite3.IntegrityError) as exc:return self.json(400,{"error":str(exc) or "Requête invalide"})
         except (OSError,sqlite3.OperationalError):return self.json(503,{"error":"Stockage indisponible. Les données n’ont pas été remplacées."})
     def do_PUT(self):
+        if self.server.admin and not self.authorized(mutation=True):return
         if not self.server.admin:return self.send(404)
         try:
             data=self.body();path=urlsplit(self.path).path
@@ -589,8 +836,12 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(404)
         except (ValueError,TypeError,json.JSONDecodeError) as exc:return self.json(400,{"error":str(exc) or "Requête invalide"})
     def do_DELETE(self):
+        if self.server.admin and not self.authorized(mutation=True):return
         if not self.server.admin:return self.send(404)
         path=urlsplit(self.path).path
+        if path=="/api/quotes":
+            with connection() as db:db.execute("DELETE FROM footer_quotes")
+            return self.send(204)
         quote=re.fullmatch(r"/api/quotes/([\w-]+)",path)
         if quote:
             with connection() as db:changed=db.execute("DELETE FROM footer_quotes WHERE id=?",(quote.group(1),)).rowcount
@@ -619,7 +870,7 @@ class Handler(BaseHTTPRequestHandler):
                 if item['deleted'] or not item['url']:return self.send(410)
                 if not story_url_valid(item['url']):return self.send(410)
                 agent=self.headers.get('User-Agent','').lower()
-                if count and not any(x in agent for x in ['bot','spider','crawler','headless','facebookexternalhit','meta-externalagent','preview']):
+                if count and instance.get(db,"analytics.enabled")=="true" and not any(x in agent for x in ['bot','spider','crawler','headless','facebookexternalhit','meta-externalagent','preview']):
                     now=datetime.now(PARIS)
                     increment(db,'story','instagram-story','story:'+token+':'+now.strftime('%H'),now.date().isoformat())
                 target=story_destination(item['url'])
@@ -686,12 +937,14 @@ class Handler(BaseHTTPRequestHandler):
         if not raw or len(raw)>4*1024*1024:raise ValueError("Image vide ou supérieure à 4 Mo")
         name=str(uuid.uuid4())+IMAGE_TYPES[mime];(UPLOADS/name).write_bytes(raw);return self.json(201,{"url":"/uploads/"+name})
     def save_settings(self,data):
-        values={"name":required(data,"name",120),"tagline":optional(data,"tagline",200),"description":optional(data,"description",300)}
+        values=configuration_input(data)
         with connection() as db:
-            for key,value in values.items():db.execute("INSERT INTO settings VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",("profile."+key,value))
+            for key,value in values.items():instance.put(db,key,value)
+            sync_configuration(db)
         return self.send(204)
+
 
 def serve(port,admin,host):
     server=ThreadingHTTPServer((host,port),Handler);server.admin=admin;return server
 if __name__=="__main__":
-    init();public=serve(3003,False,"127.0.0.1");threading.Thread(target=public.serve_forever,daemon=True).start();serve(8081,True,"0.0.0.0").serve_forever()
+    init();write_public_fallback();public=serve(3003,False,"127.0.0.1");threading.Thread(target=public.serve_forever,daemon=True).start();serve(8081,True,"0.0.0.0").serve_forever()
