@@ -8,14 +8,14 @@ const { join, resolve } = require('node:path');
 (async()=>{
  const temp=mkdtempSync(join(tmpdir(),'links-admin-'));
  const origin='http://127.0.0.1:8081';
- const server=spawn('python3',[resolve(__dirname,'analytics.py')],{env:{...process.env,ANALYTICS_DB:join(temp,'stats.db'),UPLOAD_DIR:join(temp,'uploads')},stdio:'inherit'});
+ const server=spawn(process.env.PYTHON_PATH||'python3',[resolve(__dirname,'analytics.py')],{env:{...process.env,ANALYTICS_DB:join(temp,'stats.db'),UPLOAD_DIR:join(temp,'uploads')},stdio:'inherit'});
  let browser;
  const request=async(path,data,method='POST')=>{const r=await fetch(origin+path,{method,headers:{'Content-Type':'application/json'},body:data===undefined?undefined:JSON.stringify(data)});if(!r.ok)throw Error(await r.text());return r.status===204?null:r.json()};
  try{
   for(let i=0;i<100;i++){try{if((await fetch(origin+'/healthz')).ok)break}catch{}await new Promise(r=>setTimeout(r,100));if(i===99)throw Error('Backend did not start')}
-  execFileSync('python3',['-c',"import sqlite3,sys;from datetime import datetime,timedelta;from zoneinfo import ZoneInfo;db=sqlite3.connect(sys.argv[1]);today=datetime.now(ZoneInfo('Europe/Paris')).date();rows=[((today-timedelta(days=i)).isoformat(),'youtube',kind,link,total) for i in range(7) for kind,link,total in [('view','',80+i*23),('click','Amazon',30+i*8)]];db.executemany('INSERT INTO counts VALUES(?,?,?,?,?)',rows);db.commit()",join(temp,'stats.db')]);
+  execFileSync(process.env.PYTHON_PATH||'python3',['-c',"import sqlite3,sys;from datetime import datetime,timedelta;from zoneinfo import ZoneInfo;db=sqlite3.connect(sys.argv[1]);today=datetime.now(ZoneInfo('Europe/Paris')).date();rows=[((today-timedelta(days=i)).isoformat(),'youtube',kind,link,total) for i in range(7) for kind,link,total in [('view','',80+i*23),('click','Amazon',30+i*8)]];db.executemany('INSERT INTO counts VALUES(?,?,?,?,?)',rows);db.commit()",join(temp,'stats.db')]);
   const longName='Campagne DomotiK Studio avec un nom très long pour contrôler la lisibilité et les actions sur mobile';
-  const promo=await request('/api/content',{type:'promo',internal_name:longName,title:'Offre partenaire',url:'https://partner.example/offer',active:true});
+  const promo=await request('/api/content',{type:'promo',internal_name:longName,title:'Offre partenaire',description:'Description historique conservée',badge:'Partenaire',cta:'CTA historique',url:'https://partner.example/offer',active:true});
   const other=await request('/api/content',{type:'classic',internal_name:'Guide Home Assistant',title:'Guide',url:'https://example.com/guide'});
   await request('/api/buttons',{icon:'youtube',label:'YouTube',url:'https://youtube.com/@DomotiKStudio'});
   const beforePublic=await fetch('http://127.0.0.1:3003/api/public-config').then(r=>r.json());
@@ -56,6 +56,18 @@ const { join, resolve } = require('node:path');
    }
   }
   await page.setViewportSize({width:1440,height:1000});await nav('content');
+  const campaign=page.locator(`[data-id="${promo.id}"]`);
+  await campaign.locator('[data-action="edit"]').click();
+  for(const field of ['title','description','icon','badge','cta'])assert(await page.locator('#block-form [name="'+field+'"]').isHidden(),'Hidden promo field '+field);
+  for(const field of ['internal_name','url','start_at','end_at','active','draft','priority'])assert(await page.locator('#block-form [name="'+field+'"]').isVisible(),'Kept promo field '+field);
+  if(process.env.ADMIN_SCREENSHOTS){for(const width of [390,1440]){await page.setViewportSize({width,height:1000});await page.locator('#block-dialog').screenshot({path:join(process.env.ADMIN_SCREENSHOTS,'promo-editor-'+width+'.png')})}await page.setViewportSize({width:1440,height:1000})}
+  await page.locator('#block-form [name="internal_name"]').fill('Promo renommée');
+  await page.locator('#block-dialog button[value="default"]').click();await page.waitForFunction(()=>!document.getElementById('block-dialog').open);
+  const kept=(await request('/api/content',undefined,'GET')).items.find(x=>x.id===promo.id);assert.equal(kept.title,'Offre partenaire');assert.equal(kept.description,'Description historique conservée');assert.equal(kept.cta,'CTA historique');assert.equal(kept.badge,'Partenaire');
+  await page.locator('[data-action="new-block"]').click();await page.selectOption('#block-form [name="type"]','promo');
+  await page.locator('#block-form [name="internal_name"]').fill('Nouvelle promo minimale');await page.locator('#block-form [name="url"]').fill('https://partner.example/new');await page.locator('#block-form [name="draft"]').check();
+  await page.locator('#block-dialog button[value="default"]').click();await page.waitForFunction(()=>!document.getElementById('block-dialog').open);
+  assert.equal((await request('/api/content',undefined,'GET')).items.find(x=>x.internal_name==='Nouvelle promo minimale').title,'Nouvelle promo minimale');
   const item=page.locator(`[data-id="${other.id}"]`);
   await item.locator('[data-action="edit"]').click();await page.locator('#block-form [name="title"]').fill('Guide mis à jour');await page.locator('#block-dialog button[value="default"]').click();await page.waitForFunction(()=>!document.getElementById('block-dialog').open);assert.equal((await request('/api/content',undefined,'GET')).items.find(x=>x.id===other.id).title,'Guide mis à jour');
   await item.locator('summary').click();await item.locator('[data-action="duplicate"]').click();await page.waitForFunction(()=>document.getElementById('notice').textContent==='Bloc dupliqué en brouillon.');
