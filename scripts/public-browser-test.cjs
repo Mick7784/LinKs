@@ -23,7 +23,7 @@ const {tmpdir}=require('node:os');
    const r=await fetch('http://127.0.0.1:3003'+req.url,{method:req.method,headers:{'Content-Type':req.headers['content-type']||'application/json',Origin:req.headers.origin||origin,'User-Agent':req.headers['user-agent']||'Mozilla/5.0'},body:body.length?body:undefined,redirect:'manual'});
    res.statusCode=r.status;for(const name of ['content-type','location'])if(r.headers.has(name))res.setHeader(name,r.headers.get(name));return res.end(Buffer.from(await r.arrayBuffer()))
   }
-  const files={'/':['index.html','text/html'],'/style.css':['style.css','text/css'],'/icons.css':['icons.css','text/css'],'/app.js':['app.js','application/javascript'],'/config.js':['config.js','application/javascript'],'/metrics.js':['metrics.js','application/javascript'],'/assets/studio-links.webp':['assets/studio-links.webp','image/webp'],'/assets/logo.webp':['assets/logo.webp','image/webp'],'/assets/portrait.webp':['assets/portrait.webp','image/webp']};const file=files[url.pathname];if(!file){res.writeHead(404);return res.end()}
+  const files={'/':['index.html','text/html'],'/style.css':['style.css','text/css'],'/icons.css':['icons.css','text/css'],'/app.js':['app.js','application/javascript'],'/config.js':['config.js','application/javascript'],'/metrics.js':['metrics.js','application/javascript'],'/assets/studio-links.webp':['assets/studio-links.webp','image/webp'],'/assets/logo.webp':['assets/logo.webp','image/webp'],'/assets/portrait.webp':['assets/portrait.webp','image/webp']};for(const name of ['community','instagram','shopping','smarthome','collaboration'])files['/assets/link-'+name+'.webp']=['assets/link-'+name+'.webp','image/webp'];const file=files[url.pathname];if(!file){res.writeHead(404);return res.end()}
   res.setHeader('Content-Type',file[1]);res.end(readFileSync(resolve(__dirname,'../site',file[0])));
  }catch(e){res.writeHead(500);res.end(e.message)}});
  try{
@@ -80,6 +80,7 @@ const {tmpdir}=require('node:os');
    for(const selector of ['.social','#offers-prev','#offers-next','.carousel-dots button']){const box=await page.locator(selector).first().boundingBox();assert(box.width>=44&&box.height>=44,'Touch size '+selector)}
    const rects=await page.locator('.card-title,.card-description,.video-title').evaluateAll(nodes=>nodes.map(n=>({scroll:n.scrollWidth,width:n.clientWidth})));assert(rects.every(x=>x.scroll<=x.width),'Truncated text '+width);
   }
+  const art=await page.locator('#links .card').evaluateAll(nodes=>nodes.map(n=>getComputedStyle(n,'::before').backgroundImage));assert.equal(new Set(art).size,art.length,'Distinct thematic backgrounds');
   const before=await request('/api/stats',undefined,'GET');
   const popupPromise=page.waitForEvent('popup');await page.locator('.carousel-slide[aria-hidden="false"] a').click();const popup=await popupPromise;await popup.waitForLoadState();assert.equal(popup.url(),block('Campagne test B').url);await popup.close();
   const videoPopupPromise=page.waitForEvent('popup');await page.locator('.video-card').click();const videoPopup=await videoPopupPromise;await videoPopup.waitForLoadState();assert.equal(videoPopup.url(),video.url);await videoPopup.close();
