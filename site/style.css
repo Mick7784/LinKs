@@ -610,3 +610,43 @@ footer p:last-child {
   .promo-copy .card-description { font-size: 1rem; }
   .promo-copy .card-cta { font-size: 1rem; }
 }
+
+/* Offers share the video's editorial composition, inside the unchanged slider. */
+.carousel-slide .card {
+  display: block;
+  min-height: 0;
+  background: transparent;
+  overflow: visible;
+}
+.carousel-slide .promo-visual {
+  border-radius: var(--radius);
+  background: #101b2b;
+}
+.carousel-slide .promo-visual img {
+  width: 100%;
+  height: auto;
+  max-height: none;
+  object-fit: contain;
+}
+.carousel-slide .promo-copy {
+  grid-template-columns: minmax(0, 1fr) 22px;
+  gap: 12px;
+  padding: 14px 0 0;
+}
+.carousel-slide .promo-copy .external-action {
+  display: grid;
+  grid-column: 2;
+  grid-row: 1;
+  align-self: center;
+}
+.carousel-slide .card-title { font-size: 1.04rem; line-height: 1.5; }
+@media (min-width: 900px) {
+  .carousel-slide .card.visual {
+    display: grid;
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+    align-items: center;
+    gap: 32px;
+  }
+  .carousel-slide .promo-copy { padding: 0; }
+  .carousel-slide .card-title { font-size: clamp(1.35rem, 2.1vw, 1.7rem); line-height: 1.35; letter-spacing: -.025em; }
+}

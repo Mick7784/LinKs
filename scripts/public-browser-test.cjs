@@ -70,9 +70,12 @@ const {tmpdir}=require('node:os');
     const box=s=>document.querySelector(s).getBoundingClientRect();
     const image=box('.promo-visual'),copy=box('.promo-copy'),header=box('.profile');
     const video=box('.video-visual'),details=box('.video-details');
-    return {imageRight:image.right,copyLeft:copy.left,headerHeight:header.height,videoRight:video.right,detailsLeft:details.left};
+    return {imageRight:image.right,imageBottom:image.bottom,imageWidth:image.width,copyLeft:copy.left,copyTop:copy.top,slideWidth:box(".carousel-slide .card").width,headerHeight:header.height,videoRight:video.right,detailsLeft:details.left};
    });
-   assert(composition.imageRight<=composition.copyLeft+1,'Campaign must remain horizontal at '+width);
+   if(width<900){
+    assert(composition.copyTop>=composition.imageBottom-1,'Offer details below artwork at '+width);
+    assert(Math.abs(composition.imageWidth-composition.slideWidth)<=2,'Full-width offer artwork at '+width);
+   }else assert(composition.imageRight<composition.copyLeft,'Editorial desktop offer at '+width);
    if(width===390)assert(composition.headerHeight<220,'Compact mobile identity');
    if(width===1440)assert(composition.videoRight<composition.detailsLeft,'Editorial desktop video composition');
    for(const selector of ['.social','#offers-prev','#offers-next','.carousel-dots button']){const box=await page.locator(selector).first().boundingBox();assert(box.width>=44&&box.height>=44,'Touch size '+selector)}
