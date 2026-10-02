@@ -55,6 +55,13 @@
 <section class="view" id="settings">
  <div class="section-head"><div><h2>Réglages</h2><p>Informations principales affichées sur la page.</p></div></div>
  <form id="settings-form" class="panel form-grid"><label>Nom<input name="name" required maxlength="120"></label><label>Accroche<input name="tagline" maxlength="200"></label><label class="wide" data-promo-editorial>Description<input name="description" maxlength="300"></label><div class="wide actions"><button class="primary">Enregistrer</button></div></form>
+ <section class="panel" id="quotes-panel">
+  <h3>Citations / Easter eggs</h3><p id="quotes-summary" role="status">Chargement…</p>
+  <form id="quote-form" class="quote-add"><label>Citation<input name="text" required maxlength="1000"></label><button class="primary">Ajouter</button></form>
+  <form id="quotes-batch-form"><label>Ajouter plusieurs citations<textarea id="quotes-batch" rows="4" placeholder="Une citation par ligne, ou séparateur |||"></textarea></label><div class="actions"><button type="submit">Analyser</button><label class="restore-label">Importer un fichier<input id="quotes-file" type="file" accept=".txt,text/plain"></label></div></form>
+  <div id="quotes-analysis" hidden><p id="quotes-analysis-summary" role="status"></p><button id="quotes-confirm" type="button" class="primary"></button></div>
+  <p id="quotes-feedback" role="status"></p><div id="quotes-list" class="quotes-list"></div>
+ </section>
  <section class="panel"><h3>Partager Links</h3><p>Choisis où tu publies le lien pour reconnaître la provenance des visites.</p><div class="share-controls"><label>Plateforme<select id="share-source"><option value="youtube">YouTube</option><option value="instagram">Instagram</option><option value="domotik-studio">Site DomotiK Studio</option><option value="facebook">Facebook</option><option value="tiktok">TikTok</option><option value="discord">Discord</option><option value="newsletter">Newsletter</option></select></label><label>Adresse à partager<input id="share-url" readonly></label><button type="button" id="copy-share">Copier le lien</button></div><p id="share-status" role="status"></p></section>
  <section class="panel"><h3>Sauvegarde</h3><p>Un fichier contient tes contenus, images utilisées, réglages et statistiques. Garde-le sur ton ordinateur.</p><div class="backup-controls"><button type="button" id="download-backup">Télécharger une sauvegarde</button><label class="restore-label">Restaurer une sauvegarde<input type="file" id="restore-backup" accept=".json,application/json"></label></div><p id="backup-status" role="status"></p><p>La restauration remplace les données actuelles. Maximum : 64 Mo par fichier.</p></section>
 </section>

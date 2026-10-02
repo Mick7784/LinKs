@@ -1613,3 +1613,16 @@ dialog h2 {
 
 /* Isolate the public card styles inside the campaign preview. */
 .promo-preview-frame{display:block;width:100%;height:450px;border:0;border-radius:20px;background:#0a111e}
+
+/* Compact footer quote management. */
+#quotes-panel label{display:block}
+#quotes-panel textarea{width:100%}
+.quote-add{display:flex;align-items:end;gap:10px;margin-bottom:16px}
+.quote-add label{flex:1;min-width:0}
+.quotes-list{max-height:480px;overflow-y:auto;margin-top:12px}
+.quote-row{padding:12px 0;border-bottom:1px solid var(--border,#29374b)}
+.quote-row p{white-space:pre-wrap;overflow-wrap:anywhere;margin:0 0 8px}
+.quote-row .actions{flex-wrap:wrap}
+.quote-toggle[aria-checked="true"]{color:var(--cyan,#7acfe5);border-color:currentColor}
+#quotes-analysis{margin-top:12px}
+@media(max-width:480px){.quote-add{align-items:stretch;flex-direction:column}#quotes-panel .actions{flex-wrap:wrap}}

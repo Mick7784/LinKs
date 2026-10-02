@@ -7,7 +7,7 @@ const say=(message,error=false)=>{const node=$("notice");node.textContent=messag
 const esc=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const typeName={classic:"Classique",featured:"Featured",promo:"Promo"};
 const statusClass=value=>({Actif:"active",Programmé:"scheduled",Expiré:"expired",Brouillon:"draft"}[value]||"");
-function activate(id){document.querySelectorAll(".view").forEach(x=>x.classList.toggle("active",x.id===id));document.querySelectorAll(".tabs button").forEach(x=>x.classList.toggle("active",x.dataset.tab===id));syncNavigation();$("topbar-current").textContent=document.querySelector(".tabs button.active")?.textContent.trim()||"Links";if(id==="dashboard"){loadStats();loadCampaigns()}if(id==="content")loadContent();if(id==="buttons")loadButtons();if(id==="archives")loadArchives();if(id==="settings")loadSettings()}
+function activate(id){document.querySelectorAll(".view").forEach(x=>x.classList.toggle("active",x.id===id));document.querySelectorAll(".tabs button").forEach(x=>x.classList.toggle("active",x.dataset.tab===id));syncNavigation();$("topbar-current").textContent=document.querySelector(".tabs button.active")?.textContent.trim()||"Links";if(id==="dashboard"){loadStats();loadCampaigns()}if(id==="content")loadContent();if(id==="buttons")loadButtons();if(id==="archives")loadArchives();if(id==="settings"){loadSettings();loadQuotes()}}
 const navigation=$("navigation"),menuToggle=$("menu-toggle"),mobileNavigation=matchMedia("(max-width:760px)");
 function closeMenu(restoreFocus=false){navigation.classList.remove("open");menuToggle.setAttribute("aria-expanded","false");if(restoreFocus)menuToggle.focus()}
 function syncNavigation(){document.querySelectorAll(".tabs button").forEach(button=>{const active=button.classList.contains("active");if(active){button.setAttribute("aria-current","page");$("menu-current").textContent=button.textContent.trim()}else button.removeAttribute("aria-current")})}
@@ -182,3 +182,45 @@ document.addEventListener("click",event=>{
  document.querySelectorAll(".row-menu[open]").forEach(menu=>{if(!menu.contains(event.target)||event.target.closest("[data-action]"))menu.open=false});
 });
 document.addEventListener("keydown",event=>{if(event.key==="Escape")document.querySelectorAll(".row-menu[open]").forEach(menu=>{menu.open=false;menu.querySelector("summary").focus()})});
+
+/* Footer quotations: local controls in Settings. */
+let quotes=[],quotesPending=null,quotesAnalysisId=0;
+function drawQuotes(){
+ $("quotes-summary").textContent=quotes.length+" citations · "+quotes.filter(q=>q.active).length+" actives";
+ $("quotes-list").innerHTML=quotes.length?quotes.map(q=>`<article class="quote-row" data-quote-id="${esc(q.id)}"><p>${esc(q.text)}</p><div class="actions"><button type="button" class="quote-toggle" role="switch" aria-checked="${q.active}" ${q.pending?"disabled":""} aria-label="Activer ou désactiver la citation" data-quote-toggle>${q.active?"● Activé":"○ Désactivé"}</button><button type="button" data-quote-delete ${q.pending?"disabled":""}>Supprimer</button></div></article>`).join(""):"<p>Aucune citation pour le moment.</p>";
+}
+async function loadQuotes(){try{quotes=(await api("/api/quotes")).items;drawQuotes()}catch(error){$("quotes-feedback").textContent=error.message}}
+function clearQuoteAnalysis(){quotesAnalysisId++;quotesPending=null;$("quotes-analysis").hidden=true}
+$("quotes-batch").addEventListener("input",clearQuoteAnalysis);
+async function analyzeQuotes(value,imported=false){
+ clearQuoteAnalysis();const analysisId=quotesAnalysisId;
+ const result=await api("/api/quotes/analyze",{method:"POST",body:JSON.stringify({text:value})});
+ if(analysisId!==quotesAnalysisId)return;
+ quotesPending={text:value,imported};
+ $("quotes-analysis-summary").textContent=result.detected+" citations détectées · "+result.new+" nouvelles · "+result.duplicates+" doublons (déjà présents ou dans le lot)";
+ $("quotes-confirm").textContent=(imported?"Importer ":"Ajouter ")+result.new+" citations";
+ $("quotes-confirm").disabled=!result.new;$("quotes-analysis").hidden=false;
+}
+$("quote-form").addEventListener("submit",async event=>{
+ event.preventDefault();const button=event.target.querySelector("button");button.disabled=true;
+ try{const result=await api("/api/quotes",{method:"POST",body:JSON.stringify({text:event.target.elements.text.value,single:true})});event.target.reset();await loadQuotes();$("quotes-feedback").textContent=result.new?"Citation ajoutée.":"Cette citation existe déjà."}catch(error){$("quotes-feedback").textContent=error.message}finally{button.disabled=false}
+});
+$("quotes-batch-form").addEventListener("submit",async event=>{
+ event.preventDefault();const button=event.target.querySelector('button[type="submit"]');button.disabled=true;
+ try{await analyzeQuotes($("quotes-batch").value)}catch(error){$("quotes-feedback").textContent=error.message}finally{button.disabled=false}
+});
+$("quotes-file").addEventListener("change",async event=>{
+ clearQuoteAnalysis();const file=event.target.files[0];if(!file)return;
+ try{if(!/\.txt$/i.test(file.name)||file.size>1024*1024)throw Error("Choisis un fichier .txt UTF-8 de 1 Mo maximum.");const value=new TextDecoder("utf-8",{fatal:true}).decode(await file.arrayBuffer());$("quotes-batch").value=value;await analyzeQuotes(value,true)}catch(error){$("quotes-feedback").textContent=error.message}finally{event.target.value=""}
+});
+$("quotes-confirm").addEventListener("click",async event=>{
+ if(!quotesPending)return;const pending=quotesPending;event.target.disabled=true;
+ try{const result=await api("/api/quotes",{method:"POST",body:JSON.stringify({text:pending.text})});clearQuoteAnalysis();$("quotes-batch").value="";await loadQuotes();$("quotes-feedback").textContent=result.new+" citations ajoutées · "+result.duplicates+" doublons ignorés."}catch(error){$("quotes-feedback").textContent=error.message;event.target.disabled=false}
+});
+$("quotes-list").addEventListener("click",async event=>{
+ const toggle=event.target.closest("[data-quote-toggle]"),remove=event.target.closest("[data-quote-delete]");
+ if(!toggle&&!remove)return;const row=event.target.closest("[data-quote-id]"),q=quotes.find(x=>x.id===row.dataset.quoteId);if(!q||q.pending)return;
+ if(remove){if(!confirm("Supprimer définitivement cette citation ?"))return;q.pending=true;remove.disabled=true;row.querySelector("[data-quote-toggle]").disabled=true;try{await api("/api/quotes/"+q.id,{method:"DELETE"});quotes=quotes.filter(x=>x!==q);drawQuotes()}catch(error){q.pending=false;drawQuotes();$("quotes-feedback").textContent=error.message}return}
+ const previous=q.active;q.active=!previous;q.pending=true;toggle.disabled=true;toggle.setAttribute("aria-checked",String(q.active));toggle.textContent=q.active?"● Activé":"○ Désactivé";$("quotes-summary").textContent=quotes.length+" citations · "+quotes.filter(x=>x.active).length+" actives";
+ try{await api("/api/quotes/"+q.id,{method:"PUT",body:JSON.stringify({active:q.active})})}catch(error){q.active=previous;$("quotes-feedback").textContent=error.message}finally{q.pending=false;drawQuotes()}
+});

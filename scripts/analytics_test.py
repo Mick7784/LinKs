@@ -318,4 +318,39 @@ class AnalyticsTests(unittest.TestCase):
             with self.assertRaises(OSError):self.a.restore_backup(backup)
         self.assertEqual(self.a.content_list(),before)
 
+
+    def test_quotes_import_preview_duplicates_and_persistence(self):
+        admin=self.server(True)
+        status,body=self.request(admin+'/api/quotes/analyze',{'text':' Alpha \nAlpha\nBeta\n '})
+        self.assertEqual(status,200)
+        self.assertEqual(json.loads(body),{'detected':3,'new':2,'duplicates':1})
+        self.assertEqual(self.a.quote_list(),[])
+        status,body=self.request(admin+'/api/quotes',{'text':' Alpha \nAlpha\nBeta\n '})
+        self.assertEqual(status,200);self.assertEqual(json.loads(body)['new'],2)
+        self.assertTrue(all(q['active'] for q in self.a.quote_list()))
+        self.assertEqual(self.a.add_quotes({'text':'Alpha\nGamma'})['new'],1)
+        self.a.init();self.assertEqual(len(self.a.quote_list()),3)
+        self.assertEqual(self.a.quote_entries({'text':'Line 1\nLine 2||| Another '}),['Line 1\nLine 2','Another'])
+        self.assertEqual(self.a.quote_entries({'text':'One\nquote','single':True}),['One\nquote'])
+        for text in ['', '  ', 'x'*1001]:
+            self.assertEqual(self.request(admin+'/api/quotes',{'text':text})[0],400)
+
+    def test_quotes_toggle_delete_and_public_selection(self):
+        admin=self.server(True);public=self.server(False)
+        self.assertEqual(self.a.public_config()['profile']['footer_quote'],'')
+        self.a.add_quotes({'text':'<script>alert(1)</script>','single':True})
+        item=self.a.quote_list()[0];url=admin+'/api/quotes/'+item['id']
+        self.assertEqual(self.a.public_config()['profile']['footer_quote'],item['text'])
+        self.assertEqual(self.request(url,{'active':False},method='PUT')[0],204)
+        self.assertEqual(self.a.public_config()['profile']['footer_quote'],'')
+        self.assertEqual(self.request(url,{'active':'false'},method='PUT')[0],400)
+        self.assertEqual(self.request(url,{'active':True},method='PUT')[0],204)
+        self.assertEqual(self.a.public_config()['profile']['footer_quote'],item['text'])
+        for path,method,data in [('/api/quotes','GET',None),('/api/quotes','POST',{'text':'No'}),('/api/quotes/'+item['id'],'PUT',{'active':False}),('/api/quotes/'+item['id'],'DELETE',None)]:
+            self.assertEqual(self.request(public+path,data,method=method)[0],404)
+        self.assertEqual(self.request(url,method='DELETE')[0],204)
+        self.assertEqual(self.a.quote_list(),[])
+        self.assertEqual(self.request(url,method='DELETE')[0],404)
+
 if __name__=='__main__':unittest.main()
+

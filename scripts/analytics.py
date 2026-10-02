@@ -68,6 +68,7 @@ def init():
         db.execute("""CREATE TABLE IF NOT EXISTS story_links(
           token TEXT PRIMARY KEY,promotion_id TEXT NOT NULL UNIQUE,name TEXT NOT NULL,
           created_at TEXT NOT NULL,deleted INTEGER NOT NULL DEFAULT 0)""")
+        db.execute("CREATE TABLE IF NOT EXISTS footer_quotes(id TEXT PRIMARY KEY,text TEXT NOT NULL UNIQUE,active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),created_at TEXT NOT NULL)")
         seed(db)
 
 def seed(db):
@@ -225,11 +226,37 @@ def button_list():
 def public_config():
     with connection() as db:
         blocks=[serialize(r) for r in db.execute("SELECT * FROM content_blocks WHERE archived=0 ORDER BY CASE WHEN type IN ('promo','featured') THEN 0 ELSE 1 END,CASE WHEN priority='high' THEN 0 ELSE 1 END,position,created_at") if status_of(r)=="Actif"]
+        quote=db.execute("SELECT text FROM footer_quotes WHERE active=1 ORDER BY RANDOM() LIMIT 1").fetchone()
         buttons=[dict(r) for r in db.execute("SELECT * FROM top_buttons WHERE active=1 ORDER BY position,created_at")]
         result={"profile":profile(db),"socials":[{"id":x["id"],"platform":x["icon"],"label":x["label"],"url":x["url"],"metricKey":"button:"+x["id"]} for x in buttons],
                 "links":[{"id":x["id"],"type":x["type"],"title":x["title"],"description":x["description"],"url":x["url"],"icon":x["icon"],"image":x["image"],"badge":x["badge"],"cta":x["cta"],"priority":x["priority"],"start_at":x["start_at"],"end_at":x["end_at"],"promo_code":x["promo_code"],"metricKey":"block:"+x["id"]} for x in blocks]}
+        result["profile"]["footer_quote"]=quote["text"] if quote else ""
     if CONFIG.get("latestVideo"):result["latestVideo"]=CONFIG["latestVideo"]
     return result
+
+
+def quote_list():
+    with connection() as db:
+        return [dict(r,active=bool(r["active"])) for r in db.execute("SELECT * FROM footer_quotes ORDER BY created_at,id")]
+
+def quote_entries(data):
+    raw=data.get("text","")
+    if not isinstance(raw,str) or len(raw)>1024*1024:raise ValueError("Texte invalide ou trop volumineux (1 Mo maximum)")
+    entries=[s.strip() for s in ([raw] if data.get("single") is True else raw.split("|||") if "|||" in raw else raw.splitlines()) if s.strip()]
+    if not entries:raise ValueError("Ajoute au moins une citation")
+    if any(len(s)>1000 for s in entries):raise ValueError("Une citation dépasse 1 000 caractères")
+    return entries
+
+def add_quotes(data,preview=False):
+    entries=quote_entries(data)
+    with connection() as db:
+        if not preview:db.execute("BEGIN IMMEDIATE")
+        existing={r[0] for r in db.execute("SELECT text FROM footer_quotes")}
+        new=list(dict.fromkeys(s for s in entries if s not in existing))
+        if not preview:
+            for value in new:
+                db.execute("INSERT INTO footer_quotes VALUES(?,?,1,?)",(str(uuid.uuid4()),value,now_iso()))
+        return {"detected":len(entries),"new":len(new),"duplicates":len(entries)-len(new)}
 
 def required(data,key,limit=300):
     value=data.get(key,"")
@@ -474,6 +501,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.file(UPLOADS/name) if re.fullmatch(r"[a-f0-9-]{36}\.(jpg|png|webp|gif)",name) else self.send(404)
         if not self.server.admin:return self.json(200,public_config()) if url.path=="/api/public-config" else self.send(404)
         try:
+            if url.path=="/api/quotes":return self.json(200,{"items":quote_list()})
             if url.path=="/api/backup":return self.send(200,export_backup())
             if url.path=="/api/stats":
                 q=parse_qs(url.query);today=datetime.now(PARIS).date();return self.json(200,report(q.get("start",[(today-timedelta(days=29)).isoformat()])[0],q.get("end",[today.isoformat()])[0],q.get("source",[""])[0]))
@@ -501,6 +529,8 @@ class Handler(BaseHTTPRequestHandler):
             except sqlite3.Error:return self.send(503)
         try:
             data=self.body(BACKUP_LIMIT if path=="/api/restore" else 8*1024*1024)
+            if path=="/api/quotes/analyze":return self.json(200,add_quotes(data,preview=True))
+            if path=="/api/quotes":return self.json(200,add_quotes(data))
             if path=="/api/restore":return self.json(200,restore_backup(data))
             if path=="/api/promotions/replace":return self.replace_promotion(data)
             if path=="/api/content":return self.create_content(data)
@@ -522,6 +552,11 @@ class Handler(BaseHTTPRequestHandler):
         if not self.server.admin:return self.send(404)
         try:
             data=self.body();path=urlsplit(self.path).path
+            match=re.fullmatch(r"/api/quotes/([\w-]+)",path)
+            if match:
+                if type(data.get("active")) is not bool:raise ValueError("active doit être un booléen")
+                with connection() as db:changed=db.execute("UPDATE footer_quotes SET active=? WHERE id=?",(int(data["active"]),match.group(1))).rowcount
+                return self.send(204) if changed else self.send(404)
             match=re.fullmatch(r"/api/content/([\w-]+)",path)
             if match:return self.update_content(match.group(1),data)
             match=re.fullmatch(r"/api/buttons/([\w-]+)",path)
@@ -530,7 +565,12 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError,TypeError,json.JSONDecodeError) as exc:return self.json(400,{"error":str(exc) or "Requête invalide"})
     def do_DELETE(self):
         if not self.server.admin:return self.send(404)
-        path=urlsplit(self.path).path;match=re.fullmatch(r"/api/content/([\w-]+)",path);table="content_blocks"
+        path=urlsplit(self.path).path
+        quote=re.fullmatch(r"/api/quotes/([\w-]+)",path)
+        if quote:
+            with connection() as db:changed=db.execute("DELETE FROM footer_quotes WHERE id=?",(quote.group(1),)).rowcount
+            return self.send(204) if changed else self.send(404)
+        match=re.fullmatch(r"/api/content/([\w-]+)",path);table="content_blocks"
         if not match:match=re.fullmatch(r"/api/buttons/([\w-]+)",path);table="top_buttons"
         if not match:return self.send(404)
         with connection() as db:
