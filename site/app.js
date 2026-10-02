@@ -1,4 +1,12 @@
 "use strict";
+// Optional footer content: populated when a future configuration source supplies it.
+function renderFooter(profile={}){
+ const quote=document.getElementById("footer-quote"),value=typeof profile.footer_quote==="string"?profile.footer_quote.trim():"";
+ quote.textContent=value;quote.hidden=!value;
+ const version=document.getElementById("footer-version");
+ version.textContent=window.LINKS_VERSION?"V"+window.LINKS_VERSION:"";version.hidden=!window.LINKS_VERSION;
+}
+renderFooter();
 const paths={
  youtube:'<rect x="2" y="5" width="20" height="14" rx="4"/><path d="m10 9 5 3-5 3Z"/>',
  instagram:'<rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r=".7" fill="currentColor"/>',
@@ -86,7 +94,7 @@ function renderOffers(items){
  show(0)
 }
 async function start(){
- const config=await getConfig(),profile=config.profile||{};const set=(id,value)=>{const el=document.getElementById(id);if(el&&value)el.textContent=value};set("profile-name",profile.name);set("profile-tagline",profile.tagline);set("profile-description",profile.description);set("footer-name",profile.name);
+ const config=await getConfig(),profile=config.profile||{};const set=(id,value)=>{const el=document.getElementById(id);if(el&&value)el.textContent=value};set("profile-name",profile.name);set("profile-tagline",profile.tagline);set("profile-description",profile.description);set("footer-name",profile.name);renderFooter(profile);
  if(profile.avatar)document.getElementById("profile-avatar").src=profile.avatar;if(profile.logo){document.getElementById("profile-logo").src=profile.logo;document.getElementById("footer-logo").src=profile.logo}
  const socials=document.getElementById("socials");for(const item of (config.socials||[]).filter(x=>validUrl(x.url))){const a=document.createElement("a");a.className="social";a.dataset.metric=item.metricKey||"social:"+item.platform;external(a,item.url);a.setAttribute("aria-label",item.label||item.platform);a.title=item.label||item.platform;a.append(icon(item.platform));socials.append(a)}
  const video=document.getElementById("latest-video");if(config.latestVideo)fetch("/latest-video.json",{cache:"no-store"}).then(r=>{if(!r.ok)throw new Error();return r.json()}).then(data=>renderVideo(video,data)).catch(()=>{video.hidden=true});
