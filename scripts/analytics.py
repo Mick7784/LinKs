@@ -59,6 +59,8 @@ def init():
           priority TEXT NOT NULL DEFAULT 'normal')""")
         if "priority" not in {row[1] for row in db.execute("PRAGMA table_info(content_blocks)")}:
             db.execute("ALTER TABLE content_blocks ADD COLUMN priority TEXT NOT NULL DEFAULT 'normal'")
+        if "promo_code" not in {row[1] for row in db.execute("PRAGMA table_info(content_blocks)")}:
+            db.execute("ALTER TABLE content_blocks ADD COLUMN promo_code TEXT NOT NULL DEFAULT ''")
         db.execute("""CREATE TABLE IF NOT EXISTS top_buttons(
           id TEXT PRIMARY KEY,icon TEXT NOT NULL,label TEXT NOT NULL,url TEXT NOT NULL,position INTEGER NOT NULL,
           active INTEGER NOT NULL DEFAULT 1,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)""")
@@ -225,7 +227,7 @@ def public_config():
         blocks=[serialize(r) for r in db.execute("SELECT * FROM content_blocks WHERE archived=0 ORDER BY CASE WHEN type IN ('promo','featured') THEN 0 ELSE 1 END,CASE WHEN priority='high' THEN 0 ELSE 1 END,position,created_at") if status_of(r)=="Actif"]
         buttons=[dict(r) for r in db.execute("SELECT * FROM top_buttons WHERE active=1 ORDER BY position,created_at")]
         result={"profile":profile(db),"socials":[{"id":x["id"],"platform":x["icon"],"label":x["label"],"url":x["url"],"metricKey":"button:"+x["id"]} for x in buttons],
-                "links":[{"id":x["id"],"type":x["type"],"title":x["title"],"description":x["description"],"url":x["url"],"icon":x["icon"],"image":x["image"],"badge":x["badge"],"cta":x["cta"],"priority":x["priority"],"metricKey":"block:"+x["id"]} for x in blocks]}
+                "links":[{"id":x["id"],"type":x["type"],"title":x["title"],"description":x["description"],"url":x["url"],"icon":x["icon"],"image":x["image"],"badge":x["badge"],"cta":x["cta"],"priority":x["priority"],"start_at":x["start_at"],"end_at":x["end_at"],"promo_code":x["promo_code"],"metricKey":"block:"+x["id"]} for x in blocks]}
     if CONFIG.get("latestVideo"):result["latestVideo"]=CONFIG["latestVideo"]
     return result
 
@@ -253,7 +255,7 @@ def block_data(data):
     if image and not (image.startswith("/uploads/") or image.startswith("/assets/") or valid_url(image)):raise ValueError("Image invalide")
     start,end=instant(data.get("start_at")),instant(data.get("end_at"))
     if start and end and end<=start:raise ValueError("La fin doit suivre le début")
-    return {"type":kind,"internal_name":required(data,"internal_name"),"title":required(data,"title"),"description":optional(data,"description"),"url":url,"icon":icon,"image":image,"badge":badge,"cta":optional(data,"cta",80),"priority":priority,"active":1 if data.get("active",True) else 0,"draft":1 if data.get("draft",False) else 0,"start_at":start.isoformat().replace("+00:00","Z") if start else None,"end_at":end.isoformat().replace("+00:00","Z") if end else None}
+    return {"type":kind,"internal_name":required(data,"internal_name"),"title":required(data,"title"),"description":optional(data,"description"),"url":url,"icon":icon,"image":image,"badge":badge,"cta":optional(data,"cta",80),**({"promo_code":optional(data,"promo_code",80)} if "promo_code" in data else {}),"priority":priority,"active":1 if data.get("active",True) else 0,"draft":1 if data.get("draft",False) else 0,"start_at":start.isoformat().replace("+00:00","Z") if start else None,"end_at":end.isoformat().replace("+00:00","Z") if end else None}
 def promotion_rows(db,exclude_id=None):
     query="SELECT * FROM content_blocks WHERE type IN ('promo','featured') AND active=1 AND draft=0 AND archived=0"
     params=[]
@@ -385,6 +387,7 @@ def restore_backup(data):
                 if not isinstance(rows,list) or len(rows)>500000:raise ValueError('Table invalide : '+table)
                 schema=list(db.execute('PRAGMA table_info('+table+')'));columns=[c['name'] for c in schema]
                 for row in rows:
+                    if table=='content_blocks' and isinstance(row,dict) and 'promo_code' not in row:row['promo_code']=''
                     if not isinstance(row,dict) or set(row)!=set(columns):raise ValueError('Structure incompatible : '+table)
                     for column in schema:
                         value=row[column['name']]
@@ -589,7 +592,7 @@ class Handler(BaseHTTPRequestHandler):
             if action=="duplicate":
                 new_id=str(uuid.uuid4());stamp=now_iso();pos=db.execute("SELECT COALESCE(MAX(position),-1)+1 FROM content_blocks").fetchone()[0]
                 db.execute("""INSERT INTO content_blocks(id,type,internal_name,title,description,url,icon,image,badge,cta,position,active,draft,start_at,end_at,archived,created_at,updated_at,priority)
-                  VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",(new_id,row["type"],row["internal_name"]+" (copie)",row["title"],row["description"],row["url"],row["icon"],row["image"],row["badge"],row["cta"],pos,0,1,row["start_at"],row["end_at"],0,stamp,stamp,row["priority"]));return self.json(201,{"id":new_id})
+                  VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",(new_id,row["type"],row["internal_name"]+" (copie)",row["title"],row["description"],row["url"],row["icon"],row["image"],row["badge"],row["cta"],pos,0,1,row["start_at"],row["end_at"],0,stamp,stamp,row["priority"]));db.execute('UPDATE content_blocks SET promo_code=? WHERE id=?',(row['promo_code'],new_id));return self.json(201,{"id":new_id})
             if action=="restore":ensure_promotion_capacity(dict(row),item_id,db)
             db.execute("UPDATE content_blocks SET archived=?,updated_at=? WHERE id=?",(1 if action=="archive" else 0,now_iso(),item_id))
         return self.send(204)

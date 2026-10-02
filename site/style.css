@@ -92,3 +92,25 @@ footer{text-align:center;display:flex;flex-direction:column;align-items:center;g
 .carousel-slide .card.visual .promo-visual{grid-row:2;max-width:340px}
 .carousel-slide .card.visual .promo-copy{position:absolute;clip:rect(0,0,0,0);width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;white-space:nowrap}
 @media(min-width:600px){.carousel-slide .card.visual{padding-top:12px}.carousel-slide .card.visual .offer-label{margin-left:20px}}
+
+/* Public campaign composition: full-bleed artwork and editorial overlay. */
+.carousel-track{align-items:stretch}
+.carousel-slide .offer-card{display:flex;align-items:flex-end;min-height:clamp(440px,66vw,450px);height:100%;padding:150px 26px 44px;grid-template:none}
+.offer-visual{position:absolute;inset:0;z-index:-2;background:#101b2b}
+.offer-visual img{display:block;width:100%;height:100%;object-fit:cover;object-position:center}
+.carousel-slide .offer-card::after{content:"";display:block;position:absolute;inset:0;z-index:-1;background:linear-gradient(180deg,transparent 12%,#08111b18 28%,#08111b8c 55%,#08111be8 82%,#08111bf5 100%)}
+.offer-copy{position:relative;width:100%;min-width:0}
+.offer-kicker{display:flex;align-items:center;gap:8px;margin-bottom:16px;color:#d4e7f4;font-size:.7rem;font-weight:750;letter-spacing:.1em;text-transform:uppercase}
+.offer-kicker svg{width:19px;height:19px;color:var(--cyan)}
+.offer-title{max-width:23ch;margin:0;color:#fff;font-size:clamp(1.5rem,4.8vw,1.95rem);line-height:1.2;letter-spacing:-.025em;font-weight:750}
+.offer-dates{margin:10px 0 0;color:#c5d4e5;font-size:clamp(.85rem,2.8vw,.98rem);line-height:1.5}
+.offer-code{display:flex;align-items:center;gap:10px;max-width:100%;margin-top:16px;padding:12px 14px;min-height:46px;color:#eff6ff;border:1px solid #58b2ee66;border-radius:12px;background:#172b3ac9;text-align:left;cursor:pointer;font-size:.8rem;flex-wrap:wrap}
+.offer-code svg{flex:0 0 19px;width:19px;height:19px}.offer-code svg:first-child{color:#3a9bff}
+.offer-code-value{overflow-wrap:anywhere}.offer-code-value strong{color:#83bcff}
+.offer-code-feedback{color:#d0dfef;font-size:.7rem}.offer-code svg:nth-of-type(2){margin-left:8px}
+.offer-cta{display:flex;align-items:center;justify-content:center;gap:12px;width:190px;max-width:100%;min-height:50px;margin-top:16px;padding:12px 22px;border:1px solid #3888ff55;border-radius:99px;background:#0057f5;color:#fff;font-size:1rem;font-weight:750;text-decoration:none;box-shadow:0 6px 24px #0057f526}
+.offer-cta svg{width:22px;height:22px}
+.carousel-controls{top:auto;bottom:0;height:44px;inset-inline:0;z-index:3}
+.carousel-dots{bottom:0}.carousel-dots button::after{width:6px;height:6px}
+@media(max-width:599px){.carousel-slide .offer-card{padding:140px 20px 44px;min-height:440px}.offer-title{max-width:none}.offer-code{gap:8px;padding:10px 12px}.offer-code-feedback{flex-basis:100%;padding-left:27px}}
+@media(hover:hover) and (pointer:fine){.offer-cta:hover{background:#1268ff}.offer-code:hover{border-color:#7acfe5}}

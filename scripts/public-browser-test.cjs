@@ -31,7 +31,7 @@ const {tmpdir}=require('node:os');
   await new Promise(r=>site.listen(18080,'127.0.0.1',r));await new Promise(r=>partner.listen(18082,r));
   const uploaded=await request('/api/upload',{type:'image/webp',data:'data:image/webp;base64,'+asset.toString('base64')});
   const block=(name,extra={})=>({type:'promo',internal_name:name,title:name,description:'Fixture de vérification : cette description longue vérifie la lecture complète sur un petit écran.',url:'https://partner.example/'+encodeURIComponent(name),image:uploaded.url,badge:'Partenaire',cta:'Consulter cette offre de vérification',...extra});
-  const first=await request('/api/content',block('Campagne test A'));
+  const first=await request('/api/content',block('Campagne test A',{promo_code:'DOMOTIK10'}));
   const second=await request('/api/content',block('Campagne test B'));
   const future=await request('/api/content',block('Campagne programmée',{start_at:new Date(Date.now()+86400000).toISOString(),end_at:new Date(Date.now()+172800000).toISOString()}));
   const expired=await request('/api/content',block('Campagne expirée',{start_at:new Date(Date.now()-172800000).toISOString(),end_at:new Date(Date.now()-86400000).toISOString()}));
@@ -49,16 +49,24 @@ const {tmpdir}=require('node:os');
   assert.equal(await page.locator('#profile-name').textContent(),config.profile.name);
   assert.equal(await page.locator('#profile-tagline').textContent(),config.profile.tagline);
   assert.equal(await page.locator('#profile-description').textContent(),config.profile.description);
-  for(const selector of ['#profile-avatar','#profile-logo','#footer-logo','.video-visual img','.promo-visual img'])assert(await page.locator(selector).first().evaluate(i=>i.complete&&i.naturalWidth>0),'Image missing: '+selector);
+  for(const selector of ['#profile-avatar','#profile-logo','#footer-logo','.video-visual img','.offer-visual img'])assert(await page.locator(selector).first().evaluate(i=>i.complete&&i.naturalWidth>0),'Image missing: '+selector);
   assert.equal(await page.locator('.social').count(),config.socials.length);
   assert.deepEqual(await page.locator('#links a').evaluateAll(nodes=>nodes.map(n=>n.getAttribute('href'))),config.links.filter(x=>x.type==='classic').map(x=>x.url));
   assert.equal(await page.locator('.video-title').textContent(),video.title);
   assert.equal(await page.locator('.video-card').getAttribute('href'),video.url);
   assert.equal(await page.locator('.carousel-slide').count(),2);
   assert(!await page.locator('#offers').textContent().then(t=>['Campagne programmée','Campagne expirée','Brouillon'].some(x=>t.includes(x))));
+
+  assert.equal(await page.locator('.offer-cta').count(),2);
+  assert.equal(await page.locator('.offer-code').count(),1);
+  await context.grantPermissions(['clipboard-read','clipboard-write'],{origin});
+  await page.locator('.offer-code').click();
+  assert.equal(await page.evaluate(()=>navigator.clipboard.readText()),'DOMOTIK10');
+  assert((await page.locator('.offer-code').textContent()).includes('Copié !'));
+
   const active=()=>page.locator('.carousel-dots button[aria-current="true"]');
-  await page.locator('#offers-next').click();assert.equal(await active().getAttribute('aria-label'),'Afficher l’offre 2 sur 2');
-  await page.locator('#offers-prev').click();assert.equal(await active().getAttribute('aria-label'),'Afficher l’offre 1 sur 2');
+  await page.locator('.carousel-dots button').nth(1).click();assert.equal(await active().getAttribute('aria-label'),'Afficher l’offre 2 sur 2');
+  await page.locator('.carousel-dots button').nth(0).click();assert.equal(await active().getAttribute('aria-label'),'Afficher l’offre 1 sur 2');
   await page.locator('.carousel-dots button').nth(1).click();await page.keyboard.press('ArrowLeft');assert.equal(await active().getAttribute('aria-label'),'Afficher l’offre 1 sur 2');
   const inactive=page.locator('.carousel-slide[aria-hidden="true"] a');assert.equal(await inactive.getAttribute('tabindex'),'-1');
   // Same passive touch handlers: swipe changes the existing transform-based carousel.
@@ -68,23 +76,23 @@ const {tmpdir}=require('node:os');
    assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Overflow at '+width);
    const composition=await page.evaluate(()=>{
     const box=s=>document.querySelector(s).getBoundingClientRect();
-    const image=box('.promo-visual'),copy=box('.promo-copy'),header=box('.profile');
+    const image=box('.offer-visual'),copy=box('.offer-copy'),header=box('.profile');
     const video=box('.video-visual'),details=box('.video-details');
     return {imageRight:image.right,imageBottom:image.bottom,imageWidth:image.width,copyLeft:copy.left,copyTop:copy.top,slideWidth:box(".carousel-slide .card").width,headerHeight:header.height,videoRight:video.right,detailsLeft:details.left};
    });
-   const creative=await page.locator('.carousel-slide .promo-visual').first().evaluate(n=>{const r=n.getBoundingClientRect();return {ratio:r.width/r.height,fit:getComputedStyle(n.querySelector('img')).objectFit}});
-   assert(Math.abs(creative.ratio-1)<.01,'Square creative at '+width);assert.equal(creative.fit,'contain');
-   const controlsClear=await page.locator('#offers').evaluate(n=>n.querySelector('.carousel-controls').getBoundingClientRect().top>=n.querySelector('.promo-visual').getBoundingClientRect().bottom-1);assert(controlsClear,'Controls outside creative at '+width);
+   const creative=await page.locator('.carousel-slide .offer-visual').first().evaluate(n=>{const r=n.getBoundingClientRect();return {ratio:r.width/r.height,fit:getComputedStyle(n.querySelector('img')).objectFit}});
+   assert.equal(creative.fit,'cover');
+   assert.equal(await page.locator('#offers-prev,#offers-next').count(),0);
    assert(composition.imageWidth<=composition.slideWidth,'Creative fits offer at '+width);
    assert(composition.slideWidth<=680,'Contained vertical column at '+width);
    const videoOverlay=await page.evaluate(()=>{const a=document.querySelector('.video-visual').getBoundingClientRect(),b=document.querySelector('.video-details').getBoundingClientRect();return b.top>=a.top&&b.bottom<=a.bottom+1});
    assert(videoOverlay,'Video text stays inside image at '+width);
-   for(const selector of ['.social','#offers-prev','#offers-next','.carousel-dots button']){const box=await page.locator(selector).first().boundingBox();assert(box.width>=44&&box.height>=44,'Touch size '+selector)}
+   for(const selector of ['.social','.carousel-dots button','.offer-cta']){const box=await page.locator(selector).first().boundingBox();assert(box.width>=44&&box.height>=44,'Touch size '+selector)}
    const rects=await page.locator('.card-title,.card-description,.video-title').evaluateAll(nodes=>nodes.filter(n=>!n.closest('.carousel-slide .card.visual .promo-copy')).map(n=>({scroll:n.scrollWidth,width:n.clientWidth})));assert(rects.every(x=>x.scroll<=x.width),'Truncated text '+width);
   }
   const art=await page.locator('#links .card').evaluateAll(nodes=>nodes.map(n=>getComputedStyle(n,'::before').backgroundImage));assert.equal(new Set(art).size,art.length,'Distinct thematic backgrounds');
   const dates=await page.evaluate(()=>{const holder=document.createElement('span');appendCampaignDates(holder,{start_at:'2026-10-01T12:00:00Z',end_at:'2026-10-31T12:00:00Z'});return [...holder.querySelectorAll('time')].map(n=>({text:n.textContent,date:n.dateTime}))});assert.equal(dates.length,2);assert(dates[0].text.startsWith('À partir du '));assert(dates[1].text.startsWith('Jusqu’au '));assert.equal(dates[1].date,'2026-10-31T12:00:00.000Z');
-  assert(await page.locator('.carousel-slide .promo-copy').first().evaluate(n=>n.getBoundingClientRect().width<=1),'Editorial copy not visible');assert(await page.locator('.carousel-slide[aria-hidden="false"] .offer-label').isVisible());
+  assert(await page.locator('.carousel-slide[aria-hidden="false"] .offer-title').isVisible());assert(await page.locator('.carousel-slide[aria-hidden="false"] .offer-kicker').isVisible());
   const before=await request('/api/stats',undefined,'GET');
   const popupPromise=page.waitForEvent('popup');await page.locator('.carousel-slide[aria-hidden="false"] a').click();const popup=await popupPromise;await popup.waitForLoadState();assert.equal(popup.url(),block('Campagne test B').url);await popup.close();
   const videoPopupPromise=page.waitForEvent('popup');await page.locator('.video-card').click();const videoPopup=await videoPopupPromise;await videoPopup.waitForLoadState();assert.equal(videoPopup.url(),video.url);await videoPopup.close();
