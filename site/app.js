@@ -4,7 +4,7 @@ function renderFooter(profile={}){
  const quote=document.getElementById("footer-quote"),value=typeof profile.footer_quote==="string"?profile.footer_quote.trim():"";
  quote.textContent=value;quote.hidden=!value;
  const version=document.getElementById("footer-version");
- version.textContent=window.LINKS_VERSION?"V"+window.LINKS_VERSION:"";version.hidden=!window.LINKS_VERSION;
+ version.textContent=profile.app_version||"";version.hidden=!profile.app_version;
 }
 renderFooter();
 const paths={

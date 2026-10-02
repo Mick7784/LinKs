@@ -1,3 +1,2 @@
 "use strict";
-// Single application version source. Increment with each release.
-window.LINKS_VERSION="1.001";
+// Version is supplied by /api/public-config: profile.app_version (SQLite settings).

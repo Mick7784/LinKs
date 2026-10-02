@@ -352,5 +352,33 @@ class AnalyticsTests(unittest.TestCase):
         self.assertEqual(self.a.quote_list(),[])
         self.assertEqual(self.request(url,method='DELETE')[0],404)
 
+
+    def test_application_version_manual_and_release_restart(self):
+        from unittest.mock import patch
+        admin=self.server(True)
+        self.assertEqual(self.a.public_config()['profile']['app_version'],'V1.046')
+        for value in ['V2.001','V1.1000','V1.060']:
+            status,body=self.request(admin+'/api/app-version',{'app_version':value})
+            self.assertEqual(status,200);self.assertEqual(self.a.public_config()['profile']['app_version'],value)
+        for value in ['1.046','V1.46','V1.046<script>',None]:
+            self.assertEqual(self.request(admin+'/api/app-version',{'app_version':value})[0],400)
+        with patch.dict(os.environ,{'APP_RELEASE_VERSION':'V1.047','APP_RELEASE_ID':'release-a'}):
+            self.a.init()
+            self.assertEqual(self.a.public_config()['profile']['app_version'],'V1.047')
+            self.request(admin+'/api/app-version',{'app_version':'V2.001'})
+            self.a.init()
+            self.assertEqual(self.a.public_config()['profile']['app_version'],'V2.001')
+        backup=json.loads(self.a.export_backup());self.a.restore_backup(backup)
+        self.assertEqual(self.a.public_config()['profile']['app_version'],'V2.001')
+
+    def test_release_increment_keeps_major(self):
+        spec=importlib.util.spec_from_file_location('release_version',Path(__file__).with_name('release-version.py'))
+        module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+        for old,new in [('V1.046','V1.047'),('V1.999','V1.1000'),('V2.001','V2.002')]:
+            self.assertEqual(module.next_version(old),new)
+        self.assertEqual(module.choose('ordinary commit'),'')
+        self.assertEqual(module.choose('Release V1.046'),'V1.046')
+
 if __name__=='__main__':unittest.main()
+
 

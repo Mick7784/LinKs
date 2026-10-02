@@ -5,11 +5,20 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      official_release:
+        description: Publish an official numbered release
+        type: boolean
+        default: true
+      version:
+        description: Optional explicit version (otherwise increment the deployed version)
+        type: string
+        default: ""
 permissions:
   contents: read
 concurrency:
   group: docker-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 jobs:
   docker:
     runs-on: ubuntu-latest
@@ -57,6 +66,14 @@ jobs:
           story_token=$(curl -fsS -H 'Content-Type: application/json' -d '{}' "http://127.0.0.1:18081/api/content/$story_id/story-link" | python3 -c 'import json,sys; print(json.load(sys.stdin)["url"].rsplit("/",1)[-1])')
           test "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:18080/go/$story_token")" = 302
           curl -fsS http://127.0.0.1:18081/api/stats | python3 -c 'import json,sys; data=json.load(sys.stdin); assert sum(r["total"] for r in data["rows"]) == 1; assert sum(r["total"] for r in data["stories"]) == 1'
+      - name: Choose official release version
+        if: github.event_name != 'pull_request'
+        id: release
+        env:
+          RELEASE_MESSAGE: ${{ github.event.head_commit.message }}
+          OFFICIAL_RELEASE: ${{ inputs.official_release }}
+          RELEASE_OVERRIDE: ${{ inputs.version }}
+        run: python3 scripts/release-version.py
       - name: Log in to GHCR
         if: github.event_name != 'pull_request'
         env:
@@ -67,10 +84,20 @@ jobs:
         if: github.event_name != 'pull_request'
         env:
           COMMIT_SHA: ${{ github.sha }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
         run: |
           set -euo pipefail
           docker buildx create --use --name links-builder
-          docker buildx build --platform linux/amd64,linux/arm64 --tag "$IMAGE:latest" --tag "$IMAGE:sha-$COMMIT_SHA" --label "org.opencontainers.image.revision=$COMMIT_SHA" --push .
+          release_args=()
+          if [ -n "$RELEASE_VERSION" ]; then
+            if docker buildx imagetools inspect "$IMAGE:$RELEASE_TAG" >/dev/null 2>&1; then
+              echo "Release tag already exists; pull it before creating another release."
+              exit 1
+            fi
+            release_args=(--tag "$IMAGE:$RELEASE_TAG" --build-arg "APP_RELEASE_VERSION=$RELEASE_VERSION" --build-arg "APP_RELEASE_ID=$RELEASE_VERSION:$COMMIT_SHA" --label "org.opencontainers.image.version=$RELEASE_VERSION")
+          fi
+          docker buildx build --platform linux/amd64,linux/arm64 --tag "$IMAGE:latest" --tag "$IMAGE:sha-$COMMIT_SHA" --label "org.opencontainers.image.revision=$COMMIT_SHA" "${release_args[@]}" --push .
 
 
 

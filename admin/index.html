@@ -55,6 +55,7 @@
 <section class="view" id="settings">
  <div class="section-head"><div><h2>Réglages</h2><p>Informations principales affichées sur la page.</p></div></div>
  <form id="settings-form" class="panel form-grid"><label>Nom<input name="name" required maxlength="120"></label><label>Accroche<input name="tagline" maxlength="200"></label><label class="wide" data-promo-editorial>Description<input name="description" maxlength="300"></label><div class="wide actions"><button class="primary">Enregistrer</button></div></form>
+ <form id="version-form" class="panel form-grid"><h3 class="wide">Version de l’application</h3><label>Version actuelle<input name="app_version" required pattern="V[0-9]+\.[0-9]{3,}" maxlength="40" placeholder="V1.046"></label><div class="actions"><button class="primary">Enregistrer</button></div><p class="wide">La prochaine release incrémente le build. Le changement de majeure reste manuel.</p></form>
  <section class="panel" id="quotes-panel">
   <h3>Citations / Easter eggs</h3><p id="quotes-summary" role="status">Chargement…</p>
   <form id="quote-form" class="quote-add"><label>Citation<input name="text" required maxlength="1000"></label><button class="primary">Ajouter</button></form>

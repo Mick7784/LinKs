@@ -70,6 +70,22 @@ def init():
           created_at TEXT NOT NULL,deleted INTEGER NOT NULL DEFAULT 0)""")
         db.execute("CREATE TABLE IF NOT EXISTS footer_quotes(id TEXT PRIMARY KEY,text TEXT NOT NULL UNIQUE,active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),created_at TEXT NOT NULL)")
         seed(db)
+        init_version(db)
+
+def checked_version(value):
+    if not isinstance(value,str) or not re.fullmatch(r"V[0-9]+\.[0-9]{3,}",value) or len(value)>40:
+        raise ValueError("Format attendu : V1.046 ou V2.001")
+    return value
+
+def init_version(db):
+    release=os.environ.get("APP_RELEASE_VERSION","")
+    release_id=os.environ.get("APP_RELEASE_ID","")
+    if release:checked_version(release)
+    db.execute("INSERT OR IGNORE INTO settings VALUES('app.version',?)",(release or "V1.046",))
+    applied=db.execute("SELECT value FROM settings WHERE key='app.release_id'").fetchone()
+    if release and release_id and (not applied or applied[0]!=release_id):
+        db.execute("INSERT INTO settings VALUES('app.version',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(release,))
+        db.execute("INSERT INTO settings VALUES('app.release_id',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(release_id,))
 
 def seed(db):
     if db.execute("SELECT 1 FROM settings WHERE key='content.initialized'").fetchone():return
@@ -192,7 +208,7 @@ def story_link(promotion_id):
 
 def profile(db):
     values={r["key"]:r["value"] for r in db.execute("SELECT key,value FROM settings")}
-    return {k:values.get("profile."+k,"") for k in ["name","tagline","description","avatar","logo"]}
+    return {**{k:values.get("profile."+k,"") for k in ["name","tagline","description","avatar","logo"]},"app_version":values.get("app.version","")}
 def status_of(row,at=None):
     if row["archived"]:return "Archivé"
     if row["draft"]:return "Brouillon"
@@ -435,7 +451,12 @@ def restore_backup(data):
                     elif table=='story_links':
                         if not STORY_TOKEN.fullmatch(row['token']) or row['deleted'] not in (0,1) or not row['name'] or not row['promotion_id']:raise ValueError('Lien Story invalide')
                         instant(row['created_at'])
-                    elif row['key'] not in {'content.initialized','profile.name','profile.tagline','profile.description','profile.avatar','profile.logo'}:raise ValueError('Réglage inconnu')
+                    elif row['key'] not in {'content.initialized','profile.name','profile.tagline','profile.description','profile.avatar','profile.logo','app.version','app.release_id'}:raise ValueError('Réglage inconnu')
+            for row in tables["settings"]:
+                if row["key"]=="app.version":checked_version(row["value"])
+            setting_keys={row["key"] for row in tables["settings"]}
+            for row in db.execute("SELECT * FROM settings WHERE key IN ('app.version','app.release_id')"):
+                if row["key"] not in setting_keys:tables["settings"].append(dict(row))
             # Codes are never reassigned, even when restoring a different backup.
             incoming={r['token']:r for r in tables['story_links']}
             restored_ids={r['id'] for r in tables['content_blocks']}
@@ -544,6 +565,10 @@ class Handler(BaseHTTPRequestHandler):
             if path=="/api/buttons":return self.create_button(data)
             if path=="/api/buttons/reorder":return self.reorder("top_buttons",data)
             if path=="/api/upload":return self.upload(data)
+            if path=="/api/app-version":
+                value=checked_version(data.get("app_version"))
+                with connection() as db:db.execute("INSERT INTO settings VALUES('app.version',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(value,))
+                return self.json(200,{"app_version":value})
             if path=="/api/settings":return self.save_settings(data)
             return self.send(404)
         except (ValueError,TypeError,json.JSONDecodeError,binascii.Error,sqlite3.IntegrityError) as exc:return self.json(400,{"error":str(exc) or "Requête invalide"})

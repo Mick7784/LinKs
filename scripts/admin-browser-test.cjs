@@ -64,7 +64,7 @@ const { join, resolve } = require('node:path');
   assert.equal(await preview.locator('.offer-title').textContent(),'Offre partenaire');
   assert((await preview.locator('.offer-code').textContent()).includes('DOMOTIK10'));
   await page.locator('#block-form [name="promo_code"]').fill('');
-  assert.equal(await preview.locator('.offer-code').count(),0);
+  await preview.locator('.offer-code').waitFor({state:'detached'});assert.equal(await preview.locator('.offer-code').count(),0);
   await page.locator('#block-form [name="promo_code"]').fill('DOMOTIK10');
   if(process.env.ADMIN_SCREENSHOTS){for(const width of [390,1440]){await page.setViewportSize({width,height:1000});await page.locator('#block-dialog').screenshot({path:join(process.env.ADMIN_SCREENSHOTS,'promo-editor-'+width+'.png')})}await page.setViewportSize({width:1440,height:1000})}
   await page.locator('#block-form [name="internal_name"]').fill('Promo renommée');

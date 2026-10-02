@@ -6,6 +6,9 @@ COPY site ./site
 RUN node scripts/build-links.mjs
 
 FROM nginx:stable-alpine
+ARG APP_RELEASE_VERSION
+ARG APP_RELEASE_ID
+ENV APP_RELEASE_VERSION=$APP_RELEASE_VERSION APP_RELEASE_ID=$APP_RELEASE_ID
 RUN apk add --no-cache nodejs python3 tzdata
 RUN mkdir -p /data && chown nginx:nginx /data
 LABEL org.opencontainers.image.source="https://github.com/Mick7784/links"
