@@ -1,8 +1,9 @@
 "use strict";
 const $=id=>document.getElementById(id),fmt=new Intl.NumberFormat("fr-FR");
-const names={"direct-inconnu":"Direct / inconnu","autre-site":"Autre site","autre-campagne":"Autre campagne",youtube:"YouTube",instagram:"Instagram","instagram-story":"Instagram Story","domotik-studio.fr":"DomotiK Studio",facebook:"Facebook",google:"Google",discord:"Discord",newsletter:"Newsletter",tiktok:"TikTok"};
+const names={"direct-inconnu":"Direct / inconnu","autre-site":"Autre site","autre-campagne":"Autre campagne",youtube:"YouTube",instagram:"Instagram","instagram-story":"Instagram Story",facebook:"Facebook",google:"Google",discord:"Discord",newsletter:"Newsletter",tiktok:"TikTok",site:"Site",mail:"E-mail",qr:"QR"};
+let csrf="",adminTimezone="UTC";
 const state={content:[],buttons:[],archives:[],settings:{},chart:[]};
-const api=async(path,options={})=>{const response=await fetch(path,{cache:"no-store",...options,headers:{"Content-Type":"application/json",...(options.headers||{})}});if(!response.ok){let message="Une erreur est survenue.";try{message=(await response.json()).error||message}catch{}throw new Error(message)}return response.status===204?null:response.json()};
+const api=async(path,options={})=>{const response=await fetch(path,{cache:"no-store",...options,headers:{"Content-Type":"application/json","X-Links-Request":"1","X-Links-CSRF":csrf,...(options.headers||{})}});if(response.status===401){location.href="/login";throw new Error("Connexion requise.")}if(!response.ok){let message="Une erreur est survenue.";try{message=(await response.json()).error||message}catch{}throw new Error(message)}return response.status===204?null:response.json()};
 const say=(message,error=false)=>{const node=$("notice");node.textContent=message;node.classList.toggle("notice-error",error);clearTimeout(say.timer);say.timer=setTimeout(()=>node.textContent="",4000)};
 const esc=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const typeName={classic:"Classique",featured:"Featured",promo:"Promo"};
@@ -19,7 +20,8 @@ mobileNavigation.addEventListener("change",()=>{const active=document.activeElem
 document.querySelector(".tabs").addEventListener("click",event=>{const button=event.target.closest("[data-tab]");if(button){activate(button.dataset.tab);closeMenu(mobileNavigation.matches)}});
 syncNavigation();
 
-function dates(){const days=Number($("period").value),end=new Date(),start=new Date();start.setDate(start.getDate()-days+1);const iso=d=>new Intl.DateTimeFormat("en-CA",{timeZone:"Europe/Paris",year:"numeric",month:"2-digit",day:"2-digit"}).format(d);return{start:iso(start),end:iso(end)}}
+function dates(){const days=Number($("period").value),end=new Intl.DateTimeFormat("en-CA",{timeZone:adminTimezone,year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date()),start=new Date(end+"T12:00:00Z");start.setUTCDate(start.getUTCDate()-days+1);return {start:start.toISOString().slice(0,10),end}}
+
 function bars(id,items){const root=$(id);if(!items.length){root.innerHTML='<p class="empty">Aucune donnée sur cette période.</p>';return}const max=Math.max(...items.map(x=>x[1]),1);root.className="bar-list";root.innerHTML=items.map(([label,value])=>`<div class="bar-row"><span title="${esc(label)}">${esc(label)}</span><span class="bar"><i></i></span><strong>${fmt.format(value)}</strong></div>`).join("");root.querySelectorAll(".bar i").forEach((bar,index)=>{bar.style.width=`${items[index][1]/max*100}%`})}
 function chartBuckets(days){
  const size=days.length>30?7:1,result=[];
@@ -72,7 +74,7 @@ async function loadStats(){try{
 
 $("period").addEventListener("change",loadStats);$("source").addEventListener("change",loadStats);new ResizeObserver(()=>{const width=$("chart").clientWidth;if(width>0&&width!==chartRenderedWidth&&state.chart.length)chart(state.chart)}).observe($("chart"));
 
-function canStory(item){try{const url=new URL(item.url);return ["http:","https:"].includes(url.protocol)&&!url.username&&!url.password&&url.hostname!=="links.domotik-studio.fr"}catch{return false}}
+function canStory(item){try{const url=new URL(item.url);return ["http:","https:"].includes(url.protocol)&&!url.username&&!url.password&&url.hostname!==new URL(publicSiteUrl||location.origin).hostname}catch{return false}}
 function storyButton(item){return item.type==="classic"?"":`<button data-action="copy-story" class="story-link-button" title="${canStory(item)?"Copier le lien Story tracké":"URL requise"}" aria-label="${canStory(item)?"Copier le lien Story tracké":"URL requise"}"${canStory(item)?"":" disabled"}>🔗</button>`}
 async function copyStory(action,id){if(action.disabled)return;action.disabled=true;try{const {url}=await api(`/api/content/${id}/story-link`,{method:"POST",body:"{}"});let copied=false;try{await navigator.clipboard.writeText(url);copied=true}catch{let input=action.parentNode.querySelector(".story-copy");if(!input){input=document.createElement("input");input.className="story-copy";input.readOnly=true;input.setAttribute("aria-label","Lien Story tracké");action.parentNode.append(input)}input.value=url;input.focus();input.select();try{copied=document.execCommand("copy")}catch{}if(copied)input.remove()}say(copied?"Lien Story copié":"Lien sélectionné : copie-le avec le menu de ton appareil.")}catch(error){say(error.message,true)}finally{action.disabled=false}}
 function itemHtml(item,archived=false){const performance=item.type==="classic"?`${fmt.format(item.clicks||0)} clics`:`${fmt.format(item.impressions||0)} impressions · ${fmt.format(item.clicks||0)} clics · CTR ${item.ctr===null?"—":item.ctr+" %"}`;return`<article class="list-item" draggable="${!archived}" data-id="${esc(item.id)}" data-group="${item.type==="classic"?"classic":"highlight"}"><span class="drag-handle">${archived?"◦":"⋮⋮"}</span><span class="type-mark">${item.type==="promo"?"▣":item.type==="featured"?"★":"↗"}</span><div class="item-copy"><strong>${esc(item.internal_name)}</strong><small>${esc(item.title)} · ${typeName[item.type]||item.type} · ${performance}</small><span class="status ${statusClass(item.status)}">${esc(item.status)}</span></div><div class="item-actions">${storyButton(item)}${archived?`<button data-action="restore">Restaurer</button>`:`<span class="move"><button data-action="up" aria-label="Monter">↑</button><button data-action="down" aria-label="Descendre">↓</button></span><button data-action="edit">Modifier</button><details class="row-menu"><summary aria-label="Autres actions pour ${esc(item.internal_name)}" title="Autres actions">···</summary><div class="row-menu-content"><button data-action="duplicate">Dupliquer</button><button data-action="archive">Archiver</button>`}<button data-action="delete" class="trash" title="Supprimer définitivement" aria-label="Supprimer définitivement">Supprimer</button>${archived?"":"</div></details>"}</div></article>`}
@@ -86,12 +88,12 @@ async function saveOrder(root,buttons=false){try{const ids=[...root.querySelecto
 async function move(root,item,direction,buttons=false){const siblings=[...root.querySelectorAll(`.list-item${buttons?"":'[data-group="'+item.dataset.group+'"]'}`)],index=siblings.indexOf(item),other=siblings[index+direction];if(!other)return;item.parentNode.insertBefore(direction<0?item:other,direction<0?other:item);await saveOrder(root,buttons)}
 
 const blockDialog=$("block-dialog"),blockForm=$("block-form");
-function localDate(value){if(!value)return"";const date=new Date(value),pad=x=>String(x).padStart(2,"0");return`${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`}
+function localDate(value){return LinksDates.local(value,adminTimezone)}
 function openBlock(item={}){blockForm.reset();const clean={id:"",type:"classic",internal_name:"",title:"",description:"",url:"",icon:"website",image:"",badge:"",cta:"",promo_code:"",priority:"normal",start_at:"",end_at:""};for(const [key,value] of Object.entries(clean))blockForm.elements[key].value=value;$("block-image-file").value="";blockForm.elements.active.checked=true;blockForm.elements.draft.checked=false;if(item.id){for(const key of ["id","type","internal_name","title","description","url","icon","image","badge","cta","promo_code","priority"])blockForm.elements[key].value=item[key]??clean[key];blockForm.elements.active.checked=item.active!==false;blockForm.elements.draft.checked=!!item.draft;blockForm.elements.start_at.value=localDate(item.start_at);blockForm.elements.end_at.value=localDate(item.end_at)}$("promo-availability").hidden=true;$("block-title").textContent=item.id?"Modifier le bloc":"Nouveau bloc";preview();blockDialog.showModal();checkPromotion()}
 function updatePromoEditor(){const promo=["promo","featured"].includes(blockForm.elements.type.value);blockForm.querySelectorAll("[data-promo-editorial]").forEach(label=>label.hidden=promo);blockForm.elements.title.required=!promo;blockForm.querySelector("[data-promo-code]").hidden=!promo;}
-function formBlock(){const data=Object.fromEntries(new FormData(blockForm));data.active=blockForm.elements.active.checked;data.draft=blockForm.elements.draft.checked;if(["promo","featured"].includes(data.type)&&!data.title.trim())data.title=data.internal_name;for(const key of ["start_at","end_at"])data[key]=data[key]?new Date(data[key]).toISOString():null;return data}
+function formBlock(){const data=Object.fromEntries(new FormData(blockForm));data.active=blockForm.elements.active.checked;data.draft=blockForm.elements.draft.checked;if(["promo","featured"].includes(data.type)&&!data.title.trim())data.title=data.internal_name;for(const key of ["start_at","end_at"])data[key]=data[key]?LinksDates.instant(data[key],adminTimezone):null;return data}
 let promotionTimer,pendingConflict,lastPromotionCheck;
-const periodText=value=>value?new Intl.DateTimeFormat("fr-FR",{dateStyle:"medium",timeStyle:"short"}).format(new Date(value)):"sans limite";
+const periodText=value=>value?new Intl.DateTimeFormat("fr-FR",{dateStyle:"medium",timeStyle:"short",timeZone:adminTimezone}).format(new Date(value)):"sans limite";
 async function checkPromotion(){
  clearTimeout(promotionTimer);promotionTimer=setTimeout(async()=>{const node=$("promo-availability"),data=formBlock();if(!["promo","featured"].includes(data.type)||!data.active||data.draft){node.hidden=true;lastPromotionCheck={allowed:true};return}try{const payload={...data,internal_name:data.internal_name||"Nouvelle promotion",title:data.title||"Promotion",url:data.url||"https://example.invalid"};lastPromotionCheck=await api("/api/promotions/check",{method:"POST",body:JSON.stringify(payload)});node.hidden=false;node.className="wide availability "+(lastPromotionCheck.allowed?(lastPromotionCheck.maximum===3?"warning":"success"):"error");node.innerHTML=lastPromotionCheck.allowed?(lastPromotionCheck.maximum===3?`⚠️ Période chargée — ${lastPromotionCheck.maximum}/3 promotions`:`✅ Période disponible — ${lastPromotionCheck.maximum}/3 promotions`):`❌ Limite dépassée — ${lastPromotionCheck.maximum} promotions seraient actives simultanément`;if(lastPromotionCheck.overlaps.length){const first=lastPromotionCheck.overlaps[0];node.innerHTML+=`<small>Une promotion est déjà prévue : ${esc(first.internal_name)}, de ${esc(periodText(first.start_at))} à ${esc(periodText(first.end_at))}.</small>`}}catch(error){node.hidden=false;node.className="wide availability error";node.textContent=error.message;lastPromotionCheck={allowed:false}}},180)
 }
@@ -99,7 +101,7 @@ async function saveBlock(data){const id=data.id;delete data.id;await api(id?"/ap
 function showConflict(data,check){pendingConflict={data,check};const segment=check.segments[0];$("conflict-period").textContent=segment?`Du ${periodText(segment.start_at)} au ${periodText(segment.end_at)}, ${segment.count} promotions seraient actives simultanément.`:"La période contient un chevauchement.";const items=check.overlaps;$("conflict-items").innerHTML=items.map(item=>`<article><strong>${esc(item.internal_name)}</strong><small>${esc(item.status)} · ${esc(periodText(item.start_at))} → ${esc(periodText(item.end_at))}${item.active_days!==null?` · active depuis ${item.active_days} jour(s)`:""}</small></article>`).join("");$("replacement-promo").replaceChildren(...items.map(item=>new Option(item.internal_name+(item.active_days!==null?` — ${item.active_days} j`:""),item.id)));$("conflict-dialog").showModal()}
 
 function previewPromo(data){
- const format=new Intl.DateTimeFormat("fr-FR",{day:"numeric",month:"long",year:"numeric",timeZone:"Europe/Paris"});
+ const format=new Intl.DateTimeFormat("fr-FR",{day:"numeric",month:"long",year:"numeric",timeZone:adminTimezone});
  const start=new Date(data.start_at||""),end=new Date(data.end_at||"");
  const dateText=(Number.isFinite(start.getTime())?"Du "+format.format(start):"")+(Number.isFinite(end.getTime())?(Number.isFinite(start.getTime())?" au ":"Jusqu’au ")+format.format(end):"");
  const svg=path=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${path}</svg>`;
@@ -124,14 +126,28 @@ document.addEventListener("click",async event=>{const action=event.target.closes
 const editable=item=>Object.fromEntries(["type","internal_name","title","description","url","icon","image","badge","cta","promo_code","priority","active","draft","start_at","end_at"].map(key=>[key,item[key]]));
 $("conflict-dialog").addEventListener("click",async event=>{const action=event.target.closest("[data-conflict]")?.dataset.conflict;if(!action||!pendingConflict)return;try{if(action==="dates"){$("conflict-dialog").close();return}if(action==="next"){const next=pendingConflict.check.next_start;if(!next){say("Aucun créneau automatique trouvé : modifie les dates.",true);$("conflict-dialog").close();return}const oldStart=pendingConflict.data.start_at?new Date(pendingConflict.data.start_at):new Date(),oldEnd=pendingConflict.data.end_at?new Date(pendingConflict.data.end_at):null,newStart=new Date(next);blockForm.elements.start_at.value=localDate(next);if(oldEnd)blockForm.elements.end_at.value=localDate(new Date(newStart.getTime()+Math.max(60000,oldEnd-oldStart)).toISOString());$("conflict-dialog").close();preview();checkPromotion();say("Premier créneau disponible proposé. La date reste modifiable.");return}if(action==="replace"){const id=$("replacement-promo").value,target=state.content.find(item=>item.id===id);if(!target||!confirm(`Désactiver « ${target.internal_name} » et enregistrer cette promotion ?`))return;await api("/api/promotions/replace",{method:"POST",body:JSON.stringify({replace_id:id,content:pendingConflict.data})});$("conflict-dialog").close();blockDialog.close();await loadContent();say("Promotion remplacée et désactivée.")}}catch(error){say(error.message,true)}});
 
-async function loadSettings(){try{state.settings=await api("/api/settings");$("version-form").elements.app_version.value=state.settings.app_version||"";for(const key of ["name","tagline","description"])$("settings-form").elements[key].value=state.settings[key]||""}catch(error){say(error.message,true)}}
-$("settings-form").addEventListener("submit",async event=>{event.preventDefault();try{await api("/api/settings",{method:"POST",body:JSON.stringify(Object.fromEntries(new FormData(event.target)))});say("Réglages enregistrés.")}catch(error){say(error.message,true)}});
-loadStats();
-
+async function loadSettings(){try{
+ state.settings=await api("/api/settings");adminTimezone=state.settings.timezone||"UTC";publicSiteUrl=state.settings.site_url||"";
+ $("version-form").elements.app_version.value=state.settings.app_version||"";
+ for(const key of ["name","tagline","description","logo","avatar","footer_owner","site_url","timezone","video_channel_id"])$("settings-form").elements[key].value=state.settings[key]||"";
+ for(const key of ["analytics_enabled","video_enabled"])$("settings-form").elements[key].checked=!!state.settings[key];
+ $("settings-form").elements.source_rules.value=JSON.stringify(state.settings.source_rules||[],null,2);
+ $("admin-name").textContent=state.settings.name||"Links";$("admin-owner").textContent=(state.settings.name||"Links")+" · Administration";
+ $("admin-logo").hidden=!state.settings.logo;if(state.settings.logo)$("admin-logo").src=state.settings.logo;
+ document.querySelectorAll(".public-link").forEach(a=>{a.hidden=!publicSiteUrl;a.href=publicSiteUrl||"#"});$("admin-timezone").textContent=adminTimezone;
+ for(const r of state.settings.source_rules||[])names[r.key]=r.label;
+ const select=$("share-source");select.querySelectorAll("[data-instance-source]").forEach(x=>x.remove());for(const r of state.settings.source_rules||[]){const o=new Option(r.label,r.aliases[0]||r.key);o.dataset.instanceSource="1";select.append(o)}shareUrl();
+ $("access-form").elements.mode.value=state.settings.auth_mode;accessFields();$("logout").hidden=state.settings.auth_mode!=="local";
+}catch(error){say(error.message,true)}}
+$("settings-form").addEventListener("submit",async event=>{event.preventDefault();try{
+ const data=Object.fromEntries(new FormData(event.target));data.analytics_enabled=event.target.elements.analytics_enabled.checked;data.video_enabled=event.target.elements.video_enabled.checked;data.source_rules=JSON.parse(data.source_rules||"[]");
+ await api("/api/settings",{method:"POST",body:JSON.stringify(data)});await loadSettings();say("Réglages enregistrés.")
+}catch(error){say(error.message,true)}});
+async function initializeAdmin(){try{const auth=await api("/api/auth/status");csrf=auth.csrf||"";await loadSettings();await loadStats()}catch(error){say(error.message,true)}}
 
 // Sharing and backup remain in Settings, without another navigation section.
-let publicSiteUrl='https://links.domotik-studio.fr';
-function shareUrl(){const url=new URL(publicSiteUrl);url.searchParams.set('utm_source',$('share-source').value);$('share-url').value=url.href;}
+let publicSiteUrl='';
+function shareUrl(){if(!publicSiteUrl){$("share-url").value="";return}const url=new URL(publicSiteUrl);url.searchParams.set('utm_source',$('share-source').value);$('share-url').value=url.href;}
 $('share-source').addEventListener('change',shareUrl);shareUrl();
 $('copy-share').addEventListener('click',async()=>{
  const input=$('share-url');
@@ -139,17 +155,17 @@ $('copy-share').addEventListener('click',async()=>{
  catch{input.focus();input.select();let copied=false;try{copied=document.execCommand('copy');}catch{}$('share-status').textContent=copied?'Lien copié.':'Le lien est sélectionné : copie-le avec le menu de ton appareil.';}
 });
 function downloadBlob(blob,name){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),30000);}
-async function backup(){const response=await fetch('/api/backup',{cache:'no-store'});if(!response.ok){let message='Sauvegarde impossible.';try{message=(await response.json()).error||message;}catch{}throw new Error(message);}return response.blob();}
+async function backup(){const response=await fetch('/api/backup',{cache:'no-store'});if(response.status===401){location.href="/login";throw new Error("Connexion requise.")}if(!response.ok){let message='Sauvegarde impossible.';try{message=(await response.json()).error||message;}catch{}throw new Error(message);}return response.blob();}
 $('download-backup').addEventListener('click',async()=>{const button=$('download-backup');button.disabled=true;$('backup-status').textContent='Préparation du fichier…';try{downloadBlob(await backup(),'links-sauvegarde-'+new Date().toISOString().slice(0,10)+'.json');$('backup-status').textContent='Téléchargement lancé. Conserve ce fichier.';}catch(error){$('backup-status').textContent=error.message;}finally{button.disabled=false;}});
 $('restore-backup').addEventListener('change',async event=>{
  const input=event.target,file=input.files[0];if(!file)return;
  try{
   if(file.size>64*1024*1024)throw new Error('Le fichier dépasse 64 Mo.');
   const content=await file.text();let parsed;try{parsed=JSON.parse(content);}catch{throw new Error('Ce fichier JSON est illisible.');}
-  if(parsed.format!=='domotik-links-backup'||parsed.version!==1||!Array.isArray(parsed.tables?.content_blocks)||!Array.isArray(parsed.tables?.top_buttons))throw new Error('Ce fichier n’est pas une sauvegarde Links compatible.');
+  if(!['links-backup','domotik-links-backup'].includes(parsed.format)||![1,2,3].includes(parsed.version)||!Array.isArray(parsed.tables?.content_blocks)||!Array.isArray(parsed.tables?.top_buttons))throw new Error('Ce fichier n’est pas une sauvegarde Links compatible.');
   if(!confirm(`Restaurer ${parsed.tables.content_blocks.length} blocs et ${parsed.tables.top_buttons.length} boutons ? Les contenus, images utilisées, réglages et statistiques actuels seront remplacés. Télécharge d’abord une sauvegarde si tu souhaites pouvoir revenir en arrière.`))return;
   input.disabled=true;$('download-backup').disabled=true;$('backup-status').textContent='Vérification et restauration…';
-  await api('/api/restore',{method:'POST',body:content});await loadSettings();await loadStats();state.content=[];state.buttons=[];state.archives=[];$('backup-status').textContent='Sauvegarde restaurée. Tes données sont disponibles.';
+  await api('/api/restore',{method:'POST',body:content});if(state.settings.auth_mode==='local'){location.href='/login';return}await loadSettings();await loadStats();state.content=[];state.buttons=[];state.archives=[];$('backup-status').textContent='Sauvegarde restaurée. Tes données sont disponibles.';
  }catch(error){$('backup-status').textContent='Restauration non effectuée : '+error.message;}finally{input.disabled=false;$('download-backup').disabled=false;input.value='';}
 });
 
@@ -243,3 +259,12 @@ $("quotes-clear").addEventListener("click",async event=>{
  const button=event.target;button.disabled=true;
  try{await api("/api/quotes",{method:"DELETE"});quotes=[];clearQuoteAnalysis();drawQuotes();$("quotes-feedback").textContent="Toutes les citations ont été supprimées."}catch(error){$("quotes-feedback").textContent=error.message}finally{button.disabled=false}
 });
+
+function accessFields(){const form=$("access-form"),local=form.elements.mode.value==="local";$("local-account-fields").hidden=!local;$("external-confirm-label").hidden=local;$("current-password-label").hidden=state.settings.auth_mode!=="local";}
+$("access-form").elements.mode.addEventListener("change",accessFields);
+$("access-form").addEventListener("submit",async event=>{event.preventDefault();try{const data=Object.fromEntries(new FormData(event.target));data.confirm_external=event.target.elements.confirm_external.checked;data.csrf=csrf;await api("/api/auth/access",{method:"POST",body:JSON.stringify(data)});location.reload()}catch(error){say(error.message,true)}});
+$("logout").addEventListener("click",async()=>{await api("/api/auth/logout",{method:"POST",body:JSON.stringify({csrf})});location.href="/login"});
+for(const input of document.querySelectorAll("[data-profile-upload]"))input.addEventListener("change",async()=>{const file=input.files[0];if(!file)return;try{if(file.size>4*1024*1024)throw Error("Image supérieure à 4 Mo.");const data=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(file)});const result=await api("/api/upload",{method:"POST",body:JSON.stringify({type:file.type,data})});$("settings-form").elements[input.dataset.profileUpload].value=result.url}catch(error){say(error.message,true)}finally{input.value=""}});
+for(const button of document.querySelectorAll("[data-clear-profile]"))button.addEventListener("click",()=>$("settings-form").elements[button.dataset.clearProfile].value="");
+if(Intl.supportedValuesOf)$("timezones").replaceChildren(...Intl.supportedValuesOf("timeZone").map(x=>new Option(x,x)));
+initializeAdmin();

@@ -1,26 +1,8 @@
 {
   "$schema": "./links.schema.json",
-  "siteUrl": "https://links.domotik-studio.fr",
   "profile": {
-    "name": "DomotiK Studio",
-    "tagline": "La maison plus confortable.",
-    "description": "Domotique • Tech • Objets du quotidien",
-    "avatar": "/assets/portrait.webp",
-    "logo": "/assets/logo.webp"
+    "name": "Links"
   },
-  "latestVideo": {
-    "channelId": "UC-bkgpkh9sGcnX8oqFea3Uw"
-  },
-  "socials": [
-    { "platform": "youtube", "url": "https://www.youtube.com/@DomotiKStudio", "label": "YouTube DomotiK Studio" },
-    { "platform": "instagram", "url": "https://www.instagram.com/domotik_studio/", "label": "Instagram DomotiK Studio" },
-    { "platform": "email", "url": "mailto:domotikpro77@gmail.com", "label": "Me contacter par e-mail" }
-  ],
-  "links": [
-    { "title": "La communauté domotique AyLabs", "description": "Échanger, partager ses projets et s'entraider autour de la domotique.", "url": "https://discord.gg/XYKJEkPtRS", "icon": "discord" },
-    { "title": "Les coulisses sur Instagram", "description": "Les nouveautés et mon quotidien de créateur.", "url": "https://www.instagram.com/domotik_studio/", "icon": "instagram" },
-    { "title": "Amazon", "description": "Accéder à Amazon tout en soutenant la chaîne.", "url": "https://amzn.to/4heRBoW", "icon": "cart", "affiliate": true },
-    { "title": "Domadoo", "description": "Domotique et objets connectés pour la maison.", "url": "https://www.domadoo.fr/?domid=117", "icon": "home", "affiliate": true },
-    { "title": "Travaillons ensemble", "description": "Une marque, un produit ou une idée de collaboration ?", "url": "mailto:domotikpro77@gmail.com", "icon": "mail" }
-  ]
+  "socials": [],
+  "links": []
 }

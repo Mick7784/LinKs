@@ -1,5 +1,6 @@
 'use strict';
-(() => {
+function startMetrics(config) {
+  if(config.analytics_enabled!==true||config.setup_completed!==true)return;
   if (navigator.doNotTrack === '1' || navigator.globalPrivacyControl) return;
   const source = (new URLSearchParams(location.search).get('utm_source') || '').slice(0, 80);
   let referrer = '';
@@ -16,6 +17,7 @@
   function click(e) { if (e.type === 'auxclick' && e.button !== 1) return; const a = e.target.closest('a[data-metric]'); if (a && e.isTrusted) send('click', a.dataset.metric); }
   document.addEventListener('click', click); document.addEventListener('auxclick', click);
   window.addEventListener('links:impression', event => { const link=event.detail?.link; if(typeof link==='string' && link.startsWith('block:')) send('impression',link); });
-})();
+}
+if(window.LINKS_PUBLIC_CONFIG)startMetrics(window.LINKS_PUBLIC_CONFIG);else window.addEventListener("links:config",({detail})=>startMetrics(detail),{once:true});
 
 

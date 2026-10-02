@@ -1,50 +1,99 @@
-# DomotiK Studio — Liens
+# Links
 
-Une page responsive qui rassemble les réseaux sociaux, les liens utiles et la dernière vidéo YouTube. Réalisée en HTML, CSS et JavaScript, sans framework.
+Links est une page de liens auto-hébergée, personnalisable et accompagnée d’un back office. Elle réunit les liens, réseaux sociaux et offres d’un créateur, d’un projet ou d’une communauté sur une page adaptée aux ordinateurs et aux mobiles.
 
-## Administrer la page
+## Fonctionnalités
 
-Le back-office privé exposé sur le port `8081` permet maintenant de gérer les liens classiques, les promos visuelles, les mises en avant, leur programmation, les boutons du haut et les archives. Les contenus et les images importées sont conservés dans le volume `/data`, avec la base de statistiques existante.
+### Page publique
 
-Au premier démarrage de cette version, le contenu de `links.json` est importé automatiquement dans SQLite. Le fichier reste le contenu de secours utilisé si l’API dynamique est indisponible pendant le chargement de la page publique.
+- Liens et boutons de réseaux sociaux organisables.
+- Dernière vidéo facultative lorsqu’une source est configurée.
+- Cartes de campagnes illustrées, carrousel et copie de codes promo.
+- Citation facultative dans le footer.
+- Identité, images et copyright personnalisables.
 
-La carte « Dernière vidéo » reste alimentée par Creator Studio, verrouillée et toujours placée avant les blocs administrables.
+### Campagnes
 
-Les blocs `promo` et `featured` sont limités à trois affichages simultanés. Le back-office vérifie les chevauchements en temps réel et côté serveur, propose le premier créneau réellement disponible et affiche un planning compact. Sur la page publique, une à trois offres sont regroupées dans « Offres du moment » ; à partir de deux offres, la zone devient un carousel responsive avec navigation tactile.
+- Programmation avec dates et heures dans le fuseau choisi.
+- Activation, brouillons, priorités et ordre manuel.
+- Jusqu’à trois offres simultanées, contrôle des chevauchements et proposition de créneau.
+- Duplication, archives et liens directs pour les Stories.
 
-## Personnaliser le contenu de secours
+### Statistiques
 
-- **Contenu** : modifier `links.json` pour le profil, les réseaux et les liens.
-- **YouTube** : les données viennent de Creator Studio à chaque ouverture de la page. `latestVideo` active la carte ; sa chaîne doit être celle sélectionnée dans l’export Creator Studio.
-- **Images** : placer les fichiers dans `site/assets/`.
-- **Apparence** : modifier `site/style.css` et `site/icons.css`.
+- Visites, clics, sources, impressions et CTR.
+- Activité des Stories présentée séparément.
+- Copies de codes promo et taux de copie, avec historique du code réellement copié.
+- Filtres par période et par source.
 
-Les options sont décrites dans `links.schema.json`. Le fichier `site/config.js` est généré automatiquement.
+### Back office
 
-## Lancer avec Docker
+Gestion des contenus, campagnes, boutons, paramètres, citations et statistiques. Les citations peuvent être ajoutées individuellement, en masse ou importées depuis un fichier texte, dans une limite de 300.
 
-```sh
-docker build -t links .
-docker run --rm -p 127.0.0.1:8080:8080 links
-```
+## Installation et premier démarrage
 
-Ouvrir [localhost:8080](http://localhost:8080).
+La version en préparation inclut un assistant pour les nouvelles installations :
 
-## Mises à jour
+1. Démarrer Links avec un stockage persistant.
+2. Récupérer le code initial dans la console de l’installation.
+3. Ouvrir l’administration et créer le premier compte.
+4. Renseigner le nom affiché et, si souhaité, un logo et une description.
+5. Ajouter un premier lien.
+6. Confirmer l’adresse publique et le fuseau horaire.
+7. Choisir d’activer ou non les statistiques.
+8. Vérifier le résumé et terminer la configuration.
 
-GitHub Actions construit et publie l’image après une modification de `main`. Aucune tâche programmée n’est nécessaire pour la vidéo.
+La page publique reste neutre tant que la configuration n’est pas terminée. Le code initial devient inutilisable après validation. YouTube et les réseaux supplémentaires ne sont pas obligatoires.
 
-Une fois la publication terminée, récupérer la nouvelle image et redéployer le site pour appliquer les changements.
+Les instructions générales se trouvent dans [la documentation d’installation](docs/INSTALL.md).
 
-## Connecter Creator Studio dans Dockhand
+## Authentification
 
-1. Dans Creator Studio → Paramètres → API, activer la publication YouTube et sélectionner uniquement DomotiK Studio dans les chaînes exportées. Créer une clé nommée Links.
-2. Reprendre le service de `compose.yaml` : il utilise le réseau existant `pangolin` et l’adresse interne `http://creator-studio-api:3001/api/export/youtube`.
-3. Dans les variables d’environnement de la stack Dockhand, définir `CREATOR_STUDIO_API_KEY` avec cette clé. Ne pas la committer dans Git.
-4. Après publication de l’image, tirer la nouvelle image et recréer le conteneur Links une fois.
+**Mode local :** connexion administrateur intégrée, utilisée par défaut sur une nouvelle installation.
 
-Le navigateur lit `/latest-video.json`. Un relais local transmet uniquement titre, URL, miniature et date ; ni clé ni revenus ne sont publiés. La fraîcheur dépend de la collecte existante de Creator Studio. Aucun appel YouTube n’a lieu pendant le build. Sans clé, si la source échoue ou si aucune vidéo n’existe, la carte reste masquée et les autres liens fonctionnent.
+**Mode externe :** protection par un outil externe, un reverse proxy sécurisé ou un VPN. Links n’impose aucun fournisseur. Cette protection doit être en place avant d’activer ce mode.
 
-Vérification : ouvrir `/latest-video.json` sur le site ; la réponse doit être la vidéo seule. Une réponse 503 indique une configuration absente, 502 une source inaccessible, une clé refusée ou des données invalides.
+Les installations historiques conservent leur mode externe lors de la migration.
 
+## Personnalisation
 
+Les informations de l’assistant restent modifiables depuis le back office : identité, logo, avatar, copyright, adresse publique, fuseau et statistiques. Liens, réseaux, campagnes et citations utilisent leurs éditeurs existants.
+
+La vidéo est facultative. Désactiver les statistiques laisse la page et son administration fonctionnelles.
+
+## Confidentialité
+
+Les statistiques sont facultatives et agrégées. Elles comptabilisent des actions, pas des personnes uniques. La collecte ne crée ni cookie analytics ni identifiant visiteur ; aucune adresse IP n’est stockée dans la base de statistiques. Do Not Track et Global Privacy Control sont respectés.
+
+Une copie de code est une action, sans indication d’achat. Les compteurs sont conservés pendant 400 jours. Les sessions administrateur utilisent un cookie distinct, réservé à la connexion.
+
+## Version actuelle
+
+Dernière version publiée : **V1.046 — 2 octobre 2026**.
+
+**V1.1 est en préparation.** Elle n’est pas encore publiée ; la date et le résumé définitifs seront renseignés lors de sa validation.
+
+## Nouveautés V1.1 en préparation
+
+- Configuration générique persistante et assistant initial.
+- Connexion locale et maintien de la protection externe.
+- Migration des instances historiques et conservation des assets.
+- Sauvegardes incluant citations, images et nouveaux paramètres.
+- Cartes d’offres cliquables et suivi des copies de codes promo.
+- Dashboard enrichi, éditeur promo / mise en avant corrigé.
+- Citations compactes, limite de 300 et suppression globale.
+- Pictogramme Amazon dédié.
+
+## Historique des versions
+
+### V1.046 — 2 octobre 2026
+
+Cartes d’offres immersives, titre public et code promo dans l’éditeur, aperçu de campagne, gestion des citations et version persistante affichée dans le footer.
+
+## Licence
+
+Links est distribué sous [licence MIT](LICENSE). Utilisation, modification et redistribution sont autorisées selon les termes de cette licence.
+
+## Origine
+
+Links a été créé initialement pour DomotiK Studio. Cette origine ne conditionne pas la configuration d’une nouvelle installation.

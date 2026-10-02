@@ -1,0 +1,5 @@
+/* Explicit instance timezone for datetime-local fields; persisted instants stay UTC. */
+globalThis.LinksDates={
+ local(value,zone){if(!value)return"";const parts=Object.fromEntries(new Intl.DateTimeFormat("en-CA",{timeZone:zone,year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).formatToParts(new Date(value)).map(x=>[x.type,x.value]));return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`},
+ instant(value,zone){const m=/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value);if(!m)throw Error("Date invalide.");const [,y,mo,d,h,mi]=m.map(Number);const wall=Date.UTC(y,mo-1,d,h,mi);let utc=wall;for(let i=0;i<4;i++){const rendered=this.local(new Date(utc).toISOString(),zone),p=rendered.match(/\d+/g).map(Number),offset=Date.UTC(p[0],p[1]-1,p[2],p[3],p[4])-utc;utc=wall-offset}const result=new Date(utc).toISOString();if(this.local(result,zone)!==value)throw Error("Cette heure n’existe pas dans le fuseau sélectionné.");return result}
+};

@@ -1,7 +1,7 @@
 name: Build and publish Docker image
 on:
   push:
-    branches: [main]
+    branches: [main, feature/offer-card-two-steps]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -9,11 +9,15 @@ on:
       official_release:
         description: Publish an official numbered release
         type: boolean
-        default: true
+        default: false
       version:
-        description: Optional explicit version (otherwise increment the deployed version)
+        description: Optional explicit version (otherwise increment VERSION)
         type: string
         default: ""
+      validation_only:
+        description: Run checks without publishing an image
+        type: boolean
+        default: true
 permissions:
   contents: read
 concurrency:
@@ -26,16 +30,20 @@ jobs:
     permissions:
       contents: read
       packages: write
-    env:
-      IMAGE: ghcr.io/mick7784/links
     steps:
       - uses: actions/checkout@v6
+      - name: Resolve image name
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
       - name: Story journey on desktop and mobile
         shell: bash
         run: |
           set -euo pipefail
           npm install --prefix "$RUNNER_TEMP/story-browser" playwright
           "$RUNNER_TEMP/story-browser/node_modules/.bin/playwright" install --with-deps chromium
+          python3 scripts/analytics_test.py
+          python3 scripts/instance_test.py
+          node --test scripts/metrics.test.cjs scripts/dates.test.cjs scripts/video-api.test.mjs
+          NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/instance-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/story-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/admin-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/public-browser-test.cjs
@@ -43,31 +51,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          docker run --rm -v "$PWD:/app" -w /app node:24-alpine node --test scripts/video-api.test.mjs
-          python3 scripts/analytics_test.py
           docker build -t links-test .
-          docker run -d --name links-test -e ANALYTICS_ENABLED=true --read-only --tmpfs /data:rw,nosuid,size=32m,mode=1777 --tmpfs /tmp:rw,noexec,nosuid,size=32m,mode=1777 --cap-drop ALL --security-opt no-new-privileges:true -p 127.0.0.1:18080:8080 -p 127.0.0.1:18081:8081 links-test
+          docker run -d --name links-test --read-only --tmpfs /data:rw,nosuid,size=32m,mode=1777 --tmpfs /tmp:rw,noexec,nosuid,size=32m,mode=1777 --cap-drop ALL --security-opt no-new-privileges:true -p 127.0.0.1:18080:8080 -p 127.0.0.1:18081:8081 links-test
           trap 'docker logs links-test; docker rm -f links-test' EXIT
           for attempt in $(seq 1 20); do
             if curl -fsS http://127.0.0.1:18080/healthz; then break; fi
             sleep 1
           done
-          curl -fsS http://127.0.0.1:18080/ | grep -q 'DomotiK'
-          curl -fsS http://127.0.0.1:18080/api/public-config | python3 -c 'import json,sys; data=json.load(sys.stdin); assert data["links"] and data["socials"]'
-          for file in style.css icons.css config.js app.js metrics.js assets/logo.webp assets/portrait.webp; do
+          python3 scripts/smoke.py http://127.0.0.1:18080 http://127.0.0.1:18081 "$(docker exec links-test cat /data/setup-code)"
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18080/api/stats)" = 404
+          for file in style.css icons.css config.js app.js metrics.js assets/link-shopping.webp; do
             curl -fsS "http://127.0.0.1:18080/$file" -o /dev/null
           done
-          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18081/api/stats)" = 200
-          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18081/api/content)" = 200
-          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18080/api/stats)" = 404
-          curl -fsS -H 'Origin: https://links.domotik-studio.fr' -H 'Content-Type: application/json' -d '{"kind":"view","source":"youtube"}' http://127.0.0.1:18080/metrics
-          curl -fsS http://127.0.0.1:18081/api/stats | python3 -c 'import json,sys; assert sum(r["total"] for r in json.load(sys.stdin)["rows"]) == 1'
-          story_id=$(curl -fsS -H 'Content-Type: application/json' -d '{"type":"promo","internal_name":"Story smoke","title":"Offre","url":"https://partner.example/offer"}' http://127.0.0.1:18081/api/content | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
-          story_token=$(curl -fsS -H 'Content-Type: application/json' -d '{}' "http://127.0.0.1:18081/api/content/$story_id/story-link" | python3 -c 'import json,sys; print(json.load(sys.stdin)["url"].rsplit("/",1)[-1])')
-          test "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:18080/go/$story_token")" = 302
-          curl -fsS http://127.0.0.1:18081/api/stats | python3 -c 'import json,sys; data=json.load(sys.stdin); assert sum(r["total"] for r in data["rows"]) == 1; assert sum(r["total"] for r in data["stories"]) == 1'
       - name: Choose official release version
-        if: github.event_name != 'pull_request'
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && inputs.validation_only != true
         id: release
         env:
           RELEASE_MESSAGE: ${{ github.event.head_commit.message }}
@@ -75,13 +72,13 @@ jobs:
           RELEASE_OVERRIDE: ${{ inputs.version }}
         run: python3 scripts/release-version.py
       - name: Log in to GHCR
-        if: github.event_name != 'pull_request'
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && inputs.validation_only != true
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GHCR_USER: ${{ github.actor }}
         run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
       - name: Publish AMD64 and ARM64 images
-        if: github.event_name != 'pull_request'
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && inputs.validation_only != true
         env:
           COMMIT_SHA: ${{ github.sha }}
           RELEASE_VERSION: ${{ steps.release.outputs.version }}

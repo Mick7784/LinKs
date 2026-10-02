@@ -12,11 +12,11 @@ ENV APP_RELEASE_VERSION=$APP_RELEASE_VERSION APP_RELEASE_ID=$APP_RELEASE_ID
 RUN apk add --no-cache nodejs python3 tzdata
 RUN mkdir -p /data && chown nginx:nginx /data
 LABEL org.opencontainers.image.source="https://github.com/Mick7784/links"
-LABEL org.opencontainers.image.title="DomotiK Studio Links"
+LABEL org.opencontainers.image.title="Links"
 COPY nginx.conf /etc/nginx/nginx.conf
 COPY --from=config /app/site/ /usr/share/nginx/html/
 COPY scripts/video-api.mjs scripts/start.mjs /app/
-COPY scripts/analytics.py links.json /app/
+COPY scripts/analytics.py scripts/instance.py links.json VERSION /app/
 COPY admin/ /app/admin/
 USER nginx
 EXPOSE 8080 8081

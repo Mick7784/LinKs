@@ -39,11 +39,11 @@ function parseProfile(value) {
   if (!record(value)) { errors.push("profile : objet obligatoire."); return {}; }
   checkKeys(value, "profile", allowed.profile);
   const name = requiredString(value.name, "profile.name");
-  const avatar = image(value.avatar, "profile.avatar");
+  const avatar = value.avatar === undefined ? undefined : image(value.avatar, "profile.avatar");
   const tagline = optionalString(value.tagline, "profile.tagline");
   const description = optionalString(value.description, "profile.description");
   const logo = value.logo === undefined ? undefined : image(value.logo, "profile.logo");
-  return { name, avatar, ...(tagline && { tagline }), ...(description && { description }), ...(logo && { logo }) };
+  return { name, ...(avatar && { avatar }), ...(tagline && { tagline }), ...(description && { description }), ...(logo && { logo }) };
 }
 
 async function parseLatestVideo(value) {
@@ -109,12 +109,12 @@ function parseExpiry(value, path) {
     const real = new Date(Date.UTC(year, month - 1, day, hour, minute));
     if (real.getUTCFullYear() === year && real.getUTCMonth() === month - 1 && real.getUTCDate() === day && real.getUTCHours() === hour && real.getUTCMinutes() === minute) {
       const next = date ? new Date(Date.UTC(year, month - 1, day + 1)) : null;
-      return parisInstant(...(next ? [next.getUTCFullYear(), next.getUTCMonth() + 1, next.getUTCDate(), 0, 0] : [year, month, day, hour, minute]));
+      return localInstant(...(next ? [next.getUTCFullYear(), next.getUTCMonth() + 1, next.getUTCDate(), 0, 0] : [year, month, day, hour, minute]));
     }
   }
   errors.push(`${path} : date illisible. Utilise 2026-10-31 ou 2026-10-31T18:00.`); return null;
 }
-const formatter = new Intl.DateTimeFormat("en-US", { timeZone: "Europe/Paris", hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" });
-function parisInstant(year, month, day, hour, minute) { const asUtc = Date.UTC(year, month - 1, day, hour, minute); const offset = (instant) => { const parts = Object.fromEntries(formatter.formatToParts(new Date(instant)).map((part) => [part.type, Number(part.value)])); return Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second) - Math.floor(instant / 1000) * 1000; }; return asUtc - offset(asUtc - offset(asUtc)); }
+const formatter = new Intl.DateTimeFormat("en-US", { timeZone: process.env.LINKS_TIMEZONE || "UTC", hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+function localInstant(year, month, day, hour, minute) { const asUtc = Date.UTC(year, month - 1, day, hour, minute); const offset = (instant) => { const parts = Object.fromEntries(formatter.formatToParts(new Date(instant)).map((part) => [part.type, Number(part.value)])); return Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second) - Math.floor(instant / 1000) * 1000; }; return asUtc - offset(asUtc - offset(asUtc)); }
 function record(value) { return typeof value === "object" && value !== null && !Array.isArray(value); }
 function fail(messages) { console.error(`\n[links] ${messages.length} erreur(s) :\n${messages.map((message) => `  • ${message}`).join("\n")}\n`); process.exit(1); }

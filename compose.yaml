@@ -1,13 +1,16 @@
-name: domotik-links
+name: links
 services:
   links:
     image: ghcr.io/mick7784/links:${IMAGE_TAG:-latest}
+    ports:
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:8081:8081"
     environment:
-      CREATOR_STUDIO_URL: http://creator-studio-api:3001/api/export/youtube
+      CREATOR_STUDIO_URL: ${CREATOR_STUDIO_URL:-}
       CREATOR_STUDIO_API_KEY: ${CREATOR_STUDIO_API_KEY:-}
-      ANALYTICS_ENABLED: "true"
+      ADMIN_ORIGIN: ${ADMIN_ORIGIN:-}
     volumes:
-      - links-stats:/data
+      - links-data:/data
     restart: unless-stopped
     read_only: true
     tmpfs:
@@ -16,18 +19,10 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
-    networks:
-      pangolin:
-        aliases:
-          - domotik-links
     logging:
       driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
-networks:
-  pangolin:
-    external: true
-
 volumes:
-  links-stats:
+  links-data:

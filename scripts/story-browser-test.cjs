@@ -11,6 +11,7 @@ const { join, resolve } = require('node:path');
   const database = join(temp, 'stats.db');
   const admin = 'http://127.0.0.1:8081';
   const publicOrigin = 'http://127.0.0.1:3003';
+  execFileSync('python3',[resolve(__dirname,'fixtures.py'),database,publicOrigin]);
   const server = spawn('python3', [resolve(__dirname, 'analytics.py')], {
     env: { ...process.env, ANALYTICS_DB: database, UPLOAD_DIR: join(temp, 'uploads'), ANALYTICS_ORIGIN: publicOrigin },
     stdio: 'inherit'
@@ -19,7 +20,7 @@ const { join, resolve } = require('node:path');
   await new Promise(r => partner.listen(18082, r));
   let browser;
   const api = async (path, data, method = 'POST') => {
-    const response = await fetch(admin + path, { method, headers: { 'Content-Type': 'application/json' }, body: data === undefined ? undefined : JSON.stringify(data) });
+    const response = await fetch(admin + path, { method, headers: { 'Content-Type': 'application/json','X-Links-Request':'1' }, body: data === undefined ? undefined : JSON.stringify(data) });
     assert(response.ok, `${path}: ${response.status} ${await (response.ok ? Promise.resolve('') : response.text())}`);
     return response.status === 204 ? null : response.json();
   };

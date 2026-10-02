@@ -3,14 +3,16 @@ from datetime import date
 from urllib.request import Request, urlopen, build_opener, HTTPRedirectHandler
 from urllib.error import HTTPError
 from pathlib import Path
+from fixtures import prepare,populate
 
 class AnalyticsTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory()
         os.environ['ANALYTICS_DB']=self.tmp.name+'/stats.db'
         os.environ['UPLOAD_DIR']=self.tmp.name+'/uploads'
+        prepare(os.environ['ANALYTICS_DB'])
         spec=importlib.util.spec_from_file_location('analytics',Path(__file__).with_name('analytics.py'))
-        self.a=importlib.util.module_from_spec(spec);spec.loader.exec_module(self.a);self.a.init()
+        self.a=importlib.util.module_from_spec(spec);spec.loader.exec_module(self.a);self.a.init();populate(self.a)
         self.servers=[]
     def tearDown(self):
         for s in self.servers:s.shutdown();s.server_close()
@@ -21,7 +23,7 @@ class AnalyticsTests(unittest.TestCase):
         return 'http://127.0.0.1:'+str(s.server_port)
     def request(self,url,data=None,headers=None,method=None):
         try:
-            with urlopen(Request(url,json.dumps(data).encode() if data is not None else None,headers or {},method=method)) as r:return r.status,r.read()
+            with urlopen(Request(url,json.dumps(data).encode() if data is not None else None,{'X-Links-Request':'1',**(headers or {})},method=method)) as r:return r.status,r.read()
         except HTTPError as e:return e.code,e.read()
     def promo(self,name='Domadoo - Aquara days',url='https://partner.example/offer?aff=117'):
         with self.a.connection() as db:
@@ -93,7 +95,7 @@ class AnalyticsTests(unittest.TestCase):
 
     def test_story_invalid_destination_and_backup_compatibility(self):
         item_id=self.promo();link=self.a.story_link(item_id)['url'];token=link.rsplit('/',1)[-1];public=self.server()
-        for url in ['', 'mailto:a@example.com','https://links.domotik-studio.fr/go/'+token,'https://partner.example:bad','https://partner.example/\nheader']:
+        for url in ['', 'mailto:a@example.com','https://links.example/go/'+token,'https://partner.example:bad','https://partner.example/\nheader']:
             with self.a.connection() as db:db.execute('UPDATE content_blocks SET url=? WHERE id=?',(url,item_id))
             with self.assertRaises(ValueError):self.a.story_link(item_id)
             self.assertEqual(self.redirect(public+'/go/'+token)[0],410)
@@ -154,9 +156,8 @@ class AnalyticsTests(unittest.TestCase):
         self.assertEqual(items[new_id]['clicks'],1)
         rows=self.a.report('2026-09-30','2026-09-30')['rows']
         self.assertEqual({r['link'] for r in rows},{'block:legacy-link-3','block:'+new_id})
-        self.a.CONFIG['links'].append(dict(self.a.CONFIG['links'][3]))
-        with self.a.connection() as db:self.assertNotIn('Domadoo',self.a.metric_aliases(db))
-        self.a.CONFIG['links'].pop()
+        # Persisted aliases remain stable even when the static config is neutral.
+        with self.a.connection() as db:self.assertEqual(self.a.metric_aliases(db)['Domadoo'],'block:legacy-link-3')
         with self.a.connection() as db:
             db.execute("DELETE FROM content_blocks WHERE id='legacy-link-3'")
             self.assertNotIn('Domadoo',self.a.metric_aliases(db))
@@ -192,7 +193,7 @@ class AnalyticsTests(unittest.TestCase):
 
     def test_seed_public_config_and_scheduling(self):
         config=self.a.public_config()
-        self.assertEqual(config['profile']['name'],'DomotiK Studio')
+        self.assertEqual(config['profile']['name'],'Test Creator')
         self.assertEqual(config['links'][0]['id'],'legacy-link-0')
         self.assertEqual(config['socials'][0]['metricKey'],'button:legacy-button-0')
         with self.a.connection() as db:
@@ -255,7 +256,7 @@ class AnalyticsTests(unittest.TestCase):
         self.a.record('click','youtube','block:legacy-link-0','2026-09-30')
         row=self.a.report('2026-09-30','2026-09-30')['rows'][0]
         self.assertEqual(row['link'],'block:legacy-link-0')
-        self.assertEqual(row['label'],self.a.CONFIG['links'][0]['title'])
+        self.assertEqual(row['label'],'Communauté')
 
     def test_promotion_restore_and_atomic_replacement(self):
         admin=self.server(True)
@@ -360,7 +361,7 @@ class AnalyticsTests(unittest.TestCase):
         for value in ['V2.001','V1.1000','V1.060']:
             status,body=self.request(admin+'/api/app-version',{'app_version':value})
             self.assertEqual(status,200);self.assertEqual(self.a.public_config()['profile']['app_version'],value)
-        for value in ['1.046','V1.46','V1.046<script>',None]:
+        for value in ['1.046','V1.','V1.046<script>',None]:
             self.assertEqual(self.request(admin+'/api/app-version',{'app_version':value})[0],400)
         with patch.dict(os.environ,{'APP_RELEASE_VERSION':'V1.047','APP_RELEASE_ID':'release-a'}):
             self.a.init()

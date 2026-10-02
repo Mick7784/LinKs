@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "DomotiK Studio Links",
+  "title": "Links",
   "description": "Contenu du Linktree. Le build vérifie aussi ce fichier de façon stricte.",
   "type": "object",
   "additionalProperties": false,
@@ -19,7 +19,7 @@
     "profile": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "avatar"],
+      "required": ["name"],
       "properties": {
         "name": { "type": "string", "minLength": 1 },
         "tagline": { "type": "string" },
@@ -55,7 +55,7 @@
           "icon": { "enum": ["youtube", "instagram", "tiktok", "discord", "mail", "website", "cart", "home"] },
           "featured": { "type": "boolean" },
           "affiliate": { "type": "boolean" },
-          "expiresAt": { "type": ["string", "null"], "description": "Heure de Paris sans fuseau. Une date seule reste visible toute la journée." }
+          "expiresAt": { "type": ["string", "null"], "description": "Une date sans fuseau utilise le fuseau configuré. Une date seule reste visible toute la journée." }
         }
       }
     }

@@ -1,4 +1,5 @@
 "use strict";
+let publicTimezone="UTC";
 // Optional footer content: populated when a future configuration source supplies it.
 function renderFooter(profile={}){
  const quote=document.getElementById("footer-quote"),value=typeof profile.footer_quote==="string"?profile.footer_quote.trim():"";
@@ -32,7 +33,12 @@ function external(a,url,affiliate=false){a.href=url;if(url.startsWith("http")){a
 function sectionTitle(id,label,iconName){const heading=text("h2","section-heading",label);heading.id=id;heading.prepend(icon(iconName));return heading}
 function decorateSectionTitle(id,iconName){const heading=document.getElementById(id);if(heading&&!heading.querySelector("svg"))heading.prepend(icon(iconName))}
 function externalAction(){const action=document.createElement("span");action.className="external-action";action.setAttribute("aria-hidden","true");action.append(icon("arrow"));return action}
-async function getConfig(){try{const response=await fetch("/api/public-config",{cache:"no-store"});if(!response.ok)throw new Error();return await response.json()}catch{const fallback=window.LINKS_CONFIG||{profile:{},socials:[],links:[]};return {...fallback,links:(fallback.links||[]).filter(item=>!item.expiresAt||new Date(item.expiresAt).getTime()>Date.now()).map(item=>({...item,type:item.type||(item.featured?"featured":"classic")}))}}}
+async function getConfig(){
+ try{const response=await fetch("/api/public-config",{cache:"no-store"});if(!response.ok)throw new Error();return await response.json()}
+ catch{let fallback;try{const r=await fetch("/public-fallback.json",{cache:"no-store"});if(!r.ok)throw new Error();fallback=await r.json()}catch{fallback=window.LINKS_CONFIG||{profile:{},socials:[],links:[]}}
+ const now=Date.now();return {...fallback,links:(fallback.links||[]).filter(item=>(!item.expiresAt||new Date(item.expiresAt).getTime()>now)&&(!item.start_at||new Date(item.start_at).getTime()<=now)&&(!item.end_at||new Date(item.end_at).getTime()>now)).map(item=>({...item,type:item.type||(item.featured?"featured":"classic")}))}}
+}
+
 // Try full-resolution artwork first; YouTube may return a tiny placeholder with HTTP 200.
 function videoThumbnailSources(video){
  let id;
@@ -48,9 +54,9 @@ function loadVideoThumbnail(image,sources){
  image.addEventListener("load",()=>{if(image.naturalWidth<=120&&index<sources.length)next()});
  next();
 }
-function renderVideo(target,video){if(!video||!validUrl(video.url)||!video.title)return;const heading=sectionTitle("latest-video-title","Dernière vidéo","youtube");heading.className="video-heading";const a=document.createElement("a");a.className="video-card";a.dataset.metric="latest-video";external(a,video.url);const visual=document.createElement("div");visual.className="video-visual";const sources=videoThumbnailSources(video);if(sources.length){const image=new Image();image.alt="";image.width=1280;image.height=720;image.decoding="async";visual.append(image);loadVideoThumbnail(image,sources)}const play=document.createElement("span");play.className="video-play";play.setAttribute("aria-hidden","true");play.append(icon("play"));a.append(play);const details=document.createElement("div");details.className="video-details";const copy=document.createElement("div");copy.className="card-copy";copy.append(text("h3","video-title",video.title));const published=new Date(video.published);if(Number.isFinite(published.getTime())){const date=text("time","video-date","Publiée le "+new Intl.DateTimeFormat("fr-FR",{day:"numeric",month:"long",year:"numeric",timeZone:"Europe/Paris"}).format(published));date.dateTime=published.toISOString();copy.append(date)}details.append(copy,externalAction());a.append(visual,details);details.querySelector(".card-copy").prepend(heading);target.append(a);target.hidden=false}
+function renderVideo(target,video){if(!video||!validUrl(video.url)||!video.title)return;const heading=sectionTitle("latest-video-title","Dernière vidéo","youtube");heading.className="video-heading";const a=document.createElement("a");a.className="video-card";a.dataset.metric="latest-video";external(a,video.url);const visual=document.createElement("div");visual.className="video-visual";const sources=videoThumbnailSources(video);if(sources.length){const image=new Image();image.alt="";image.width=1280;image.height=720;image.decoding="async";visual.append(image);loadVideoThumbnail(image,sources)}const play=document.createElement("span");play.className="video-play";play.setAttribute("aria-hidden","true");play.append(icon("play"));a.append(play);const details=document.createElement("div");details.className="video-details";const copy=document.createElement("div");copy.className="card-copy";copy.append(text("h3","video-title",video.title));const published=new Date(video.published);if(Number.isFinite(published.getTime())){const date=text("time","video-date","Publiée le "+new Intl.DateTimeFormat("fr-FR",{day:"numeric",month:"long",year:"numeric",timeZone:publicTimezone}).format(published));date.dateTime=published.toISOString();copy.append(date)}details.append(copy,externalAction());a.append(visual,details);details.querySelector(".card-copy").prepend(heading);target.append(a);target.hidden=false}
 function appendCampaignDates(copy,item){
- const formatter=new Intl.DateTimeFormat("fr-FR",{day:"numeric",month:"short",year:"numeric",timeZone:"Europe/Paris"});
+ const formatter=new Intl.DateTimeFormat("fr-FR",{day:"numeric",month:"short",year:"numeric",timeZone:publicTimezone});
  for(const [value,label] of [[item.start_at||item.startAt,"À partir du "],[item.end_at||item.endAt||item.expiresAt,"Jusqu’au "]]){
   if(!value)continue;const date=new Date(value);if(!Number.isFinite(date.getTime()))continue;
   const node=text("time","promo-dates",label+formatter.format(date));node.dateTime=date.toISOString();copy.append(node);
@@ -64,7 +70,7 @@ function renderOffer(item){
  const card=document.createElement("article");card.className="card offer-card";
  const visual=text("span","offer-visual","");if(item.image){const image=new Image();image.src=item.image;image.alt="";image.loading="lazy";image.decoding="async";visual.append(image)}
  const copy=text("div","offer-copy",""),label=text("span","offer-kicker","Offre du moment");label.prepend(icon("tag"));copy.append(label,text("h3","offer-title",item.title));
- const formatter=new Intl.DateTimeFormat("fr-FR",{day:"numeric",month:"long",year:"numeric",timeZone:"Europe/Paris"});
+ const formatter=new Intl.DateTimeFormat("fr-FR",{day:"numeric",month:"long",year:"numeric",timeZone:publicTimezone});
  const start=new Date(item.start_at||item.startAt||""),end=new Date(item.end_at||item.endAt||item.expiresAt||"");
  if(Number.isFinite(start.getTime())||Number.isFinite(end.getTime())){
   const dates=text("p","offer-dates","");const add=(date)=>{const t=text("time","",formatter.format(date));t.dateTime=date.toISOString();dates.append(t)};
@@ -95,11 +101,20 @@ function renderOffers(items){
  show(0)
 }
 async function start(){
- const config=await getConfig(),profile=config.profile||{};const set=(id,value)=>{const el=document.getElementById(id);if(el&&value)el.textContent=value};set("profile-name",profile.name);set("profile-tagline",profile.tagline);set("profile-description",profile.description);set("footer-name",profile.name);renderFooter(profile);
- if(profile.avatar)document.getElementById("profile-avatar").src=profile.avatar;if(profile.logo){document.getElementById("profile-logo").src=profile.logo;document.getElementById("footer-logo").src=profile.logo}
+ const config=await getConfig(),profile=config.profile||{};publicTimezone=config.timezone||profile.timezone||"UTC";
+ window.LINKS_PUBLIC_CONFIG=config;window.dispatchEvent(new CustomEvent("links:config",{detail:config}));
+ if(config.setup_completed!==true){document.querySelector("main").replaceChildren(text("p","fallback","Links est en cours de configuration."));return}
+ const set=(id,value)=>{const el=document.getElementById(id);if(el){el.textContent=value||"";el.hidden=!value}};
+ set("profile-name",profile.name||"Links");set("profile-tagline",profile.tagline);set("profile-description",profile.description);set("footer-name",profile.footer_owner||profile.name);renderFooter(profile);
+ document.title=(profile.name||"Links")+" — Tous mes liens";document.querySelector('meta[name="description"]').content=profile.description||"";
+ const image=(id,value,alt="")=>{const el=document.getElementById(id);el.hidden=!value;if(value){el.src=value;el.alt=alt}else el.removeAttribute("src")};
+ image("profile-avatar",profile.avatar,profile.name||"");image("profile-logo",profile.logo);image("footer-logo",profile.logo);
+ document.querySelector(".logo-badge").hidden=!profile.logo;document.querySelector(".portrait-wrap").hidden=!profile.avatar&&!profile.logo;
+ if(!profile.avatar&&profile.logo){image("profile-avatar",profile.logo);document.querySelector(".logo-badge").hidden=true}
+ const favicon=document.getElementById("site-favicon");if(profile.logo)favicon.href=profile.logo;else favicon.removeAttribute("href");
  const socials=document.getElementById("socials");for(const item of (config.socials||[]).filter(x=>validUrl(x.url))){const a=document.createElement("a");a.className="social";a.dataset.metric=item.metricKey||"social:"+item.platform;external(a,item.url);a.setAttribute("aria-label",item.label||item.platform);a.title=item.label||item.platform;a.append(icon(item.platform));socials.append(a)}
  const video=document.getElementById("latest-video");if(config.latestVideo)fetch("/latest-video.json",{cache:"no-store"}).then(r=>{if(!r.ok)throw new Error();return r.json()}).then(data=>renderVideo(video,data)).catch(()=>{video.hidden=true});
- const visible=(config.links||[]).filter(x=>validUrl(x.url)),offers=visible.filter(x=>x.type==="promo"||x.type==="featured"),permanent=visible.filter(x=>x.type==="classic");renderOffers(offers);const links=document.getElementById("links");if(permanent.length){decorateSectionTitle("links-title","link");for(const item of permanent)links.append(renderBlock(item));document.getElementById("links-section").hidden=false}document.getElementById("year").textContent=new Date().getFullYear()
+ const visible=(config.links||[]).filter(x=>validUrl(x.url)),offers=visible.filter(x=>x.type==="promo"||x.type==="featured"),permanent=visible.filter(x=>x.type==="classic");renderOffers(offers);const links=document.getElementById("links");if(permanent.length){decorateSectionTitle("links-title","link");for(const item of permanent)links.append(renderBlock(item));document.getElementById("links-section").hidden=false}document.getElementById("year").textContent=new Intl.DateTimeFormat("fr-FR",{year:"numeric",timeZone:publicTimezone}).format(new Date())
 }
 start();
 
