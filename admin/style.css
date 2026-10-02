@@ -1610,3 +1610,6 @@ dialog h2 {
 .preview-card.simplified-promo{display:flex;flex-direction:column;gap:10px;padding:12px;background:var(--surface,#101925)}
 .preview-card.simplified-promo img{width:100%;height:auto;max-height:360px;object-fit:contain;border-radius:8px}
 .preview-card.simplified-promo .status{align-self:flex-start;font-size:.65rem}
+
+/* Isolate the public card styles inside the campaign preview. */
+.promo-preview-frame{display:block;width:100%;height:450px;border:0;border-radius:20px;background:#0a111e}

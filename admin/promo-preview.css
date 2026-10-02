@@ -1,0 +1,2 @@
+/* Preview uses the public stylesheet without the public page background. */
+body{min-height:0;background:none}

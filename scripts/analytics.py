@@ -483,6 +483,8 @@ class Handler(BaseHTTPRequestHandler):
                 with connection() as db:return self.json(200,profile(db))
             if url.path=="/api/public-config":return self.json(200,public_config())
         except (ValueError,TypeError) as exc:return self.json(400,{"error":str(exc) or "Paramètres invalides"})
+        if url.path=="/preview/style.css":return self.file(ROOT/"site"/"style.css" if (ROOT/"site"/"style.css").exists() else Path("/usr/share/nginx/html/style.css"),"text/css")
+        if url.path=="/preview/preview.css":return self.file(ADMIN/"promo-preview.css","text/css")
         files={"/":("index.html","text/html;charset=utf-8"),"/app.js":("app.js","application/javascript"),"/style.css":("style.css","text/css")}
         return self.file(ADMIN/files[url.path][0],files[url.path][1]) if url.path in files else self.send(404)
     def do_POST(self):
