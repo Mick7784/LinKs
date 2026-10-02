@@ -74,8 +74,28 @@ const { join, resolve } = require('node:path');
   await page.locator('#block-form [name="internal_name"]').fill('Nouvelle promo minimale');await page.locator('#block-form [name="url"]').fill('https://partner.example/new');await page.locator('#block-form [name="draft"]').check();
   await page.locator('#block-dialog button[value="default"]').click();await page.waitForFunction(()=>!document.getElementById('block-dialog').open);
   assert.equal((await request('/api/content',undefined,'GET')).items.find(x=>x.internal_name==='Nouvelle promo minimale').title,'Nouvelle promo minimale');
+  // Both offer types share the simplified editor for creation and editing.
+  for(const type of ['promo','featured']){
+    for(const existing of [false,true]){
+      const fixture=existing?await request('/api/content',{type,internal_name:'Editor '+type,title:'Titre '+type,url:'https://example.com/'+type,promo_code:'CODE',description:'Historique',icon:'home',badge:'Partenaire',cta:'Ancien CTA',draft:true}):null;
+      if(existing){await nav('content');await page.locator(`[data-id="${fixture.id}"] [data-action="edit"]`).click()}
+      else{await page.locator('[data-action="new-block"]').click();await page.selectOption('#block-form [name="type"]',type)}
+      for(const field of ['description','icon','badge','cta'])assert(await page.locator('#block-form [name="'+field+'"]').isHidden(),type+' hidden '+field);
+      for(const field of ['title','promo_code'])assert(await page.locator('#block-form [name="'+field+'"]').isVisible(),type+' visible '+field);
+      const offer=page.frameLocator('#block-preview iframe');
+      await offer.locator('.offer-cta').waitFor();assert((await offer.locator('.offer-cta').textContent()).includes('Voir l’offre'));
+      await page.locator('#block-form [name="internal_name"]').fill('Fallback '+type);
+      await page.locator('#block-form [name="title"]').fill('');
+      await page.locator('#block-form [name="url"]').fill('https://example.com/'+type);
+      await page.locator('#block-form [name="draft"]').check();
+      await page.locator('#block-dialog button[value="default"]').click();await page.waitForFunction(()=>!document.getElementById('block-dialog').open);
+      const saved=(await request('/api/content',undefined,'GET')).items.find(x=>existing?x.id===fixture.id:x.internal_name==='Fallback '+type);
+      assert.equal(saved.title,'Fallback '+type);
+      if(existing){assert.equal(saved.description,'Historique');assert.equal(saved.cta,'Ancien CTA');assert.equal(saved.promo_code,'CODE')}
+    }
+  }
   const item=page.locator(`[data-id="${other.id}"]`);
-  await item.locator('[data-action="edit"]').click();await page.locator('#block-form [name="title"]').fill('Guide mis à jour');await page.locator('#block-dialog button[value="default"]').click();await page.waitForFunction(()=>!document.getElementById('block-dialog').open);assert.equal((await request('/api/content',undefined,'GET')).items.find(x=>x.id===other.id).title,'Guide mis à jour');
+  await item.locator('[data-action="edit"]').click();for(const field of ['description','icon','badge','cta','title'])assert(await page.locator('#block-form [name="'+field+'"]').isVisible(),'Classic visible '+field);assert(await page.locator('#block-form [name="promo_code"]').isHidden());await page.locator('#block-form [name="title"]').fill('Guide mis à jour');await page.locator('#block-dialog button[value="default"]').click();await page.waitForFunction(()=>!document.getElementById('block-dialog').open);assert.equal((await request('/api/content',undefined,'GET')).items.find(x=>x.id===other.id).title,'Guide mis à jour');
   await item.locator('summary').click();await item.locator('[data-action="duplicate"]').click();await page.waitForFunction(()=>document.getElementById('notice').textContent==='Bloc dupliqué en brouillon.');
   const result=await request('/api/content',undefined,'GET');assert(result.items.some(x=>x.draft&&x.internal_name.includes('Guide')));
   await nav('buttons');await page.locator('[data-action="new-button"]').click();await page.locator('#button-form [name="label"]').fill('Site Studio');await page.locator('#button-form [name="url"]').fill('https://domotik-studio.fr');await page.locator('#button-dialog button[value="default"]').click();await page.waitForFunction(()=>!document.getElementById('button-dialog').open);const added=(await request('/api/buttons',undefined,'GET')).items.find(x=>x.label==='Site Studio');assert(added);
