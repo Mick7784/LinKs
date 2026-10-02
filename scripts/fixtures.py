@@ -26,5 +26,6 @@ if __name__=='__main__':
     import os
     database=sys.argv[1];prepare(database,sys.argv[2] if len(sys.argv)>2 else 'https://links.example')
     os.environ['ANALYTICS_DB']=database
+    os.environ['UPLOAD_DIR']=str(Path(database).parent/'uploads')
     import analytics
     analytics.init();populate(analytics)
