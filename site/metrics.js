@@ -4,11 +4,12 @@
   const source = (new URLSearchParams(location.search).get('utm_source') || '').slice(0, 80);
   let referrer = '';
   try { referrer = document.referrer ? new URL(document.referrer).origin : ''; } catch {}
-  function send(kind, link = '') {
-    const body = JSON.stringify({ kind, link, source, referrer });
+  function send(kind, link = '', extra = {}) {
+    const body = JSON.stringify({ kind, link, source, referrer, ...extra });
     // Never delay or intercept navigation. No storage or visitor identifier.
     fetch('/metrics', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true, credentials: 'omit' }).catch(() => {});
   }
+  window.addEventListener('links:promo-code-copy',event=>{const detail=event.detail;if(typeof detail?.link==='string'&&detail.link.startsWith('block:')&&typeof detail.code==='string')send('promo_code_copy',detail.link,{code:detail.code});});
   let viewed = false;
   function view() { if (!viewed && document.visibilityState === 'visible') { viewed = true; send('view'); } }
   view(); document.addEventListener('visibilitychange', view);

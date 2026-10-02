@@ -61,7 +61,13 @@ const {tmpdir}=require('node:os');
   assert.equal(await page.locator('.offer-code').count(),1);
   await context.grantPermissions(['clipboard-read','clipboard-write'],{origin});
   let offerPopups=0;page.on('popup',()=>offerPopups++);
+  const copyResponse=page.waitForResponse(response=>response.url().endsWith('/metrics')&&response.request().postDataJSON()?.kind==='promo_code_copy');
+  const beforeCopy=await request('/api/stats',undefined,'GET');
   await page.locator('.offer-code').click();
+  assert.equal((await copyResponse).status(),204);
+  const afterCopy=await request('/api/stats',undefined,'GET');
+  assert.equal(afterCopy.promo_code_copies.reduce((n,x)=>n+x.total,0),beforeCopy.promo_code_copies.reduce((n,x)=>n+x.total,0)+1);
+  assert.equal(afterCopy.rows.filter(x=>x.kind==='click').reduce((n,x)=>n+x.total,0),beforeCopy.rows.filter(x=>x.kind==='click').reduce((n,x)=>n+x.total,0));
   assert.equal(await page.evaluate(()=>navigator.clipboard.readText()),'DOMOTIK10');
   assert((await page.locator('.offer-code').textContent()).includes('Copié !'));assert.equal(offerPopups,0);
 

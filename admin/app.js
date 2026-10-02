@@ -7,7 +7,7 @@ const say=(message,error=false)=>{const node=$("notice");node.textContent=messag
 const esc=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const typeName={classic:"Classique",featured:"Featured",promo:"Promo"};
 const statusClass=value=>({Actif:"active",Programmé:"scheduled",Expiré:"expired",Brouillon:"draft"}[value]||"");
-function activate(id){document.querySelectorAll(".view").forEach(x=>x.classList.toggle("active",x.id===id));document.querySelectorAll(".tabs button").forEach(x=>x.classList.toggle("active",x.dataset.tab===id));syncNavigation();$("topbar-current").textContent=document.querySelector(".tabs button.active")?.textContent.trim()||"Links";if(id==="dashboard"){loadStats();loadCampaigns()}if(id==="content")loadContent();if(id==="buttons")loadButtons();if(id==="archives")loadArchives();if(id==="settings"){loadSettings();loadQuotes()}}
+function activate(id){document.querySelectorAll(".view").forEach(x=>x.classList.toggle("active",x.id===id));document.querySelectorAll(".tabs button").forEach(x=>x.classList.toggle("active",x.dataset.tab===id));syncNavigation();$("topbar-current").textContent=document.querySelector(".tabs button.active")?.textContent.trim()||"Links";if(id==="dashboard"){loadStats()}if(id==="content")loadContent();if(id==="buttons")loadButtons();if(id==="archives")loadArchives();if(id==="settings"){loadSettings();loadQuotes()}}
 const navigation=$("navigation"),menuToggle=$("menu-toggle"),mobileNavigation=matchMedia("(max-width:760px)");
 function closeMenu(restoreFocus=false){navigation.classList.remove("open");menuToggle.setAttribute("aria-expanded","false");if(restoreFocus)menuToggle.focus()}
 function syncNavigation(){document.querySelectorAll(".tabs button").forEach(button=>{const active=button.classList.contains("active");if(active){button.setAttribute("aria-current","page");$("menu-current").textContent=button.textContent.trim()}else button.removeAttribute("aria-current")})}
@@ -50,7 +50,7 @@ function chart(days){
 
 async function loadStats(){try{
  const range=dates(),data=await api("/api/stats?"+new URLSearchParams(range)),stories=data.stories||[],previous=$("source").value;
- const sources=[...new Set([...data.rows.map(x=>x.source),...stories.map(x=>x.source),...(stories.length?["instagram"]:[])])].sort();
+ const sources=[...new Set([...data.rows.map(x=>x.source),...stories.map(x=>x.source),...(data.promo_code_copies||[]).map(x=>x.source),...(data.campaign_metrics||[]).map(x=>x.source),...(stories.length?["instagram"]:[])])].sort();
  $("source").replaceChildren(new Option("Toutes les sources",""),...sources.map(x=>new Option(names[x]||x,x)));if(sources.includes(previous))$("source").value=previous;
  const source=$("source").value,rows=data.rows.filter(x=>!source||x.source===source),storyRows=stories.filter(x=>!source||source==="instagram"||source===x.source),days=new Map(),bySource=new Map(),byLink=new Map(),labels=new Map(),byStory=new Map();
  for(let d=new Date(range.start+"T12:00Z");d<=new Date(range.end+"T12:00Z");d.setUTCDate(d.getUTCDate()+1))days.set(d.toISOString().slice(0,10),[0,0]);
@@ -60,6 +60,13 @@ async function loadStats(){try{
  $("views").textContent=fmt.format(views);$("clicks").textContent=fmt.format(clicks);$("ratio").textContent=views?(clicks*100/views).toLocaleString("fr-FR",{maximumFractionDigits:1})+" %":"—";
  $("story-clicks").textContent=fmt.format(storyClicks);$("story-promos").textContent=fmt.format(byStory.size);
  $("story-list").innerHTML=byStory.size?[...byStory.values()].sort((a,b)=>b.total-a.total).map(x=>`<div class="story-row"><span>${esc(x.label)}</span><strong>${fmt.format(x.total)}</strong></div>`).join(""):'<p class="story-empty">Aucun clic Story sur cette période</p>';
+ const campaignStats=new Map(),copyStats=new Map();
+ for(const row of (data.campaign_metrics||[]).filter(x=>!source||x.source===source)){const value=campaignStats.get(row.id)||{clicks:0,impressions:0,copies:0};value[row.kind==="click"?"clicks":"impressions"]+=row.total;campaignStats.set(row.id,value)}
+ let copyTotal=0;
+ for(const row of (data.promo_code_copies||[]).filter(x=>!source||x.source===source)){copyTotal+=row.total;const metric=campaignStats.get(row.id)||{clicks:0,impressions:0,copies:0};metric.copies+=row.total;campaignStats.set(row.id,metric);const key=JSON.stringify([row.id,row.code]);const value=copyStats.get(key)||{id:row.id,name:row.name,code:row.code,total:0};value.total+=row.total;copyStats.set(key,value)}
+ $("promo-copies").textContent=fmt.format(copyTotal);
+ $("promo-copy-list").innerHTML=copyStats.size?[...copyStats.values()].sort((a,b)=>b.total-a.total).map(value=>{const impressions=campaignStats.get(value.id)?.impressions||0;return `<div class="promo-copy-row"><span>${esc(value.name)}</span><code>${esc(value.code)}</code><strong>${fmt.format(value.total)}</strong><small>Taux de copie : ${impressions?(value.total*100/impressions).toLocaleString("fr-FR",{maximumFractionDigits:1})+" %":"—"}</small></div>`}).join(""):'<p class="empty">Aucun code copié sur cette période.</p>';
+ await loadCampaigns(campaignStats);
  chart([...days].map(([day,value])=>[day,...value]));const sorted=map=>[...map].sort((a,b)=>b[1]-a[1]);bars("top-links",sorted(byLink).slice(0,5).map(([key,value])=>[labels.get(key)||key,value]));bars("sources",sorted(bySource).map(([key,value])=>[names[key]||key,value]));
  }catch(error){say(error.message,true)}}
 
@@ -119,7 +126,7 @@ $("conflict-dialog").addEventListener("click",async event=>{const action=event.t
 
 async function loadSettings(){try{state.settings=await api("/api/settings");$("version-form").elements.app_version.value=state.settings.app_version||"";for(const key of ["name","tagline","description"])$("settings-form").elements[key].value=state.settings[key]||""}catch(error){say(error.message,true)}}
 $("settings-form").addEventListener("submit",async event=>{event.preventDefault();try{await api("/api/settings",{method:"POST",body:JSON.stringify(Object.fromEntries(new FormData(event.target)))});say("Réglages enregistrés.")}catch(error){say(error.message,true)}});
-loadStats();loadCampaigns();
+loadStats();
 
 
 // Sharing and backup remain in Settings, without another navigation section.
@@ -173,9 +180,9 @@ const iconPaths={
  story:'<rect x="6" y="2" width="12" height="20" rx="3"/><path d="M10 18h4m-3-12 4 3-4 3V6Z"/>'
 };
 document.querySelectorAll("[data-icon]").forEach(node=>{node.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${iconPaths[node.dataset.icon]||""}</svg>`});
-async function loadCampaigns(){try{
- const items=(await api("/api/content")).items.filter(item=>item.type!=="classic"&&item.status==="Actif");
- $("active-campaigns").innerHTML=items.length?items.map(item=>`<article class="campaign-card">${item.image?`<img src="${esc(item.image)}" alt="" loading="lazy">`:'<span class="type-mark" aria-hidden="true">↗</span>'}<div><strong>${esc(item.internal_name)}</strong><small>${esc(periodText(item.start_at||item.created_at))} → ${esc(periodText(item.end_at))}</small><span class="status active">Actif</span><p>${fmt.format(item.clicks||0)} clics · CTR ${item.ctr==null?"—":esc(item.ctr)+" %"}</p></div><button type="button" data-open-content aria-label="Gérer ${esc(item.internal_name)}">→</button></article>`).join(""):'<p class="empty">Aucune campagne en cours.</p>';
+async function loadCampaigns(metrics=new Map()){try{
+ const items=(await api("/api/content")).items.filter(item=>item.type!=="classic"&&item.status==="Actif").map(item=>{const value=metrics.get(item.id)||{clicks:0,impressions:0,copies:0};return {...item,...value,ctr:value.impressions?Math.round(value.clicks*1000/value.impressions)/10:null}});
+ $("active-campaigns").innerHTML=items.length?items.map(item=>`<article class="campaign-card">${item.image?`<img src="${esc(item.image)}" alt="" loading="lazy">`:'<span class="type-mark" aria-hidden="true">↗</span>'}<div><strong>${esc(item.internal_name)}</strong><small>${esc(periodText(item.start_at||item.created_at))} → ${esc(periodText(item.end_at))}</small><span class="status active">Actif</span><p>${fmt.format(item.impressions||0)} impressions · ${fmt.format(item.clicks||0)} clics${item.promo_code||item.copies?` · ${fmt.format(item.copies||0)} copies`:""} · CTR ${item.ctr==null?"—":esc(item.ctr)+" %"}</p></div><button type="button" data-open-content aria-label="Gérer ${esc(item.internal_name)}">→</button></article>`).join(""):'<p class="empty">Aucune campagne en cours.</p>';
  }catch(error){$("active-campaigns").textContent=error.message}}
 document.addEventListener("click",event=>{
  if(event.target.closest("[data-open-content]")){activate("content");document.querySelector("#content h2").setAttribute("tabindex","-1");document.querySelector("#content h2").focus()}

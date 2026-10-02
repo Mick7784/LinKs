@@ -1638,3 +1638,9 @@ dialog h2 {
 .quotes-danger{margin-top:14px;padding-top:12px;border-top:1px solid var(--border,#29374b)}
 #quotes-clear{color:#ffb1b1;border-color:#a65050}
 @media(max-width:600px){.quote-row{grid-template-columns:minmax(0,1fr);gap:4px}.quote-row .actions{justify-content:flex-start}.quote-row button{min-height:40px}}
+
+/* Promo-code copies remain separate from visits, clicks and Stories. */
+.promo-copy-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(100px,auto) 60px;gap:6px 14px;padding:9px 0;border-bottom:1px solid var(--border,#29374b);align-items:center}
+.promo-copy-row span,.promo-copy-row code{overflow-wrap:anywhere;min-width:0}
+.promo-copy-row strong{text-align:right}.promo-copy-row small{grid-column:1/-1;color:var(--muted,#a8b6cb)}
+@media(max-width:480px){.promo-copy-row{grid-template-columns:minmax(0,1fr) 45px}.promo-copy-row code{grid-column:1;grid-row:2}.promo-copy-row strong{grid-column:2;grid-row:1/3}}

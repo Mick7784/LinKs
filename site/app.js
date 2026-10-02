@@ -76,7 +76,7 @@ function renderOffer(item){
   const wording=text("span","offer-code-value","Code promo : ");wording.append(text("strong","",code));
   const feedback=text("span","offer-code-feedback","Cliquer pour copier");feedback.setAttribute("aria-live","polite");
   button.append(icon("tag"),wording,icon("copy"),feedback);let reset;
-  button.addEventListener("click",async event=>{event.stopPropagation();event.preventDefault();try{await navigator.clipboard.writeText(code);feedback.textContent="Copié !";clearTimeout(reset);reset=setTimeout(()=>{feedback.textContent="Cliquer pour copier"},2000)}catch{feedback.textContent="Copie impossible";clearTimeout(reset);reset=setTimeout(()=>{feedback.textContent="Cliquer pour copier"},2000)}});copy.append(button);
+  button.addEventListener("click",async event=>{event.stopPropagation();event.preventDefault();try{await navigator.clipboard.writeText(code);window.dispatchEvent(new CustomEvent("links:promo-code-copy",{detail:{link:item.metricKey,code}}));feedback.textContent="Copié !";clearTimeout(reset);reset=setTimeout(()=>{feedback.textContent="Cliquer pour copier"},2000)}catch{feedback.textContent="Copie impossible";clearTimeout(reset);reset=setTimeout(()=>{feedback.textContent="Cliquer pour copier"},2000)}});copy.append(button);
  }
  const link=text("a","offer-link","");external(link,item.url);link.dataset.metric=item.metricKey||"link:"+item.url;link.setAttribute("aria-label","Ouvrir l’offre "+item.title);card.append(visual,link,copy);return card;
 }

@@ -401,7 +401,34 @@ class AnalyticsTests(unittest.TestCase):
         self.assertEqual(self.a.public_config()['profile']['footer_quote'],'')
         self.assertEqual(self.a.add_quotes({'text':'After clear'})['added'],1)
 
+
+    def test_promo_code_copy_snapshot_filters_and_history(self):
+        public=self.server(False);item={'id':self.promo(),'internal_name':'Domadoo - Aquara days'}
+        with self.a.connection() as db:db.execute("UPDATE content_blocks SET promo_code='OLD' WHERE id=?",(item['id'],))
+        payload={'kind':'promo_code_copy','link':'block:'+item['id'],'code':'OLD','source':'instagram'}
+        headers={'Origin':self.a.ORIGIN,'User-Agent':'Mozilla/5.0'}
+        self.assertEqual(self.request(public+'/metrics',payload,headers)[0],204)
+        self.assertEqual(self.request(public+'/metrics',payload,headers)[0],204)
+        with self.a.connection() as db:
+            db.execute("UPDATE content_blocks SET promo_code='NEW',internal_name='Renamed',archived=1 WHERE id=?",(item['id'],))
+            db.execute("INSERT INTO counts VALUES('2001-01-01','instagram','promo_code_copy',?,99)",(json.dumps({'id':item['id'],'name':'Old','code':'EXCLUDED','timestamp':'2001-01-01T00:00:00+00:00'}),))
+        day=self.a.datetime.now(self.a.PARIS).date().isoformat()
+        report=self.a.report(day,day,'instagram')
+        self.assertEqual(sum(x['total'] for x in report['promo_code_copies']),2)
+        self.assertEqual(report['promo_code_copies'][0]['code'],'OLD')
+        self.assertEqual(report['promo_code_copies'][0]['name'],item['internal_name'])
+        self.assertFalse(any(x['kind']=='click' for x in report['rows']))
+        self.assertEqual(self.a.report(day,day,'youtube')['promo_code_copies'],[])
+        self.a.record('impression','instagram','block:'+item['id'],day)
+        report=self.a.report(day,day,'instagram')
+        self.assertEqual(report['campaign_metrics'][0]['total'],1)
+        self.assertEqual(report['campaign_metrics'][0]['kind'],'impression')
+        backup=json.loads(self.a.export_backup());self.a.restore_backup(backup)
+        self.assertEqual(sum(x['total'] for x in self.a.report(day,day)['promo_code_copies']),2)
+        self.assertEqual(self.request(public+'/metrics',{**payload,'code':''},headers)[0],400)
+
 if __name__=='__main__':unittest.main()
+
 
 
 

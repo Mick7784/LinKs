@@ -106,6 +106,17 @@ def seed(db):
 
     db.execute("INSERT OR REPLACE INTO settings VALUES('content.initialized','1')")
 
+def record_promo_copy(data):
+    key=data.get("link","")
+    code=data.get("code")
+    if not isinstance(key,str) or not key.startswith("block:") or not isinstance(code,str) or not code.strip() or len(code)>80:raise ValueError()
+    with connection() as db:
+        row=db.execute("SELECT id,internal_name,type FROM content_blocks WHERE id=?",(key[6:],)).fetchone()
+        if not row or row["type"] not in {"promo","featured"}:raise ValueError()
+        stamp=datetime.now(timezone.utc).replace(minute=0,second=0,microsecond=0).isoformat()
+        snapshot=json.dumps({"id":row["id"],"name":row["internal_name"],"code":code,"timestamp":stamp},sort_keys=True,ensure_ascii=False)
+        increment(db,"promo_code_copy",source_of(data),snapshot,datetime.now(PARIS).date().isoformat())
+
 def record(kind,source,link,day=None):
     day=day or datetime.now(PARIS).date().isoformat()
     with connection() as db:
@@ -169,7 +180,16 @@ def report(start,end,source=""):
           LEFT JOIN content_blocks b ON b.id=s.promotion_id
           WHERE """+story_where+" ORDER BY c.day",story_params)]
         for row in stories:row['hour']=row.pop('link').rsplit(':',1)[-1]
-    return {"rows":rows,"stories":stories,"timezone":"Europe/Paris"}
+        metric_where="day BETWEEN ? AND ? AND kind IN ('impression','click','promo_code_copy')";metric_params=[start,end]
+        if source:metric_where+=" AND source=?";metric_params.append(source)
+        copies=[];campaign_metrics=[]
+        for metric in db.execute("SELECT * FROM counts WHERE "+metric_where,metric_params):
+            if metric["kind"]=="promo_code_copy":
+                snapshot=json.loads(metric["link"])
+                copies.append({"day":metric["day"],"source":metric["source"],"total":metric["total"],**snapshot})
+            elif metric["link"].startswith("block:"):
+                campaign_metrics.append({"day":metric["day"],"source":metric["source"],"id":metric["link"][6:],"kind":metric["kind"],"total":metric["total"]})
+    return {"rows":rows,"stories":stories,"promo_code_copies":copies,"campaign_metrics":campaign_metrics,"timezone":"Europe/Paris"}
 
 STORY_TOKEN=re.compile(r'st_[A-Za-z0-9_-]{16}')
 def story_url_valid(url):
@@ -451,7 +471,11 @@ def restore_backup(data):
                         button_data({**row,'icon':'mail' if row['icon']=='email' else row['icon']})
                     elif table=='counts':
                         date.fromisoformat(row['day'])
-                        if row['kind'] not in {'view','click','impression','story'} or row['total']<1:raise ValueError('Statistique invalide')
+                        if row['kind'] not in {'view','click','impression','story','promo_code_copy'} or row['total']<1:raise ValueError('Statistique invalide')
+                        if row['kind']=='promo_code_copy':
+                            snapshot=json.loads(row['link'])
+                            if not isinstance(snapshot,dict) or set(snapshot)!={'id','name','code','timestamp'} or any(not isinstance(v,str) for v in snapshot.values()) or not snapshot['code'] or len(snapshot['code'])>80:raise ValueError('Copie de code invalide')
+                            instant(snapshot['timestamp'])
                         if row['kind']=='story' and (row['source']!='instagram-story' or not re.fullmatch(r'story:st_[A-Za-z0-9_-]{16}:\d{2}',row['link']) or int(row['link'][-2:])>23):raise ValueError('Statistique Story invalide')
                     elif table=='story_links':
                         if not STORY_TOKEN.fullmatch(row['token']) or row['deleted'] not in (0,1) or not row['name'] or not row['promotion_id']:raise ValueError('Lien Story invalide')
@@ -549,6 +573,7 @@ class Handler(BaseHTTPRequestHandler):
             if any(x in self.headers.get("User-Agent","").lower() for x in ["bot","spider","crawler","headless"]):return self.send(204)
             try:
                 data=self.body(2048);kind,key=data.get("kind"),data.get("link","")
+                if kind=="promo_code_copy":record_promo_copy(data);return self.send(204)
                 if kind not in {"view","click","impression"} or not isinstance(key,str) or (kind in {"click","impression"} and not valid_metric(key)):raise ValueError()
                 record(kind,source_of(data),key if kind in {"click","impression"} else "");return self.send(204)
             except (ValueError,TypeError,json.JSONDecodeError):return self.send(400)
