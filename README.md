@@ -32,7 +32,7 @@ Gestion des contenus, campagnes, boutons, paramètres, citations et statistiques
 
 ## Installation et premier démarrage
 
-La version en préparation inclut un assistant pour les nouvelles installations :
+Les nouvelles installations disposent d’un assistant de configuration :
 
 1. Démarrer Links avec un stockage persistant.
 2. Récupérer le code initial dans la console de l’installation.
@@ -69,11 +69,9 @@ Une copie de code est une action, sans indication d’achat. Les compteurs sont 
 
 ## Version actuelle
 
-Dernière version publiée : **V1.046 — 2 octobre 2026**.
+Version actuelle : **V1.1 — 2 octobre 2026**.
 
-**V1.1 est en préparation.** Elle n’est pas encore publiée ; la date et le résumé définitifs seront renseignés lors de sa validation.
-
-## Nouveautés V1.1 en préparation
+## Nouveautés V1.1
 
 - Configuration générique persistante et assistant initial.
 - Connexion locale et maintien de la protection externe.
@@ -85,6 +83,10 @@ Dernière version publiée : **V1.046 — 2 octobre 2026**.
 - Pictogramme Amazon dédié.
 
 ## Historique des versions
+
+### V1.1 — 2 octobre 2026
+
+Installation générique avec assistant sécurisé, authentification locale facultative pour les instances historiques, configuration persistante et migration conservant le mode externe. Sauvegarde/restauration compatible incluant citations, assets et historique des codes copiés. Cartes d’offres, dashboard, éditeur de campagnes, citations et pictogramme Amazon conservés. Licence MIT.
 
 ### V1.046 — 2 octobre 2026
 

@@ -357,7 +357,7 @@ class AnalyticsTests(unittest.TestCase):
     def test_application_version_manual_and_release_restart(self):
         from unittest.mock import patch
         admin=self.server(True)
-        self.assertEqual(self.a.public_config()['profile']['app_version'],'V1.046')
+        self.assertEqual(self.a.public_config()['profile']['app_version'],(self.a.ROOT/'VERSION').read_text().strip())
         for value in ['V2.001','V1.1000','V1.060']:
             status,body=self.request(admin+'/api/app-version',{'app_version':value})
             self.assertEqual(status,200);self.assertEqual(self.a.public_config()['profile']['app_version'],value)
@@ -429,7 +429,6 @@ class AnalyticsTests(unittest.TestCase):
         self.assertEqual(self.request(public+'/metrics',{**payload,'code':''},headers)[0],400)
 
 if __name__=='__main__':unittest.main()
-
 
 
 
