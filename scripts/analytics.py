@@ -269,10 +269,15 @@ def add_quotes(data,preview=False):
         if not preview:db.execute("BEGIN IMMEDIATE")
         existing={r[0] for r in db.execute("SELECT text FROM footer_quotes")}
         new=list(dict.fromkeys(s for s in entries if s not in existing))
+        available=max(0,300-len(existing))
+        cap=data.get("limit",300)
+        if type(cap) is not int or not 0<=cap<=300:raise ValueError("Limite invalide")
+        allowed=min(len(new),available,cap)
+        if not preview and data.get("single") is True and new and not available:raise ValueError("Limite de 300 citations atteinte.")
         if not preview:
-            for value in new:
+            for value in new[:allowed]:
                 db.execute("INSERT INTO footer_quotes VALUES(?,?,1,?)",(str(uuid.uuid4()),value,now_iso()))
-        return {"detected":len(entries),"new":len(new),"duplicates":len(entries)-len(new)}
+        return {"detected":len(entries),"new":len(new),"duplicates":len(entries)-len(new),"allowed":allowed,"excess":len(new)-allowed,"added":0 if preview else allowed}
 
 def required(data,key,limit=300):
     value=data.get(key,"")
@@ -591,6 +596,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_DELETE(self):
         if not self.server.admin:return self.send(404)
         path=urlsplit(self.path).path
+        if path=="/api/quotes":
+            with connection() as db:db.execute("DELETE FROM footer_quotes")
+            return self.send(204)
         quote=re.fullmatch(r"/api/quotes/([\w-]+)",path)
         if quote:
             with connection() as db:changed=db.execute("DELETE FROM footer_quotes WHERE id=?",(quote.group(1),)).rowcount

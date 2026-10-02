@@ -57,12 +57,13 @@ const {tmpdir}=require('node:os');
   assert.equal(await page.locator('.carousel-slide').count(),2);
   assert(!await page.locator('#offers').textContent().then(t=>['Campagne programmée','Campagne expirée','Brouillon'].some(x=>t.includes(x))));
 
-  assert.equal(await page.locator('.offer-cta').count(),2);
+  assert.equal(await page.locator('.offer-cta').count(),0);assert.equal(await page.locator('.offer-link').count(),2);
   assert.equal(await page.locator('.offer-code').count(),1);
   await context.grantPermissions(['clipboard-read','clipboard-write'],{origin});
+  let offerPopups=0;page.on('popup',()=>offerPopups++);
   await page.locator('.offer-code').click();
   assert.equal(await page.evaluate(()=>navigator.clipboard.readText()),'DOMOTIK10');
-  assert((await page.locator('.offer-code').textContent()).includes('Copié !'));
+  assert((await page.locator('.offer-code').textContent()).includes('Copié !'));assert.equal(offerPopups,0);
 
   const active=()=>page.locator('.carousel-dots button[aria-current="true"]');
   await page.locator('.carousel-dots button').nth(1).click();assert.equal(await active().getAttribute('aria-label'),'Afficher l’offre 2 sur 2');
@@ -87,13 +88,14 @@ const {tmpdir}=require('node:os');
    assert(composition.slideWidth<=680,'Contained vertical column at '+width);
    const videoOverlay=await page.evaluate(()=>{const a=document.querySelector('.video-visual').getBoundingClientRect(),b=document.querySelector('.video-details').getBoundingClientRect();return b.top>=a.top&&b.bottom<=a.bottom+1});
    assert(videoOverlay,'Video text stays inside image at '+width);
-   for(const selector of ['.social','.carousel-dots button','.offer-cta']){const box=await page.locator(selector).first().boundingBox();assert(box.width>=44&&box.height>=44,'Touch size '+selector)}
+   for(const selector of ['.social','.carousel-dots button','.offer-link']){const box=await page.locator(selector).first().boundingBox();assert(box.width>=44&&box.height>=44,'Touch size '+selector)}
    const rects=await page.locator('.card-title,.card-description,.video-title').evaluateAll(nodes=>nodes.filter(n=>!n.closest('.carousel-slide .card.visual .promo-copy')).map(n=>({scroll:n.scrollWidth,width:n.clientWidth})));assert(rects.every(x=>x.scroll<=x.width),'Truncated text '+width);
   }
   const art=await page.locator('#links .card').evaluateAll(nodes=>nodes.map(n=>getComputedStyle(n,'::before').backgroundImage));assert.equal(new Set(art).size,art.length,'Distinct thematic backgrounds');
   const dates=await page.evaluate(()=>{const holder=document.createElement('span');appendCampaignDates(holder,{start_at:'2026-10-01T12:00:00Z',end_at:'2026-10-31T12:00:00Z'});return [...holder.querySelectorAll('time')].map(n=>({text:n.textContent,date:n.dateTime}))});assert.equal(dates.length,2);assert(dates[0].text.startsWith('À partir du '));assert(dates[1].text.startsWith('Jusqu’au '));assert.equal(dates[1].date,'2026-10-31T12:00:00.000Z');
   assert(await page.locator('.carousel-slide[aria-hidden="false"] .offer-title').isVisible());assert(await page.locator('.carousel-slide[aria-hidden="false"] .offer-kicker').isVisible());
   const before=await request('/api/stats',undefined,'GET');
+  assert.equal(offerPopups,0);
   const popupPromise=page.waitForEvent('popup');await page.locator('.carousel-slide[aria-hidden="false"] a').click();const popup=await popupPromise;await popup.waitForLoadState();assert.equal(popup.url(),block('Campagne test B').url);await popup.close();
   const videoPopupPromise=page.waitForEvent('popup');await page.locator('.video-card').click();const videoPopup=await videoPopupPromise;await videoPopup.waitForLoadState();assert.equal(videoPopup.url(),video.url);await videoPopup.close();
   const linkPopupPromise=page.waitForEvent('popup');await page.locator('#links a').first().click();const linkPopup=await linkPopupPromise;await linkPopup.waitForLoadState();assert.equal(linkPopup.url(),config.links.find(x=>x.type==='classic').url);await linkPopup.close();

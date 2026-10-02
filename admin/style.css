@@ -1626,3 +1626,15 @@ dialog h2 {
 .quote-toggle[aria-checked="true"]{color:var(--cyan,#7acfe5);border-color:currentColor}
 #quotes-analysis{margin-top:12px}
 @media(max-width:480px){.quote-add{align-items:stretch;flex-direction:column}#quotes-panel .actions{flex-wrap:wrap}}
+
+/* Dense quotation rows; the full text remains readable. */
+.quote-row{display:grid;grid-template-columns:minmax(0,1fr) 215px;align-items:center;gap:12px;padding:6px 0}
+.quote-row p{margin:0;font-size:.85rem;line-height:1.4}
+.quote-row .actions{display:flex;justify-content:flex-end;gap:6px;margin:0}
+.quote-row button{padding:5px 8px;min-height:36px;font-size:.75rem}
+.quote-toggle{min-width:100px}
+.quote-source{color:var(--muted,#a8b6cb);font-size:.9em}
+#quotes-batch-form .actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.quotes-danger{margin-top:14px;padding-top:12px;border-top:1px solid var(--border,#29374b)}
+#quotes-clear{color:#ffb1b1;border-color:#a65050}
+@media(max-width:600px){.quote-row{grid-template-columns:minmax(0,1fr);gap:4px}.quote-row .actions{justify-content:flex-start}.quote-row button{min-height:40px}}

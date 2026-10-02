@@ -101,7 +101,7 @@ function previewPromo(data){
  const code=data.promo_code?.trim();
  let frame=$("block-preview").querySelector("iframe");
  if(!frame){frame=document.createElement("iframe");frame.className="promo-preview-frame";frame.title="Aperçu de l’offre du moment";frame.setAttribute("sandbox","allow-same-origin");$("block-preview").replaceChildren(frame);frame.addEventListener("load",()=>{try{frame.height=String(frame.contentDocument.documentElement.scrollHeight)}catch{}})}
- frame.srcdoc=`<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/preview/style.css"><link rel="stylesheet" href="/preview/preview.css"></head><body><div class="carousel"><div class="carousel-slide"><article class="card offer-card"><span class="offer-visual">${data.image?`<img src="${esc(data.image)}" alt="">`:""}</span><div class="offer-copy"><span class="offer-kicker">${tag}Offre du moment</span><h3 class="offer-title">${esc(data.title||data.internal_name||"Titre de la campagne")}</h3>${dateText?`<p class="offer-dates">${esc(dateText)}</p>`:""}${code?`<button type="button" class="offer-code" disabled>${tag}<span class="offer-code-value">Code promo : <strong>${esc(code)}</strong></span>${copy}<span class="offer-code-feedback">Cliquer pour copier</span></button>`:""}<span class="offer-cta">Voir l’offre ${svg('<path d="M4 12h16m-6-6 6 6-6 6"/>')}</span></div></article></div></div></body></html>`;
+ frame.srcdoc=`<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/preview/style.css"><link rel="stylesheet" href="/preview/preview.css"></head><body><div class="carousel"><div class="carousel-slide"><article class="card offer-card"><span class="offer-visual">${data.image?`<img src="${esc(data.image)}" alt="">`:""}</span><div class="offer-copy"><span class="offer-kicker">${tag}Offre du moment</span><h3 class="offer-title">${esc(data.title||data.internal_name||"Titre de la campagne")}</h3>${dateText?`<p class="offer-dates">${esc(dateText)}</p>`:""}${code?`<button type="button" class="offer-code" disabled>${tag}<span class="offer-code-value">Code promo : <strong>${esc(code)}</strong></span>${copy}<span class="offer-code-feedback">Cliquer pour copier</span></button>`:""}</div></article></div></div></body></html>`;
 }
 
 function preview(){updatePromoEditor();const data=formBlock(),image=data.image?`<img src="${esc(data.image)}" alt="Aperçu du visuel">`:"",visual=image||`<span class="preview-icon">${esc((data.icon||"↗").slice(0,2))}</span>`;if(["promo","featured"].includes(data.type)){previewPromo(data);return}$("block-preview").innerHTML=`<div class="preview-card ${esc(data.type)}${image?" visual":""}">${visual}<span class="preview-copy">${data.badge?`<span class="status active">${esc(data.badge)}</span>`:""}<strong>${esc(data.title||"Titre du bloc")}</strong><small>${esc(data.description||"Description visible sur la page")}</small>${data.cta?`<b>${esc(data.cta)}</b>`:""}</span></div>`}
@@ -185,9 +185,13 @@ document.addEventListener("keydown",event=>{if(event.key==="Escape")document.que
 
 /* Footer quotations: local controls in Settings. */
 let quotes=[],quotesPending=null,quotesAnalysisId=0;
+function quoteText(value){const match=value.match(/^(.*?)(\s*\([^()]+\))$/s);return match?esc(match[1])+`<span class="quote-source">${esc(match[2])}</span>`:esc(value)}
 function drawQuotes(){
- $("quotes-summary").textContent=quotes.length+" citations · "+quotes.filter(q=>q.active).length+" actives";
- $("quotes-list").innerHTML=quotes.length?quotes.map(q=>`<article class="quote-row" data-quote-id="${esc(q.id)}"><p>${esc(q.text)}</p><div class="actions"><button type="button" class="quote-toggle" role="switch" aria-checked="${q.active}" ${q.pending?"disabled":""} aria-label="Activer ou désactiver la citation" data-quote-toggle>${q.active?"● Activé":"○ Désactivé"}</button><button type="button" data-quote-delete ${q.pending?"disabled":""}>Supprimer</button></div></article>`).join(""):"<p>Aucune citation pour le moment.</p>";
+ $("quotes-summary").textContent=quotes.length+" / 300 citations · "+quotes.filter(q=>q.active).length+" actives";
+ $("quotes-clear").hidden=!quotes.length;
+ $("quotes-limit").hidden=quotes.length<300;
+ $("quote-form").querySelector("button").disabled=quotes.length>=300;
+ $("quotes-list").innerHTML=quotes.length?quotes.map(q=>`<article class="quote-row" data-quote-id="${esc(q.id)}"><p>${quoteText(q.text)}</p><div class="actions"><button type="button" class="quote-toggle" role="switch" aria-checked="${q.active}" ${q.pending?"disabled":""} aria-label="Activer ou désactiver la citation" data-quote-toggle>${q.active?"● Activé":"○ Désactivé"}</button><button type="button" data-quote-delete ${q.pending?"disabled":""}>Supprimer</button></div></article>`).join(""):"<p>Aucune citation pour le moment.</p>";
 }
 async function loadQuotes(){try{quotes=(await api("/api/quotes")).items;drawQuotes()}catch(error){$("quotes-feedback").textContent=error.message}}
 function clearQuoteAnalysis(){quotesAnalysisId++;quotesPending=null;$("quotes-analysis").hidden=true}
@@ -196,14 +200,14 @@ async function analyzeQuotes(value,imported=false){
  clearQuoteAnalysis();const analysisId=quotesAnalysisId;
  const result=await api("/api/quotes/analyze",{method:"POST",body:JSON.stringify({text:value})});
  if(analysisId!==quotesAnalysisId)return;
- quotesPending={text:value,imported};
- $("quotes-analysis-summary").textContent=result.detected+" citations détectées · "+result.new+" nouvelles · "+result.duplicates+" doublons (déjà présents ou dans le lot)";
- $("quotes-confirm").textContent=(imported?"Importer ":"Ajouter ")+result.new+" citations";
- $("quotes-confirm").disabled=!result.new;$("quotes-analysis").hidden=false;
+ quotesPending={text:value,imported,allowed:result.allowed};
+ $("quotes-analysis-summary").textContent=result.detected+" citations détectées · "+result.new+" nouvelles · "+result.allowed+" peuvent être ajoutées · "+result.excess+" dépassent la limite de 300 · "+result.duplicates+" doublons";
+ $("quotes-confirm").textContent=(imported?"Importer ":"Ajouter ")+result.allowed+" citations";
+ $("quotes-confirm").disabled=!result.allowed;$("quotes-analysis").hidden=false;
 }
 $("quote-form").addEventListener("submit",async event=>{
- event.preventDefault();const button=event.target.querySelector("button");button.disabled=true;
- try{const result=await api("/api/quotes",{method:"POST",body:JSON.stringify({text:event.target.elements.text.value,single:true})});event.target.reset();await loadQuotes();$("quotes-feedback").textContent=result.new?"Citation ajoutée.":"Cette citation existe déjà."}catch(error){$("quotes-feedback").textContent=error.message}finally{button.disabled=false}
+ event.preventDefault();if(quotes.length>=300){$("quotes-feedback").textContent="Limite de 300 citations atteinte.";return}const button=event.target.querySelector("button");button.disabled=true;
+ try{const result=await api("/api/quotes",{method:"POST",body:JSON.stringify({text:event.target.elements.text.value,single:true})});event.target.reset();await loadQuotes();$("quotes-feedback").textContent=result.new?"Citation ajoutée.":"Cette citation existe déjà."}catch(error){$("quotes-feedback").textContent=error.message}finally{button.disabled=quotes.length>=300}
 });
 $("quotes-batch-form").addEventListener("submit",async event=>{
  event.preventDefault();const button=event.target.querySelector('button[type="submit"]');button.disabled=true;
@@ -215,14 +219,20 @@ $("quotes-file").addEventListener("change",async event=>{
 });
 $("quotes-confirm").addEventListener("click",async event=>{
  if(!quotesPending)return;const pending=quotesPending;event.target.disabled=true;
- try{const result=await api("/api/quotes",{method:"POST",body:JSON.stringify({text:pending.text})});clearQuoteAnalysis();$("quotes-batch").value="";await loadQuotes();$("quotes-feedback").textContent=result.new+" citations ajoutées · "+result.duplicates+" doublons ignorés."}catch(error){$("quotes-feedback").textContent=error.message;event.target.disabled=false}
+ try{const result=await api("/api/quotes",{method:"POST",body:JSON.stringify({text:pending.text,limit:pending.allowed})});clearQuoteAnalysis();$("quotes-batch").value="";await loadQuotes();$("quotes-feedback").textContent=result.added+" citations ajoutées · "+result.duplicates+" doublons ignorés · "+result.excess+" au-delà de la limite."}catch(error){$("quotes-feedback").textContent=error.message;event.target.disabled=false}
 });
 $("quotes-list").addEventListener("click",async event=>{
  const toggle=event.target.closest("[data-quote-toggle]"),remove=event.target.closest("[data-quote-delete]");
  if(!toggle&&!remove)return;const row=event.target.closest("[data-quote-id]"),q=quotes.find(x=>x.id===row.dataset.quoteId);if(!q||q.pending)return;
  if(remove){if(!confirm("Supprimer définitivement cette citation ?"))return;q.pending=true;remove.disabled=true;row.querySelector("[data-quote-toggle]").disabled=true;try{await api("/api/quotes/"+q.id,{method:"DELETE"});quotes=quotes.filter(x=>x!==q);drawQuotes()}catch(error){q.pending=false;drawQuotes();$("quotes-feedback").textContent=error.message}return}
- const previous=q.active;q.active=!previous;q.pending=true;toggle.disabled=true;toggle.setAttribute("aria-checked",String(q.active));toggle.textContent=q.active?"● Activé":"○ Désactivé";$("quotes-summary").textContent=quotes.length+" citations · "+quotes.filter(x=>x.active).length+" actives";
+ const previous=q.active;q.active=!previous;q.pending=true;toggle.disabled=true;toggle.setAttribute("aria-checked",String(q.active));toggle.textContent=q.active?"● Activé":"○ Désactivé";$("quotes-summary").textContent=quotes.length+" / 300 citations · "+quotes.filter(x=>x.active).length+" actives";
  try{await api("/api/quotes/"+q.id,{method:"PUT",body:JSON.stringify({active:q.active})})}catch(error){q.active=previous;$("quotes-feedback").textContent=error.message}finally{q.pending=false;drawQuotes()}
 });
 
 $("version-form").addEventListener("submit",async event=>{event.preventDefault();const button=event.target.querySelector("button");button.disabled=true;try{const data=await api("/api/app-version",{method:"POST",body:JSON.stringify({app_version:event.target.elements.app_version.value})});event.target.elements.app_version.value=data.app_version;say("Version enregistrée.")}catch(error){say(error.message,true)}finally{button.disabled=false}});
+
+$("quotes-clear").addEventListener("click",async event=>{
+ if(!quotes.length||!confirm("Supprimer définitivement les "+quotes.length+" citations ? Cette action est irréversible."))return;
+ const button=event.target;button.disabled=true;
+ try{await api("/api/quotes",{method:"DELETE"});quotes=[];clearQuoteAnalysis();drawQuotes();$("quotes-feedback").textContent="Toutes les citations ont été supprimées."}catch(error){$("quotes-feedback").textContent=error.message}finally{button.disabled=false}
+});

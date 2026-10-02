@@ -83,7 +83,7 @@ const { join, resolve } = require('node:path');
       for(const field of ['description','icon','badge','cta'])assert(await page.locator('#block-form [name="'+field+'"]').isHidden(),type+' hidden '+field);
       for(const field of ['title','promo_code'])assert(await page.locator('#block-form [name="'+field+'"]').isVisible(),type+' visible '+field);
       const offer=page.frameLocator('#block-preview iframe');
-      await offer.locator('.offer-cta').waitFor();assert((await offer.locator('.offer-cta').textContent()).includes('Voir l’offre'));
+      await offer.locator('.offer-title').waitFor();assert.equal(await offer.locator('.offer-cta').count(),0);
       await page.locator('#block-form [name="internal_name"]').fill('Fallback '+type);
       await page.locator('#block-form [name="title"]').fill('');
       await page.locator('#block-form [name="url"]').fill('https://example.com/'+type);

@@ -323,7 +323,7 @@ class AnalyticsTests(unittest.TestCase):
         admin=self.server(True)
         status,body=self.request(admin+'/api/quotes/analyze',{'text':' Alpha \nAlpha\nBeta\n '})
         self.assertEqual(status,200)
-        self.assertEqual(json.loads(body),{'detected':3,'new':2,'duplicates':1})
+        self.assertEqual(json.loads(body),{'detected':3,'new':2,'duplicates':1,'allowed':2,'excess':0,'added':0})
         self.assertEqual(self.a.quote_list(),[])
         status,body=self.request(admin+'/api/quotes',{'text':' Alpha \nAlpha\nBeta\n '})
         self.assertEqual(status,200);self.assertEqual(json.loads(body)['new'],2)
@@ -379,6 +379,29 @@ class AnalyticsTests(unittest.TestCase):
         self.assertEqual(module.choose('ordinary commit'),'')
         self.assertEqual(module.choose('Release V1.046'),'V1.046')
 
+
+    def test_quote_capacity_preview_partial_and_clear(self):
+        admin=self.server(True)
+        self.a.add_quotes({'text':'\n'.join('Quote '+str(i) for i in range(285))})
+        data={'text':'\n'.join('New '+str(i) for i in range(20))}
+        status,body=self.request(admin+'/api/quotes/analyze',data)
+        summary=json.loads(body);self.assertEqual(status,200)
+        self.assertEqual((summary['new'],summary['allowed'],summary['excess']),(20,15,5))
+        self.assertEqual(len(self.a.quote_list()),285)
+        status,body=self.request(admin+'/api/quotes',{**data,'limit':15})
+        self.assertEqual(status,200);self.assertEqual(json.loads(body)['added'],15)
+        self.assertEqual(len(self.a.quote_list()),300)
+        self.assertEqual(self.request(admin+'/api/quotes',{'text':'Extra','single':True})[0],400)
+        self.assertEqual(self.a.add_quotes({'text':'Bulk extra'})['added'],0)
+        self.assertEqual(len(self.a.quote_list()),300)
+        with self.a.connection() as db:db.execute('UPDATE footer_quotes SET active=0')
+        self.assertEqual(self.a.add_quotes({'text':'Inactive still counts'})['added'],0)
+        self.assertEqual(self.request(admin+'/api/quotes',method='DELETE')[0],204)
+        self.assertEqual(self.a.quote_list(),[])
+        self.assertEqual(self.a.public_config()['profile']['footer_quote'],'')
+        self.assertEqual(self.a.add_quotes({'text':'After clear'})['added'],1)
+
 if __name__=='__main__':unittest.main()
+
 
 
