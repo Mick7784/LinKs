@@ -128,3 +128,7 @@ footer{text-align:center;display:flex;flex-direction:column;align-items:center;g
 @media(hover:hover) and (pointer:fine){.offer-card:hover{border-color:#9bd5ef88}}
 
 .clipboard-fallback{position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;pointer-events:none}
+
+/* Amazon keeps the existing shopping artwork; only its icon is specialized. */
+.links .card[data-icon="amazon"]{--link-art:url("assets/link-shopping.webp")}
+.card[data-icon="amazon"] .card-icon{color:#fff;background:linear-gradient(135deg,#394454,#1a2534)}

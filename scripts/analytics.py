@@ -93,12 +93,12 @@ def init():
 
 def checked_version(value):
     if not isinstance(value,str) or not re.fullmatch(r"V[0-9]+\.[0-9]+",value) or len(value)>40:
-        raise ValueError("Format attendu : V1.1, V1.046 ou V2.001")
+        raise ValueError("Format attendu : V1.2, V1.201 ou V2.1")
     return value
 
 def init_version(db):
-    release=os.environ.get("APP_RELEASE_VERSION","")
-    release_id=os.environ.get("APP_RELEASE_ID","")
+    release=os.environ.get("APP_RELEASE_VERSION") or (ROOT/"VERSION").read_text().strip()
+    release_id=os.environ.get("APP_RELEASE_ID") or "bundled:"+release
     if release:checked_version(release)
     db.execute("INSERT OR IGNORE INTO settings VALUES('app.version',?)",(release or (ROOT/"VERSION").read_text().strip(),))
     applied=db.execute("SELECT value FROM settings WHERE key='app.release_id'").fetchone()
@@ -638,7 +638,7 @@ class Handler(BaseHTTPRequestHandler):
             ready=instance.get(db,'app.setup_completed')=='true';mode=instance.get(db,'auth.mode','local');session=instance.session(db,self.headers)
         if path=='/api/auth/status':
             self.json(200,{'setup_completed':ready,'mode':mode,'authenticated':ready and (mode=='external' or bool(session)),'csrf':session['csrf'] if session else ''});return True
-        if path in {'/brand.svg','/mark.svg'}:return False
+        if path in {'/brand.svg','/brand-light.svg','/mark.svg'}:return False
         if path in {'/access.js','/access.css'}:
             self.file(ADMIN/path[1:]);return True
         if path in {'/setup','/login'}:
@@ -749,7 +749,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.server.admin and self.auth_get():return
         url=urlsplit(self.path)
-        if self.server.admin and url.path in {"/brand.svg","/mark.svg"}:return self.file(ADMIN/url.path[1:],"image/svg+xml")
+        if self.server.admin and url.path in {"/brand.svg","/brand-light.svg","/mark.svg"}:return self.file(ADMIN/url.path[1:],"image/svg+xml")
         if url.path.startswith('/go/'):
             return self.redirect_story(url.path.removeprefix('/go/'))
         if url.path=="/healthz":
@@ -757,6 +757,10 @@ class Handler(BaseHTTPRequestHandler):
                 with connection() as db:db.execute("SELECT total FROM counts LIMIT 1").fetchone()
                 return self.send(200,b"ok","text/plain")
             except sqlite3.Error:return self.send(503)
+        if self.server.admin and url.path.startswith("/preview/assets/"):
+            name=url.path.removeprefix("/preview/assets/")
+            if not re.fullmatch(r"[A-Za-z0-9._-]+",name):return self.send(404)
+            return self.file(STATIC/"assets"/name)
         if url.path.startswith("/assets/"):
             name=url.path.removeprefix("/assets/")
             if not re.fullmatch(r"[A-Za-z0-9._-]+",name):return self.send(404)

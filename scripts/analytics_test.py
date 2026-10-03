@@ -372,10 +372,20 @@ class AnalyticsTests(unittest.TestCase):
         backup=json.loads(self.a.export_backup());self.a.restore_backup(backup)
         self.assertEqual(self.a.public_config()['profile']['app_version'],'V2.001')
 
+    def test_bundled_version_applied_once(self):
+        with self.a.connection() as db:
+            db.execute("UPDATE settings SET value='V1.1' WHERE key='app.version'")
+            db.execute("DELETE FROM settings WHERE key='app.release_id'")
+        self.a.init()
+        self.assertEqual(self.a.public_config()['profile']['app_version'],'V1.201')
+        with self.a.connection() as db:db.execute("UPDATE settings SET value='V2.1' WHERE key='app.version'")
+        self.a.init()
+        self.assertEqual(self.a.public_config()['profile']['app_version'],'V2.1')
+
     def test_release_increment_keeps_major(self):
         spec=importlib.util.spec_from_file_location('release_version',Path(__file__).with_name('release-version.py'))
         module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
-        for old,new in [('V1.046','V1.047'),('V1.999','V1.1000'),('V2.001','V2.002')]:
+        for old,new in [('V1.046','V1.047'),('V1.2','V1.201'),('V2.001','V2.002')]:
             self.assertEqual(module.next_version(old),new)
         self.assertEqual(module.choose('ordinary commit'),'')
         self.assertEqual(module.choose('Release V1.046'),'V1.046')

@@ -2038,3 +2038,5 @@ dialog h2 {
   border-radius: 10px;
   padding: 7px 10px;
 }
+
+.profile-image-editor{display:grid;gap:10px;min-width:0}.profile-image-slot{display:grid;place-items:center;min-height:110px;border:1px solid var(--border);border-radius:12px;padding:12px}.profile-image-slot img{width:90px;height:90px;object-fit:contain}.profile-image-actions{display:flex;gap:8px;flex-wrap:wrap}
