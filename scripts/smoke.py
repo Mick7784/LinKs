@@ -9,6 +9,8 @@ def call(origin,path,data=None,csrf=''):
     response=opener.open(Request(origin+path,json.dumps(data).encode() if data is not None else None,{'Content-Type':'application/json','X-Links-Request':'1','X-Links-CSRF':csrf,'Origin':origin}))
     with response:
         body=response.read();return json.loads(body) if body else None
+for path in ['/brand.svg','/mark.svg']:
+    with opener.open(admin+path) as response:assert b'<svg' in response.read()
 config=call(public,'/api/public-config');assert not config['setup_completed'];assert not config['links'];assert not config['socials']
 call(admin,'/api/setup',{'bootstrap':bootstrap,'username':'smoke-admin','password':'A-long-smoke-password','confirmation':'A-long-smoke-password','name':'Smoke test','link_title':'First link','link_url':'https://example.com','site_url':public,'timezone':'UTC','analytics_enabled':True})
 csrf=call(admin,'/api/auth/status')['csrf'];assert csrf

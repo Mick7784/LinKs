@@ -24,7 +24,7 @@ const { join, resolve } = require('node:path');
   const context=await browser.newContext({colorScheme:'light'});
   const page=await context.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.goto(origin);await page.waitForSelector('.campaign-card');
-  assert.equal(await page.locator('html').getAttribute('data-theme'),'light');
+  assert.equal(await page.locator('html').getAttribute('data-theme'),'dark');
   await page.selectOption('#theme-select','dark');await page.reload();
   assert.equal(await page.locator('#theme-select').inputValue(),'dark');assert.equal(await page.locator('html').getAttribute('data-theme'),'dark');
   await page.emulateMedia({colorScheme:'light'});assert.equal(await page.locator('html').getAttribute('data-theme'),'dark');
@@ -71,8 +71,8 @@ const { join, resolve } = require('node:path');
   await page.locator('#block-form [name="internal_name"]').fill('Promo renommée');
   await page.locator('#block-dialog button[value="default"]').click();await page.waitForFunction(()=>!document.getElementById('block-dialog').open);
   const kept=(await request('/api/content',undefined,'GET')).items.find(x=>x.id===promo.id);assert.equal(kept.title,'Offre partenaire');assert.equal(kept.promo_code,'TEST10');assert.equal(kept.description,'Description historique conservée');assert.equal(kept.cta,'CTA historique');assert.equal(kept.badge,'Partenaire');
-  await page.locator('[data-action="new-block"]').click();await page.selectOption('#block-form [name="type"]','promo');
-  await page.locator('#block-form [name="internal_name"]').fill('Nouvelle promo minimale');await page.locator('#block-form [name="url"]').fill('https://partner.example/new');await page.locator('#block-form [name="draft"]').check();
+  await page.locator('[data-action="new-block"]').click();assert(await page.locator('#block-dialog').isVisible(),await page.locator('#notice').textContent());await page.selectOption('#block-form [name="type"]','promo');
+  await page.locator('#block-advanced summary').click();await page.locator('#block-form [name="internal_name"]').fill('Nouvelle promo minimale');await page.locator('#block-form [name="url"]').fill('https://partner.example/new');await page.locator('#block-form [name="draft"]').check();
   await page.locator('#block-dialog button[value="default"]').click();await page.waitForFunction(()=>!document.getElementById('block-dialog').open);
   assert.equal((await request('/api/content',undefined,'GET')).items.find(x=>x.internal_name==='Nouvelle promo minimale').title,'Nouvelle promo minimale');
   // Both offer types share the simplified editor for creation and editing.
@@ -80,12 +80,12 @@ const { join, resolve } = require('node:path');
     for(const existing of [false,true]){
       const fixture=existing?await request('/api/content',{type,internal_name:'Editor '+type,title:'Titre '+type,url:'https://example.com/'+type,promo_code:'CODE',description:'Historique',icon:'home',badge:'Partenaire',cta:'Ancien CTA',draft:true}):null;
       if(existing){await nav('content');await page.locator(`[data-id="${fixture.id}"] [data-action="edit"]`).click()}
-      else{await page.locator('[data-action="new-block"]').click();await page.selectOption('#block-form [name="type"]',type)}
+      else{await page.locator('[data-action="new-block"]').click();assert(await page.locator('#block-dialog').isVisible(),await page.locator('#notice').textContent());await page.selectOption('#block-form [name="type"]',type)}
       for(const field of ['description','icon','badge','cta'])assert(await page.locator('#block-form [name="'+field+'"]').isHidden(),type+' hidden '+field);
       for(const field of ['title','promo_code'])assert(await page.locator('#block-form [name="'+field+'"]').isVisible(),type+' visible '+field);
       const offer=page.frameLocator('#block-preview iframe');
       await offer.locator('.offer-title').waitFor();assert.equal(await offer.locator('.offer-cta').count(),0);
-      await page.locator('#block-form [name="internal_name"]').fill('Fallback '+type);
+      if(!existing)await page.locator('#block-advanced summary').click();await page.locator('#block-form [name="internal_name"]').fill('Fallback '+type);
       await page.locator('#block-form [name="title"]').fill('');
       await page.locator('#block-form [name="url"]').fill('https://example.com/'+type);
       await page.locator('#block-form [name="draft"]').check();
@@ -99,6 +99,15 @@ const { join, resolve } = require('node:path');
   await item.locator('[data-action="edit"]').click();for(const field of ['description','icon','badge','cta','title'])assert(await page.locator('#block-form [name="'+field+'"]').isVisible(),'Classic visible '+field);assert(await page.locator('#block-form [name="promo_code"]').isHidden());await page.locator('#block-form [name="title"]').fill('Guide mis à jour');await page.locator('#block-dialog button[value="default"]').click();await page.waitForFunction(()=>!document.getElementById('block-dialog').open);assert.equal((await request('/api/content',undefined,'GET')).items.find(x=>x.id===other.id).title,'Guide mis à jour');
   await item.locator('summary').click();await item.locator('[data-action="duplicate"]').click();await page.waitForFunction(()=>document.getElementById('notice').textContent==='Bloc dupliqué en brouillon.');
   const result=await request('/api/content',undefined,'GET');assert(result.items.some(x=>x.draft&&x.internal_name.includes('Guide')));
+  // Minimal classic creation: private name derives from title, advanced fields stay available.
+  await page.locator('[data-action="new-block"]').click();assert.equal(await page.locator('#block-advanced').getAttribute('open'),null);
+  await page.locator('#block-form [name=title]').fill('Lien simple');await page.locator('#block-form [name=url]').fill('invalid');await page.locator('#block-dialog button[value=default]').click();await page.locator('#block-feedback').filter({hasText:'URL invalide'}).waitFor();assert(await page.locator('#block-feedback').isVisible());await page.locator('#block-form [name=url]').fill('mailto:contact@example.com');
+  await page.frameLocator('#block-preview iframe').locator('.card-title').filter({hasText:'Lien simple'}).waitFor();
+  await page.locator('.image-editor details summary').click();await page.locator('#block-form [name=image]').fill('/assets/link-shopping.webp');await page.locator('#block-form [name=image]').dispatchEvent('input');
+  await page.frameLocator('#block-preview iframe').locator('.promo-visual img').waitFor();await page.locator('#clear-block-image').click();
+  await page.frameLocator('#block-preview iframe').locator('.promo-visual img').waitFor({state:'detached'});
+  await page.locator('#block-dialog button[value=default]').click();await page.waitForFunction(()=>!document.getElementById('block-dialog').open);
+  const minimal=(await request('/api/content',undefined,'GET')).items.find(x=>x.title==='Lien simple');assert.equal(minimal.internal_name,'Lien simple');assert.equal(minimal.image,'');assert.equal(minimal.url,'mailto:contact@example.com');
   await nav('buttons');await page.locator('[data-action="new-button"]').click();await page.locator('#button-form [name="label"]').fill('Site Studio');await page.locator('#button-form [name="url"]').fill('https://site.example');await page.locator('#button-dialog button[value="default"]').click();await page.waitForFunction(()=>!document.getElementById('button-dialog').open);const added=(await request('/api/buttons',undefined,'GET')).items.find(x=>x.label==='Site Studio');assert(added);
   const previousOrder=(await request('/api/buttons',undefined,'GET')).items.map(x=>x.id);await page.locator(`[data-id="${added.id}"] [data-action="up"]`).click();await page.waitForFunction(()=>document.getElementById('notice').textContent==='Nouvel ordre enregistré.');assert.equal((await request('/api/buttons',undefined,'GET')).items.findIndex(x=>x.id===added.id),previousOrder.indexOf(added.id)-1);
   await nav('settings');await page.locator('#settings-form [name="tagline"]').fill('Maison connectée');await page.locator('#settings-form button.primary').click();await page.waitForFunction(()=>document.getElementById('notice').textContent==='Réglages enregistrés.');

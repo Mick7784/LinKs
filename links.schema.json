@@ -52,7 +52,7 @@
           "description": { "type": "string" },
           "url": { "type": "string", "pattern": "^(https?:|mailto:|tel:)" },
           "image": { "$ref": "#/definitions/image" },
-          "icon": { "enum": ["youtube", "instagram", "tiktok", "discord", "mail", "website", "cart", "home"] },
+          "icon": { "enum": ["youtube", "instagram", "tiktok", "discord", "mail", "website", "cart", "home", "amazon"] },
           "featured": { "type": "boolean" },
           "affiliate": { "type": "boolean" },
           "expiresAt": { "type": ["string", "null"], "description": "Une date sans fuseau utilise le fuseau configuré. Une date seule reste visible toute la journée." }
