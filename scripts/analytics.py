@@ -795,7 +795,7 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self,*_):pass
     def setup(self):super().setup();self.connection.settimeout(15)
     def send(self,status,body=b"",mime="application/json; charset=utf-8"):
-        self.send_response(status);self.send_header("Content-Type",mime);self.send_header("Content-Length",str(len(body)));self.send_header("Cache-Control","no-store");self.send_header("X-Content-Type-Options","nosniff");self.send_header("Content-Security-Policy","default-src 'self';script-src 'self';style-src 'self';img-src 'self' data:;object-src 'none';frame-ancestors 'none';base-uri 'none'");self.end_headers();self.wfile.write(body)
+        self.send_response(status);self.send_header("Content-Type",mime);self.send_header("Content-Length",str(len(body)));self.send_header("Cache-Control","no-store");self.send_header("X-Content-Type-Options","nosniff");self.send_header("Content-Security-Policy","default-src 'self';script-src 'self';style-src 'self';img-src 'self' data: https://i.ytimg.com;object-src 'none';frame-ancestors 'none';base-uri 'none'");self.end_headers();self.wfile.write(body)
     def json(self,status,data):self.send(status,json.dumps(data,ensure_ascii=False).encode())
     def body(self,limit=8*1024*1024):
         size=int(self.headers.get("Content-Length","0"))
