@@ -1,6 +1,20 @@
 "use strict";
 let publicTimezone = "UTC";
 const paths = {
+  facebook: '<path d="M15 21v-8h3l1-4h-4V7c0-1 1-2 2-2h2V2h-3c-3 0-5 2-5 5v2H8v4h3v8"/>',
+  x: '<path d="m4 3 16 18h-4L4 3h4l12 18M20 3 4 21"/>',
+  linkedin: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 10v7m4 0v-7m0 3c0-4 6-4 6 0v4"/><circle cx="7" cy="7" r=".6"/>',
+  github: '<path d="M9 21v-4c-4 1-4-2-6-2m12 6v-4c0-1-.5-2-1-2 4-.5 6-2 6-6 0-1-1-2-1-3l-.2-3-3 2a13 13 0 0 0-8 0L5 3l-.2 3c-.6 1-1 2-1 3 0 4 2 5.5 6 6-.7.5-1 1-1 2"/>',
+  threads: '<path d="M19 6c-3-5-12-5-14 1-3 9 3 15 9 14 7-1 8-8 4-11-4-3-10-1-10 3 0 4 7 4 8-1 1-6-5-8-7-4"/>',
+  twitch: '<path d="M4 3h17v12l-5 5h-5l-4 3v-3H3V6Z"/><path d="M11 7v6m5-6v6"/>',
+  telegram: '<path d="m3 10 18-7-4 18-5-6-3 3v-5l9-7-12 6Z"/>',
+  whatsapp: '<path d="M4 17 2 22l6-2a9 9 0 1 0-4-3Z"/><path d="M8 7c-2 4 5 10 8 8l1-2-3-1-1 1-3-3 1-1-2-3Z"/>',
+  pinterest: '<circle cx="12" cy="11" r="9"/><path d="m8 22 3-14m-.7 4c1 4 7 3 7-2 0-6-10-6-10 0"/>',
+  reddit: '<path d="m12 7 2-5 5 1"/><circle cx="20" cy="3" r="1"/><ellipse cx="12" cy="14" rx="9" ry="6"/><path d="M4 10c-4-4-5 4-1 4m17-4c4-4 5 4 1 4M8 16c3 2 5 2 8 0"/><circle cx="8" cy="13" r="1"/><circle cx="16" cy="13" r="1"/>',
+  snapchat: '<path d="M7 9C5 1 19 1 17 9l3 1-3 2c0 3 2 4 4 5l-3 1-1 2-3-1-2 2-2-2-3 1-1-2-3-1c2-1 4-2 4-5l-3-2Z"/>',
+  network: '<circle cx="12" cy="5" r="3"/><circle cx="5" cy="18" r="3"/><circle cx="19" cy="18" r="3"/><path d="m10 8-4 7m8-7 4 7M8 18h8"/>',
+  contact: '<rect x="4" y="2" width="16" height="20" rx="2"/><circle cx="12" cy="9" r="3"/><path d="M7 18c0-5 10-5 10 0M2 6h4M2 12h4M2 18h4"/>',
+
   youtube:
     '<rect x="2" y="5" width="20" height="14" rx="4"/><path d="m10 9 5 3-5 3Z"/>',
   instagram:
