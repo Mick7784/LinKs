@@ -447,6 +447,23 @@ class AnalyticsTests(unittest.TestCase):
         self.assertEqual(sum(x['total'] for x in self.a.report(day,day)['promo_code_copies']),2)
         self.assertEqual(self.request(public+'/metrics',{**payload,'code':''},headers)[0],400)
 
+    def test_admin_section_preferences_are_private_and_backup_safe(self):
+        admin=self.server(True)
+        before=json.loads(self.request(admin+'/api/settings')[1])
+        order=['highlight','classic','video']
+        self.assertEqual(self.request(admin+'/api/settings',{'content_order':order})[0],204)
+        after=json.loads(self.request(admin+'/api/settings')[1])
+        self.assertEqual(after['content_order'],order)
+        self.assertEqual(after['name'],before['name'])
+        self.assertNotIn('content_order',self.a.public_config()['profile'])
+        backup=json.loads(self.a.export_backup());self.a.restore_backup(backup)
+        self.assertEqual(json.loads(self.request(admin+'/api/settings')[1])['content_order'],order)
+        for invalid in [['classic','classic','video'],['classic'],[{},'video','classic']]:
+            self.assertEqual(self.request(admin+'/api/settings',{'content_order':invalid})[0],400)
+        self.assertEqual(self.request(admin+'/api/settings',{'video_enabled':False})[0],204)
+        final=json.loads(self.request(admin+'/api/settings')[1])
+        self.assertFalse(final['video_enabled']);self.assertEqual(final['name'],before['name'])
+
 if __name__=='__main__':unittest.main()
 
 
