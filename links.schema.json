@@ -35,7 +35,7 @@
         "additionalProperties": false,
         "required": ["platform", "url"],
         "properties": {
-          "platform": { "enum": ["youtube", "instagram", "tiktok", "discord", "x", "twitch", "github", "linkedin", "email", "website"] },
+          "platform": { "enum": ["youtube", "instagram", "tiktok", "discord", "x", "twitch", "github", "linkedin", "email", "website", "facebook", "threads", "telegram", "whatsapp", "pinterest", "reddit", "snapchat", "network", "contact", "link", "mail"] },
           "url": { "type": "string", "pattern": "^(https?:|mailto:|tel:)" },
           "label": { "type": "string" }
         }
@@ -52,7 +52,7 @@
           "description": { "type": "string" },
           "url": { "type": "string", "pattern": "^(https?:|mailto:|tel:)" },
           "image": { "$ref": "#/definitions/image" },
-          "icon": { "enum": ["youtube", "instagram", "tiktok", "discord", "mail", "website", "cart", "home", "amazon"] },
+          "icon": { "enum": ["youtube", "instagram", "tiktok", "discord", "mail", "website", "cart", "home", "amazon", "facebook", "threads", "telegram", "whatsapp", "pinterest", "reddit", "snapchat", "network", "contact", "link", "x", "linkedin", "github", "twitch"] },
           "featured": { "type": "boolean" },
           "affiliate": { "type": "boolean" },
           "expiresAt": { "type": ["string", "null"], "description": "Une date sans fuseau utilise le fuseau configuré. Une date seule reste visible toute la journée." }

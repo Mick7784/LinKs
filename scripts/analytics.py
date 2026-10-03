@@ -8,6 +8,8 @@ from urllib.parse import parse_qs, quote, unquote, urlsplit, urlunsplit
 from zoneinfo import ZoneInfo
 sys.path.insert(0,str(Path(__file__).resolve().parent))
 import instance
+import youtube
+from urllib.request import urlopen
 
 ROOT=Path(__file__).resolve().parent
 if not (ROOT/"links.json").exists(): ROOT=ROOT.parent
@@ -21,7 +23,7 @@ DATA_DIR=Path(DB).parent
 STATIC=ROOT/"site" if (ROOT/"site").exists() else Path("/usr/share/nginx/html")
 AUTH_ATTEMPTS=[]
 AUTH_LOCK=threading.Lock()
-TYPES={"classic","promo","featured"}; ICONS={"youtube","instagram","tiktok","discord","mail","website","cart","home","amazon"}
+TYPES={"classic","promo","featured"}; ICONS={"youtube","instagram","tiktok","discord","mail","website","cart","home","amazon","facebook","x","linkedin","github","threads","twitch","telegram","whatsapp","pinterest","reddit","snapchat","network","contact","link"}
 BADGES={"","Promo","Nouveau","Partenaire","Bon plan"}
 IMAGE_TYPES={"image/jpeg":".jpg","image/png":".png","image/webp":".webp","image/gif":".gif"}
 
@@ -625,6 +627,42 @@ def configuration_input(data):
     validate_settings(values)
     return values
 
+def youtube_status():
+    with connection() as db:channel=instance.get(db,'video.channel_id');enabled=instance.get(db,'video.enabled')=='true'
+    key=youtube.read_key(DATA_DIR);legacy=bool(os.environ.get('CREATOR_STUDIO_URL') and os.environ.get('CREATOR_STUDIO_API_KEY'))
+    return {'channel':channel,'enabled':enabled,'key_configured':bool(key),'key_managed':bool(os.environ.get('YOUTUBE_API_KEY')),'configured':bool(channel and key) or legacy,'legacy':legacy and not bool(channel and key)}
+def youtube_test(data):
+    status=youtube_status();channel=data.get('channel',status['channel']);key=data.get('api_key') or youtube.read_key(DATA_DIR)
+    if not channel or (not key and status['legacy']):
+        if not status['legacy']:raise ValueError('Renseignez votre chaîne YouTube.')
+        try:
+            with urlopen('http://127.0.0.1:3002/latest-video.json',timeout=9) as response:video=json.load(response)
+            return {'video':video,'legacy':True}
+        except (OSError,ValueError):raise ValueError('La source serveur actuelle est indisponible.') from None
+    return youtube.latest(channel,key,force=True)
+def save_youtube(data):
+    channel=data.get('channel','')
+    if not isinstance(channel,str) or type(data.get('enabled')) is not bool:raise ValueError('Configuration YouTube invalide.')
+    channel=channel.strip()
+    if channel:youtube.channel_query(channel)
+    if data.get('api_key') and (not isinstance(data['api_key'],str) or not re.fullmatch(r'[A-Za-z0-9_-]{20,200}',data['api_key'])):raise ValueError('Clé API invalide.')
+    key=data.get('api_key') or youtube.read_key(DATA_DIR)
+    # Resolve handles before persistence; retain the private existing source if no API key is available.
+    if channel and key and not data.get('remove_key') and (data.get('api_key') or channel!=youtube_status()['channel']):channel=youtube.latest(channel,key,force=True)['channel_id']
+    elif channel and not re.fullmatch(r'UC[\w-]{22}',channel):raise ValueError('Ajoutez une clé API pour résoudre cette chaîne.')
+    if data.get('remove_key') is True:youtube.store_key(DATA_DIR,'')
+    elif data.get('api_key'):youtube.store_key(DATA_DIR,data['api_key'])
+    with connection() as db:
+        instance.put(db,'video.channel_id',channel);instance.put(db,'video.enabled','true' if data['enabled'] else 'false')
+    return youtube_status()
+def latest_video():
+    status=youtube_status()
+    if not status['enabled']:return None
+    if status['channel'] and status['key_configured']:return youtube.latest(status['channel'],youtube.read_key(DATA_DIR))['video']
+    if status['legacy']:
+        with urlopen('http://127.0.0.1:3002/latest-video.json',timeout=9) as response:return json.load(response)
+    raise ValueError('Source vidéo non configurée.')
+
 class Handler(BaseHTTPRequestHandler):
     def handle_one_request(self):
         self.response_status=0
@@ -775,6 +813,9 @@ class Handler(BaseHTTPRequestHandler):
         if self.server.admin and url.path in {"/brand.svg","/brand-light.svg","/mark.svg"}:return self.file(ADMIN/url.path[1:],"image/svg+xml")
         if url.path.startswith('/go/'):
             return self.redirect_story(url.path.removeprefix('/go/'))
+        if url.path=="/latest-video.json":
+            try:return self.json(200,latest_video())
+            except (OSError,ValueError):return self.json(502,{"error":"Vidéo momentanément indisponible"})
         if url.path=="/healthz":
             try:
                 with connection() as db:db.execute("SELECT total FROM counts LIMIT 1").fetchone()
@@ -794,6 +835,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.file(UPLOADS/name) if re.fullmatch(r"[a-f0-9-]{36}\.(jpg|png|webp|gif)",name) else self.send(404)
         if not self.server.admin:return self.json(200,public_config()) if url.path=="/api/public-config" else self.send(404)
         try:
+            if url.path=="/api/youtube":return self.json(200,youtube_status())
             if url.path=="/api/quotes":return self.json(200,{"items":quote_list()})
             if url.path=="/api/backup":return self.send(200,export_backup())
             if url.path=="/api/stats":
@@ -827,6 +869,8 @@ class Handler(BaseHTTPRequestHandler):
             except sqlite3.Error:return self.send(503)
         try:
             data=self.body(BACKUP_LIMIT if path=="/api/restore" else 8*1024*1024)
+            if path=="/api/youtube/test":return self.json(200,youtube_test(data))
+            if path=="/api/youtube":return self.json(200,save_youtube(data))
             if path=="/api/quotes/analyze":return self.json(200,add_quotes(data,preview=True))
             if path=="/api/quotes":return self.json(200,add_quotes(data))
             if path=="/api/restore":return self.json(200,restore_backup(data))

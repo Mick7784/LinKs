@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 
 const root = process.cwd();
 const errors = [];
-const platforms = new Set(["youtube", "instagram", "tiktok", "discord", "x", "twitch", "github", "linkedin", "email", "website"]);
+const platforms = new Set(["youtube", "instagram", "tiktok", "discord", "x", "twitch", "github", "linkedin", "email", "website", "facebook", "threads", "telegram", "whatsapp", "pinterest", "reddit", "snapchat", "network", "contact", "link", "mail"]);
 const allowed = {
   root: new Set(["$schema", "siteUrl", "profile", "latestVideo", "socials", "links"]),
   profile: new Set(["name", "tagline", "description", "avatar", "logo"]),
@@ -94,7 +94,7 @@ function optionalString(value, path) { if (value === undefined) return undefined
 function requiredUrl(value, path, protocols = ["http:", "https:", "mailto:", "tel:"]) { if (typeof value === "string") try { if (protocols.includes(new URL(value).protocol)) return value; } catch {} errors.push(`${path} : URL complète attendue.`); return ""; }
 function image(value, path) { if (typeof value === "string" && value.startsWith("/") && !value.startsWith("//")) { if (!existsSync(resolve(root, "site", decodeURI(value).slice(1)))) errors.push(`${path} : fichier introuvable (${value}).`); return value; } return requiredUrl(value, path, ["http:", "https:"]); }
 function bool(value, path, fallback) { if (value === undefined) return fallback; if (typeof value === "boolean") return value; errors.push(`${path} : true ou false attendu.`); return fallback; }
-function linkIcon(value, path) { const icons = new Set(["youtube", "instagram", "tiktok", "discord", "mail", "website", "cart", "home", "amazon"]); if (icons.has(value)) return value; errors.push(`${path} : icône inconnue.`); return undefined; }
+function linkIcon(value, path) { const icons = new Set(["youtube", "instagram", "tiktok", "discord", "mail", "website", "cart", "home", "amazon", "facebook", "x", "linkedin", "github", "threads", "twitch", "telegram", "whatsapp", "pinterest", "reddit", "snapchat", "network", "contact", "link"]); if (icons.has(value)) return value; errors.push(`${path} : icône inconnue.`); return undefined; }
 
 function parseExpiry(value, path) {
   if (value === undefined || value === null) return null;

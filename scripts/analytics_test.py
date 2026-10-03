@@ -377,7 +377,7 @@ class AnalyticsTests(unittest.TestCase):
             db.execute("UPDATE settings SET value='V1.1' WHERE key='app.version'")
             db.execute("DELETE FROM settings WHERE key='app.release_id'")
         self.a.init()
-        self.assertEqual(self.a.public_config()['profile']['app_version'],'V1.201')
+        self.assertEqual(self.a.public_config()['profile']['app_version'],(self.a.ROOT/'VERSION').read_text().strip())
         with self.a.connection() as db:db.execute("UPDATE settings SET value='V2.1' WHERE key='app.version'")
         self.a.init()
         self.assertEqual(self.a.public_config()['profile']['app_version'],'V2.1')
@@ -387,7 +387,7 @@ class AnalyticsTests(unittest.TestCase):
         module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
         for old,new in [('V1.046','V1.047'),('V1.2','V1.201'),('V2.001','V2.002')]:
             self.assertEqual(module.next_version(old),new)
-        self.assertEqual(module.choose('ordinary commit'),'')
+        self.assertEqual(module.choose('ordinary commit',current='V1.201'),'V1.202')
         self.assertEqual(module.choose('Release V1.046'),'V1.046')
 
 

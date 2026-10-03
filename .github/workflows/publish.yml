@@ -32,6 +32,8 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - name: Resolve image name
         run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
       - name: Story journey on desktop and mobile
@@ -43,12 +45,14 @@ jobs:
           python3 scripts/analytics_test.py
           python3 scripts/instance_test.py
           python3 scripts/release_version_test.py
+          python3 scripts/youtube_test.py
           node --test scripts/metrics.test.cjs scripts/dates.test.cjs scripts/video-api.test.mjs scripts/calendar.test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/instance-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/story-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/admin-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/admin-ui-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/calendar-browser-test.cjs
+          NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/settings-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/targeted-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/public-browser-test.cjs
       - name: Build and smoke-test
@@ -67,7 +71,7 @@ jobs:
           for file in style.css icons.css config.js cards.js app.js metrics.js assets/link-shopping.webp; do
             curl -fsS "http://127.0.0.1:18080/$file" -o /dev/null
           done
-      - name: Choose official release version
+      - name: Reserve persistent production version
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && inputs.validation_only != true
         id: release
         env:
@@ -76,13 +80,13 @@ jobs:
           RELEASE_OVERRIDE: ${{ inputs.version }}
         run: python3 scripts/release-version.py
       - name: Log in to GHCR
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && inputs.validation_only != true
+        if: steps.release.outputs.eligible == 'true'
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GHCR_USER: ${{ github.actor }}
         run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
       - name: Publish AMD64 and ARM64 images
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && inputs.validation_only != true
+        if: steps.release.outputs.eligible == 'true'
         env:
           COMMIT_SHA: ${{ github.sha }}
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
@@ -93,20 +97,32 @@ jobs:
           release_args=()
           if [ -n "$RELEASE_VERSION" ]; then
             if docker buildx imagetools inspect "$IMAGE:$RELEASE_TAG" >/dev/null 2>&1; then
-              echo "Release tag already exists; pull it before creating another release."
-              exit 1
+              docker pull "$IMAGE:$RELEASE_TAG"
+              revision=$(docker image inspect "$IMAGE:$RELEASE_TAG" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')
+              test "$revision" = "$COMMIT_SHA" || { echo "Version tag belongs to another source commit"; exit 1; }
+              echo "This production image was already published; keep its immutable version tag."
+              exit 0
             fi
             release_args=(--tag "$IMAGE:$RELEASE_TAG" --build-arg "APP_RELEASE_VERSION=$RELEASE_VERSION" --build-arg "APP_RELEASE_ID=$RELEASE_VERSION:$COMMIT_SHA" --label "org.opencontainers.image.version=$RELEASE_VERSION")
           fi
           docker buildx build --platform linux/amd64,linux/arm64 --tag "$IMAGE:latest" --tag "$IMAGE:sha-$COMMIT_SHA" --label "org.opencontainers.image.revision=$COMMIT_SHA" "${release_args[@]}" --push .
+      - name: Tag validated production version
+        if: steps.release.outputs.eligible == 'true'
+        run: |
+          if git rev-parse "refs/tags/${{ steps.release.outputs.tag }}" >/dev/null 2>&1; then
+            test "$(git rev-parse refs/tags/${{ steps.release.outputs.tag }})" = "${{ steps.release.outputs.commit }}"
+          else
+            git tag "${{ steps.release.outputs.tag }}" "${{ steps.release.outputs.commit }}"
+          fi
+          git push origin "refs/tags/${{ steps.release.outputs.tag }}"
       - name: Publish GitHub release
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && inputs.validation_only != true && steps.release.outputs.version != ''
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && inputs.validation_only != true && steps.release.outputs.eligible == 'true' && inputs.official_release == true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           COMMIT_SHA: ${{ github.sha }}
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
-        run: gh release create "$RELEASE_TAG" --target "$COMMIT_SHA" --title "$RELEASE_VERSION" --notes-file "docs/releases/$RELEASE_VERSION.md"
+        run: gh release create "$RELEASE_TAG" --target "${{ steps.release.outputs.commit }}" --title "$RELEASE_VERSION" --generate-notes
 
 

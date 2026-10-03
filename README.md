@@ -92,9 +92,9 @@ Une copie de code est une action, sans indication d’achat. Les compteurs sont 
 
 Version du code : **V1.201**.
 
-L’image `ghcr.io/mick7784/links:latest` inclut les correctifs et améliorations du dashboard intégrés sur `main`. Elle est publiée pour **AMD64 et ARM64** ; une image `sha-<commit>` permet de sélectionner un build précis. La version applicative reste V1.201 : ces mises à jour n’ont pas créé de nouvelle release officielle.
+L’image `ghcr.io/mick7784/links:latest` inclut les correctifs et améliorations du dashboard intégrés sur `main`. Elle est publiée pour **AMD64 et ARM64** ; une image `sha-<commit>` permet de sélectionner un build précis. Chaque publication validée réserve une version persistante et publie également un tag Docker numéroté.
 
-Les corrections suivent V1.201, V1.202… ; la prochaine version fonctionnelle est V1.3, suivie de V1.301… Les releases automatiques explicites utilisent `[release]` pour un correctif ou `[release minor]` pour une version fonctionnelle. Un merge ordinaire ne crée pas de release numérotée.
+Les corrections suivent V1.201, V1.202… ; la prochaine version fonctionnelle est V1.3, suivie de V1.301… Chaque merge validé sur `main` incrémente automatiquement `VERSION`. Une réservation associée au commit source garantit qu’une relance ne double pas l’incrément ; son commit `[skip ci]` évite les boucles. Le champ `version` du workflow permet un jalon explicite (V1.3, V2.1…). À V1.299, un jalon explicite est requis. La création d’une page GitHub Release reste facultative.
 
 ## Dernières mises à jour
 
@@ -140,3 +140,7 @@ Links est distribué sous [licence MIT](LICENSE). Utilisation, modification et r
 ## Origine
 
 LinKs a été créé initialement pour DomotiK Studio. Cette origine ne conditionne pas la configuration d’une nouvelle installation.
+
+### Configuration YouTube
+
+Dans Paramètres → YouTube, renseignez une chaîne (identifiant UC…, @nom ou URL) et une clé YouTube Data API v3, puis testez la connexion. LinKs lit les vidéos publiques depuis la playlist d’uploads, ignore les publications privées et futures, et met les résultats en cache pendant cinq minutes. La clé reste côté serveur ; `YOUTUBE_API_KEY` permet aussi une configuration serveur prioritaire. La clé saisie est conservée dans le volume persistant, hors sauvegarde JSON : renseignez-la de nouveau lors d’un transfert vers une autre installation.
