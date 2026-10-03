@@ -1,17 +1,17 @@
 <!doctype html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Links · Back-office</title>
-<script>try{const p=localStorage.getItem('links-admin-theme')||'system';document.documentElement.dataset.theme=p==='light'||p==='dark'?p:matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'}catch{document.documentElement.dataset.theme=matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'}</script><link rel="stylesheet" href="/style.css"><script src="/dates.js" defer></script><script src="/app.js" defer></script></head>
+<title>LinKs by DomotiK · Administration</title><link rel="icon" href="/mark.svg">
+<script>try{const p=localStorage.getItem('links-admin-theme')||'dark';document.documentElement.dataset.theme=p==='light'||p==='dark'?p:matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'}catch{document.documentElement.dataset.theme='dark'}</script><link rel="stylesheet" href="/style.css"><script src="/dates.js" defer></script><script src="/preview/cards.js" defer></script><script src="/app.js" defer></script></head>
 <body class="admin-shell">
 <a class="skip-link" href="#main-content">Aller au contenu</a>
 <aside class="sidebar" aria-label="Links">
- <div class="brand"><img id="admin-logo" class="brand-logo" alt="" hidden><div><strong>Links</strong><small id="admin-name">Links</small></div></div>
+ <div class="brand"><img class="product-brand" src="/brand.svg" alt="LinKs by DomotiK"></div><div class="instance-context"><img id="admin-logo" class="brand-logo" alt="" hidden><span id="admin-name">Votre espace</span></div>
  <div class="navigation" id="navigation">
  <button type="button" class="menu-toggle" id="menu-toggle" aria-expanded="false" aria-controls="navigation-tabs"><span>Menu · <span id="menu-current">Tableau de bord</span></span><span class="menu-chevron" aria-hidden="true">⌄</span></button>
  <nav class="tabs" id="navigation-tabs" aria-label="Navigation du back-office">
  <button data-tab="dashboard" class="active"><span class="nav-icon" data-icon="dashboard" aria-hidden="true"></span><span>Tableau de bord</span></button>
  <button data-tab="content"><span class="nav-icon" data-icon="links" aria-hidden="true"></span><span>Liens &amp; campagnes</span></button>
- <button data-tab="buttons"><span class="nav-icon" data-icon="buttons" aria-hidden="true"></span><span>Boutons du haut</span></button>
+ <button data-tab="buttons"><span class="nav-icon" data-icon="buttons" aria-hidden="true"></span><span>Réseaux &amp; raccourcis</span></button>
  <button data-tab="archives"><span class="nav-icon" data-icon="archive" aria-hidden="true"></span><span>Archives</span></button>
  <button data-tab="settings"><span class="nav-icon" data-icon="settings" aria-hidden="true"></span><span>Paramètres</span></button>
  <a class="public-link mobile-public-link" href="#" hidden target="_blank" rel="noopener noreferrer"><span data-icon="external" aria-hidden="true"></span>Voir la page publique</a>
@@ -19,11 +19,11 @@
  <div class="sidebar-bottom"><a id="public-link" class="public-link" href="#" hidden target="_blank" rel="noopener noreferrer"><span data-icon="external" aria-hidden="true"></span>Voir la page publique</a><small id="admin-owner">Administration</small></div>
 </aside>
 <div class="workspace">
- <header class="topbar"><span class="breadcrumb">Links <span aria-hidden="true">/</span> <span id="topbar-current">Tableau de bord</span></span><label class="theme-control"><span data-icon="theme" aria-hidden="true"></span><span class="sr-only">Thème du back-office</span><select id="theme-select" aria-label="Thème du back-office"><option value="light">Clair</option><option value="dark">Sombre</option><option value="system" selected>Système</option></select></label></header>
+ <header class="topbar"><span class="breadcrumb">LinKs <span aria-hidden="true">/</span> <span id="topbar-current">Tableau de bord</span></span><label class="theme-control"><span data-icon="theme" aria-hidden="true"></span><span class="sr-only">Thème du back-office</span><select id="theme-select" aria-label="Thème du back-office"><option value="light">Clair</option><option value="dark">Sombre</option><option value="system" selected>Système</option></select></label></header>
  <main id="main-content" tabindex="-1">
 <p id="notice" role="status" aria-live="polite"></p>
 <section class="view active" id="dashboard">
- <div class="section-head"><div><h1>Tableau de bord</h1><p>Vue d’ensemble de votre page Links</p></div>
+ <div class="section-head"><div><h1>Tableau de bord</h1><p>Votre activité, vos liens et vos campagnes en un regard.</p></div>
  <form id="filters"><select id="period" aria-label="Période"><option value="7" selected>7 jours</option><option value="30">30 jours</option><option value="90">90 jours</option></select><select id="source" aria-label="Source"><option value="">Toutes les sources</option></select></form></div>
  <section class="kpis analytics-kpis" aria-label="Indicateurs">
   <article><div class="kpi-label"><span>Visites</span><span data-icon="visits" aria-hidden="true"></span></div><strong id="views">—</strong><small>Pages vues sur Links</small></article>
@@ -34,20 +34,20 @@
  </section>
  <p class="kpi-note">Mesure agrégée, sans cookies ni identifiant visiteur. Les clics Story sont comptabilisés séparément.</p>
  <section class="panel"><div class="panel-title"><h3>Évolution des visites et clics</h3><span class="legend">● Visites &nbsp; <i>●</i> Clics</span></div><div id="chart"></div><p id="chart-detail" role="status" aria-live="polite"></p></section>
- <section class="panel stories-card"><div class="panel-title"><h3>Stories Instagram</h3><span class="status"><strong id="story-promos">—</strong>&nbsp; promotion(s)</span></div><div id="story-list" aria-live="polite"></div></section>
+ <div class="dashboard-grid engagement-grid"><section class="panel stories-card"><div class="panel-title"><h3>Stories Instagram</h3><span class="status"><strong id="story-promos">—</strong>&nbsp; promotion(s)</span></div><div id="story-list" aria-live="polite"></div></section>
  <section class="panel"><div class="panel-title"><h3>Codes promo copiés</h3></div><div id="promo-copy-list" aria-live="polite"></div></section>
- <section class="panel"><div class="panel-title"><h3>Campagnes en cours</h3><button type="button" data-open-content>Gérer les campagnes <span aria-hidden="true">→</span></button></div><div id="active-campaigns" class="campaign-grid"></div></section>
+ </div><section class="panel"><div class="panel-title"><h3>Campagnes en cours</h3><button type="button" data-open-content>Gérer les campagnes <span aria-hidden="true">→</span></button></div><div id="active-campaigns" class="campaign-grid"></div></section>
  <div class="dashboard-grid"><section class="panel"><h3>Top 5 des liens</h3><div id="top-links"></div></section><section class="panel"><h3>Sources principales</h3><p class="kpi-note">Visites de la page et clics Story directs.</p><div id="sources"></div></section></div>
 </section>
 <section class="view" id="content">
- <div class="section-head"><div><h2>Liens et mises en avant</h2><p>La dernière vidéo reste verrouillée au-dessus de cette liste.</p></div><button class="primary" data-action="new-block">Ajouter un bloc</button></div>
+ <div class="section-head"><div><h2>Liens et mises en avant</h2><p>La dernière vidéo reste verrouillée au-dessus de cette liste.</p></div><button class="primary" data-action="new-block">Ajouter un lien</button></div>
  <article class="locked"><span>🔒</span><div><strong>Dernière vidéo</strong><small>Section facultative · source vidéo configurée par l’administrateur</small></div></article>
  <section class="promo-overview"><strong id="promo-count">Promotions actives : — / 3</strong><span id="promo-scheduled"></span></section>
  <section class="planning panel"><h3>Planning des promotions</h3><div id="promo-planning"></div></section>
  <div id="content-list" class="sortable-list"></div>
 </section>
 <section class="view" id="buttons">
- <div class="section-head"><div><h2>Boutons du haut</h2><p>Réseaux, contact et ancres affichés sous le profil.</p></div><button class="primary" data-action="new-button">Ajouter un bouton</button></div>
+ <div class="section-head"><div><h2>Réseaux &amp; raccourcis</h2><p>Réseaux, contact et ancres affichés sous le profil.</p></div><button class="primary" data-action="new-button">Ajouter un bouton</button></div>
  <div id="button-list" class="sortable-list"></div>
 </section>
 <section class="view" id="archives">
@@ -55,8 +55,8 @@
  <div id="archive-list" class="sortable-list"></div>
 </section>
 <section class="view" id="settings">
- <div class="section-head"><div><h2>Réglages</h2><p>Informations principales affichées sur la page.</p></div></div>
- <form id="settings-form" class="panel form-grid"><h3 class="wide">Général</h3>
+ <div class="section-head"><div><h2>Réglages</h2><p>Personnalisez votre page et gérez votre installation.</p></div></div><nav class="settings-shortcuts" aria-label="Sections des réglages"><a href="#settings-form">Identité</a><a href="#access-form">Accès</a><a href="#quotes-panel">Citations</a><a href="#sharing-panel">Partage</a><a href="#backup-panel">Sauvegarde</a></nav>
+ <form id="settings-form" class="panel form-grid"><h3 class="wide">Identité de la page publique</h3><p class="wide field-help">Votre identité reste indépendante de celle de LinKs.</p>
  <label>Nom affiché<input name="name" required maxlength="120"></label><label>Accroche<input name="tagline" maxlength="200"></label><label class="wide">Description<input name="description" maxlength="300"></label>
  <label>Logo<input name="logo" maxlength="2048" readonly><input type="file" data-profile-upload="logo" accept="image/png,image/jpeg,image/webp,image/gif"><button type="button" data-clear-profile="logo">Retirer</button></label>
  <label>Avatar<input name="avatar" maxlength="2048" readonly><input type="file" data-profile-upload="avatar" accept="image/png,image/jpeg,image/webp,image/gif"><button type="button" data-clear-profile="avatar">Retirer</button></label>
@@ -71,7 +71,7 @@
  <div id="local-account-fields" class="wide form-grid"><label>Identifiant<input name="username" autocomplete="username" minlength="3" maxlength="80"></label><label>Nouveau mot de passe<input name="password" type="password" minlength="12" maxlength="256" autocomplete="new-password"></label><label>Confirmation<input name="confirmation" type="password" autocomplete="new-password"></label></div>
  <label class="check wide" id="external-confirm-label"><input name="confirm_external" type="checkbox">Je confirme que l’accès administratif est protégé par mon outil externe.</label>
  <div class="wide actions"><button class="primary">Enregistrer le mode d’accès</button><button type="button" id="logout" hidden>Se déconnecter</button></div></form>
- <form id="version-form" class="panel form-grid"><h3 class="wide">Version de l’application</h3><label>Version actuelle<input name="app_version" required pattern="V[0-9]+\.[0-9]+" maxlength="40" placeholder="V1.046"></label><div class="actions"><button class="primary">Enregistrer</button></div><p class="wide">La prochaine release incrémente le build. Le changement de majeure reste manuel.</p></form>
+ <details class="technical-settings"><summary>Informations techniques · version</summary><form id="version-form" class="panel form-grid"><h3 class="wide">Version de l’application</h3><label>Version actuelle<input name="app_version" required pattern="V[0-9]+\.[0-9]+" maxlength="40" placeholder="V1.046"></label><div class="actions"><button class="primary">Enregistrer</button></div><p class="wide">La version est gérée lors des releases. Ce champ est réservé à la maintenance.</p></form></details>
  <section class="panel" id="quotes-panel">
   <h3>Citations / Easter eggs</h3><p id="quotes-summary" role="status">Chargement…</p>
   <form id="quote-form" class="quote-add"><label>Citation<input name="text" required maxlength="1000"></label><button class="primary">Ajouter</button></form>
@@ -79,23 +79,34 @@
   <div id="quotes-analysis" hidden><p id="quotes-analysis-summary" role="status"></p><button id="quotes-confirm" type="button" class="primary"></button></div>
   <p id="quotes-limit" hidden>Limite de 300 citations atteinte.</p><p id="quotes-feedback" role="status"></p><div id="quotes-list" class="quotes-list"></div><div class="quotes-danger"><button id="quotes-clear" type="button" hidden>Supprimer toutes les citations</button></div>
  </section>
- <section class="panel"><h3>Partager Links</h3><p>Choisis où tu publies le lien pour reconnaître la provenance des visites.</p><div class="share-controls"><label>Plateforme<select id="share-source"><option value="youtube">YouTube</option><option value="instagram">Instagram</option><option value="site">Site</option><option value="mail">E-mail</option><option value="qr">QR</option><option value="facebook">Facebook</option><option value="tiktok">TikTok</option><option value="discord">Discord</option><option value="newsletter">Newsletter</option></select></label><label>Adresse à partager<input id="share-url" readonly></label><button type="button" id="copy-share">Copier le lien</button></div><p id="share-status" role="status"></p></section>
- <section class="panel"><h3>Sauvegarde</h3><p>Un fichier contient tes contenus, images utilisées, réglages et statistiques. Garde-le sur ton ordinateur.</p><div class="backup-controls"><button type="button" id="download-backup">Télécharger une sauvegarde</button><label class="restore-label">Restaurer une sauvegarde<input type="file" id="restore-backup" accept=".json,application/json"></label></div><p id="backup-status" role="status"></p><p>La restauration remplace les données actuelles. Maximum : 64 Mo par fichier.</p></section>
+ <section class="panel" id="sharing-panel"><h3>Partager votre page</h3><p>Choisis où tu publies le lien pour reconnaître la provenance des visites.</p><div class="share-controls"><label>Plateforme<select id="share-source"><option value="youtube">YouTube</option><option value="instagram">Instagram</option><option value="site">Site</option><option value="mail">E-mail</option><option value="qr">QR</option><option value="facebook">Facebook</option><option value="tiktok">TikTok</option><option value="discord">Discord</option><option value="newsletter">Newsletter</option></select></label><label>Adresse à partager<input id="share-url" readonly></label><button type="button" id="copy-share">Copier le lien</button></div><p id="share-status" role="status"></p></section>
+ <section class="panel" id="backup-panel"><h3>Sauvegarde</h3><p>Un fichier contient tes contenus, images utilisées, réglages et statistiques. Garde-le sur ton ordinateur.</p><div class="backup-controls"><button type="button" id="download-backup">Télécharger une sauvegarde</button><label class="restore-label">Restaurer une sauvegarde<input type="file" id="restore-backup" accept=".json,application/json"></label></div><p id="backup-status" role="status"></p><p>La restauration remplace les données actuelles. Maximum : 64 Mo par fichier.</p></section>
 </section>
 <footer><span id="admin-timezone"></span> · Statistiques conservées 400 jours</footer>
 </main></div>
 <dialog id="block-dialog"><form method="dialog" id="block-form"><header><div><p class="eyebrow">ÉDITION</p><h2 id="block-title">Nouveau bloc</h2></div><button class="icon-button" value="cancel" formnovalidate aria-label="Fermer">×</button></header>
- <div class="editor"><div class="form-grid">
-  <input type="hidden" name="id"><label>Type<select name="type"><option value="classic">Lien classique</option><option value="featured">Mise en avant</option><option value="promo">Promo visuelle</option></select></label>
-  <label>Nom interne<input name="internal_name" required maxlength="300"></label><label>Titre public<input name="title" required maxlength="300"></label>
-  <label class="wide" data-promo-editorial>Description<textarea name="description" rows="3" maxlength="1000"></textarea></label><label class="wide">URL<input name="url" type="url" required></label>
-  <label data-promo-editorial>Icône<select name="icon"><option value="website">Site</option><option value="youtube">YouTube</option><option value="instagram">Instagram</option><option value="discord">Discord</option><option value="cart">Panier</option><option value="home">Maison</option><option value="mail">E-mail</option></select></label>
-  <label data-promo-editorial>Badge<select name="badge"><option value="">Aucun</option><option>Promo</option><option>Nouveau</option><option>Partenaire</option><option>Bon plan</option></select></label>
-  <label data-promo-editorial>CTA<input name="cta" maxlength="80" placeholder="Découvrir"></label><label data-promo-code hidden>Code promo<input name="promo_code" maxlength="80" placeholder="Facultatif"></label><label>Priorité d’affichage<select name="priority"><option value="normal">Normale</option><option value="high">Haute</option></select><small>Une campagne en priorité haute est affichée avant les campagnes en priorité normale.</small></label><label class="wide">Image<input id="block-image-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif"><input name="image" type="hidden"></label>
-  <label>Début<input name="start_at" type="datetime-local"></label><label>Fin<input name="end_at" type="datetime-local"></label>
+ <p id="block-feedback" class="editor-feedback" role="alert" hidden></p>
+ <div class="editor"><div class="editor-fields">
+ <input type="hidden" name="id">
+ <div class="form-grid editor-essential">
+  <label class="wide">Type de contenu<select name="type"><option value="classic">Lien classique</option><option value="promo">Campagne / offre</option><option value="featured">Mise en avant</option></select><small id="block-type-help" class="field-help"></small></label>
+  <label class="wide">Titre public<input name="title" required maxlength="300" placeholder="Ce que vos visiteurs voient"></label>
+  <label class="wide" data-promo-editorial>Description<textarea name="description" rows="2" maxlength="1000" placeholder="Une phrase pour présenter ce lien"></textarea></label>
+  <label class="wide">Destination<input name="url" required maxlength="2000" placeholder="https://…"><small class="field-help">Adresse web, e-mail (mailto:) ou téléphone (tel:).</small></label>
+  <label class="wide" data-promo-editorial>Icône<select name="icon"><option value="website">Site web</option><option value="amazon">Amazon</option><option value="youtube">YouTube</option><option value="instagram">Instagram</option><option value="tiktok">TikTok</option><option value="discord">Discord</option><option value="cart">Panier</option><option value="home">Maison</option><option value="mail">E-mail</option></select><small class="field-help">Une icône de site est utilisée par défaut. Amazon est reconnu depuis sa destination.</small></label>
+  <div class="wide image-editor"><label>Image<input id="block-image-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif"></label><small class="field-help">JPEG, PNG, WebP ou GIF · 4 Mo maximum par fichier. Aucune dimension minimale imposée.</small><details><summary>Utiliser une adresse d’image</summary><label>Adresse de l’image<input name="image" maxlength="2000" placeholder="/uploads/… ou https://…"></label><small class="field-help">La page publique accepte les images de cette installation. Une image externe peut être bloquée par la politique du navigateur.</small></details><button id="clear-block-image" type="button">Retirer l’image</button></div>
+  <label class="wide" data-promo-code hidden>Code promo<input name="promo_code" maxlength="80" placeholder="Facultatif · copiable sur la page publique"></label>
+  <div class="wide form-grid campaign-schedule" data-campaign-schedule><label>Début<input name="start_at" type="datetime-local"></label><label>Fin<input name="end_at" type="datetime-local"></label><label class="wide">Priorité d’affichage<select name="priority"><option value="normal">Normale</option><option value="high">Haute</option></select><small class="field-help">Les campagnes prioritaires passent avant les autres.</small></label></div>
   <div class="wide availability" id="promo-availability" hidden></div>
-  <label class="check"><input name="active" type="checkbox" checked> Activé</label><label class="check"><input name="draft" type="checkbox"> Brouillon</label>
- </div><aside class="preview"><div class="preview-head"><strong>Aperçu</strong><button type="button" data-preview="desktop" class="active">Desktop</button><button type="button" data-preview="mobile">Mobile</button></div><div id="block-preview"></div></aside></div>
+  <div class="wide editor-state"><label class="check"><input name="active" type="checkbox" checked> Activé</label><label class="check"><input name="draft" type="checkbox"> Brouillon</label><small class="field-help">Un brouillon reste masqué même s’il est activé.</small></div>
+ </div>
+ <details id="block-advanced" class="advanced-options"><summary>Options avancées</summary><div class="form-grid">
+  <label class="wide">Nom interne<input name="internal_name" maxlength="300" placeholder="Le titre est utilisé si ce champ est vide"><small class="field-help">Repère privé dans l’administration et les statistiques.</small></label>
+  <label data-promo-editorial>Badge<select name="badge"><option value="">Aucun</option><option>Promo</option><option>Nouveau</option><option>Partenaire</option><option>Bon plan</option></select></label>
+  <label data-promo-editorial>Texte d’action<input name="cta" maxlength="80"><small class="field-help">Conservé pour les anciens rendus ; non affiché sur le lien classique actuel.</small></label>
+  <div id="classic-schedule-slot" class="wide"></div>
+ </div></details>
+ </div><aside class="preview"><div class="preview-head"><strong>Aperçu public</strong><button type="button" data-preview="desktop" class="active">Desktop</button><button type="button" data-preview="mobile">Mobile</button></div><div id="block-preview"></div><p class="field-help">Rendu public réel. Les actions sont désactivées dans l’aperçu. Sans image, seule l’icône apparaît sur un lien classique.</p></aside></div>
  <div class="dialog-actions"><button value="cancel" formnovalidate>Annuler</button><button type="submit" value="default" class="primary">Enregistrer</button></div></form></dialog>
 <dialog id="button-dialog"><form method="dialog" id="button-form"><header><h2 id="button-title">Nouveau bouton</h2><button class="icon-button" value="cancel" formnovalidate aria-label="Fermer">×</button></header><div class="form-grid">
  <input type="hidden" name="id"><label>Icône<select name="icon"><option value="youtube">YouTube</option><option value="instagram">Instagram</option><option value="discord">Discord</option><option value="mail">E-mail</option><option value="website">Site</option></select></label><label>Libellé<input name="label" required maxlength="100"></label><label class="wide">URL ou ancre<input name="url" required placeholder="https://… ou #section"></label><label class="check wide"><input name="active" type="checkbox" checked> Activé</label></div><div class="dialog-actions"><button value="cancel" formnovalidate>Annuler</button><button type="submit" value="default" class="primary">Enregistrer</button></div></form></dialog>

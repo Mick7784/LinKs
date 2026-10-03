@@ -25,7 +25,7 @@ const {tmpdir}=require('node:os');
    const r=await fetch('http://127.0.0.1:3003'+req.url,{method:req.method,headers:{'Content-Type':req.headers['content-type']||'application/json',Origin:req.headers.origin||origin,'User-Agent':req.headers['user-agent']||'Mozilla/5.0'},body:body.length?body:undefined,redirect:'manual'});
    res.statusCode=r.status;for(const name of ['content-type','location'])if(r.headers.has(name))res.setHeader(name,r.headers.get(name));return res.end(Buffer.from(await r.arrayBuffer()))
   }
-  const files={'/':['index.html','text/html'],'/style.css':['style.css','text/css'],'/icons.css':['icons.css','text/css'],'/app.js':['app.js','application/javascript'],'/config.js':['config.js','application/javascript'],'/metrics.js':['metrics.js','application/javascript'],'/assets/studio-links.webp':['assets/studio-links.webp','image/webp'],'/assets/link-shopping.webp':['assets/link-shopping.webp','image/webp'],'/assets/link-shopping.webp':['assets/link-shopping.webp','image/webp']};for(const name of ['community','instagram','shopping','smarthome','collaboration'])files['/assets/link-'+name+'.webp']=['assets/link-'+name+'.webp','image/webp'];const file=files[url.pathname];if(!file){res.writeHead(404);return res.end()}
+  const files={'/':['index.html','text/html'],'/style.css':['style.css','text/css'],'/icons.css':['icons.css','text/css'],'/cards.js':['cards.js','application/javascript'],'/app.js':['app.js','application/javascript'],'/config.js':['config.js','application/javascript'],'/metrics.js':['metrics.js','application/javascript'],'/assets/studio-links.webp':['assets/studio-links.webp','image/webp'],'/assets/link-shopping.webp':['assets/link-shopping.webp','image/webp'],'/assets/link-shopping.webp':['assets/link-shopping.webp','image/webp']};for(const name of ['community','instagram','shopping','smarthome','collaboration'])files['/assets/link-'+name+'.webp']=['assets/link-'+name+'.webp','image/webp'];const file=files[url.pathname];if(!file){res.writeHead(404);return res.end()}
   res.setHeader('Content-Type',file[1]);res.end(readFileSync(resolve(__dirname,'../site',file[0])));
  }catch(e){res.writeHead(500);res.end(e.message)}});
  try{
@@ -72,6 +72,32 @@ const {tmpdir}=require('node:os');
   assert.equal(afterCopy.rows.filter(x=>x.kind==='click').reduce((n,x)=>n+x.total,0),beforeCopy.rows.filter(x=>x.kind==='click').reduce((n,x)=>n+x.total,0));
   assert.equal(await page.evaluate(()=>navigator.clipboard.readText()),'TEST10');
   assert((await page.locator('.offer-code').textContent()).includes('Copié !'));assert.equal(offerPopups,0);
+
+  // A saved origin with a trailing slash must match the browser Origin exactly after normalization.
+  await request('/api/settings',{name:config.profile.name,site_url:origin+'/'});
+  assert.equal((await request('/api/settings',undefined,'GET')).site_url,origin);
+  // Clipboard API denied: real legacy clipboard fallback still counts one successful copy.
+  await page.evaluate(()=>{window.nativeWrite=navigator.clipboard.writeText.bind(navigator.clipboard);navigator.clipboard.writeText=async()=>{throw Error('Denied')};window.nativeExec=document.execCommand.bind(document)});
+  const fallbackCopy=page.waitForResponse(r=>r.url().endsWith('/metrics')&&r.request().postDataJSON()?.kind==='promo_code_copy');
+  await page.locator('.offer-code').click();assert.equal((await fallbackCopy).status(),204);
+  assert.equal(await page.evaluate(()=>navigator.clipboard.readText()),'TEST10');
+  const afterFallback=await request('/api/stats',undefined,'GET');
+  assert.equal(afterFallback.promo_code_copies.reduce((n,x)=>n+x.total,0),afterCopy.promo_code_copies.reduce((n,x)=>n+x.total,0)+1);
+  let failedCopyRequests=0;const countFailed=r=>{if(r.url().endsWith('/metrics')&&r.postDataJSON()?.kind==='promo_code_copy')failedCopyRequests++};page.on('request',countFailed);
+  await page.evaluate(()=>{document.execCommand=()=>false});await page.locator('.offer-code').click();await page.getByText('Copie impossible',{exact:true}).waitFor();
+  assert.equal(failedCopyRequests,0);assert.equal(offerPopups,0);page.off('request',countFailed);
+  assert.equal((await request('/api/stats',undefined,'GET')).promo_code_copies.reduce((n,x)=>n+x.total,0),afterFallback.promo_code_copies.reduce((n,x)=>n+x.total,0));
+  await page.evaluate(()=>{document.execCommand=window.nativeExec;navigator.clipboard.writeText=window.nativeWrite});
+  const foreign=await fetch('http://127.0.0.1:3003/metrics',{method:'POST',headers:{Origin:'https://foreign.example','Content-Type':'application/json','User-Agent':'Mozilla/5.0'},body:JSON.stringify({kind:'promo_code_copy',link:'block:'+first.id,code:'TEST10'})});assert.equal(foreign.status,403);
+  const dashboard=await context.newPage();await dashboard.goto(admin);await dashboard.waitForFunction(()=>document.getElementById('promo-copies').textContent==='2');assert((await dashboard.locator('#promo-copy-list').textContent()).includes('TEST10'));await dashboard.close();
+  // Amazon works with and without artwork, with an explicit icon or recognized domain only.
+  for(const width of [320,1440]){await page.setViewportSize({width,height:900});
+   const rendered=await page.evaluate(()=>{
+    const cases=[{icon:'cart',url:'https://amzn.to/test'},{icon:'website',url:'https://www.amazon.fr'},{icon:'amazon',url:'https://example.com'},{icon:'cart',url:'https://amazon.fr.evil.example/'},{icon:'home',url:'https://example.com',title:'Amazon'}];
+    return cases.map(x=>{const node=renderBlock({type:'classic',title:'Boutique',...x});return {amazon:node.dataset.icon==='amazon',svg:node.querySelector('svg').innerHTML}})
+   });assert.deepEqual(rendered.map(x=>x.amazon),[true,true,true,false,false]);assert(!rendered[0].svg.includes('<text'));
+   assert.equal(await page.locator('#links a[data-icon=amazon] .card-icon svg').count(),1);
+  }
 
   const active=()=>page.locator('.carousel-dots button[aria-current="true"]');
   await page.locator('.carousel-dots button').nth(1).click();assert.equal(await active().getAttribute('aria-label'),'Afficher l’offre 2 sur 2');

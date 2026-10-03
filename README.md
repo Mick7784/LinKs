@@ -1,6 +1,8 @@
-# Links
+# LinKs · by DomotiK
 
-Links est une page de liens auto-hébergée, personnalisable et accompagnée d’un back office. Elle réunit les liens, réseaux sociaux et offres d’un créateur, d’un projet ou d’une communauté sur une page adaptée aux ordinateurs et aux mobiles.
+![LinKs by DomotiK](docs/assets/links-brand.svg)
+
+LinKs est une page de liens auto-hébergée, personnalisable et accompagnée d’un back office. Elle réunit les liens, réseaux sociaux et offres d’un créateur, d’un projet ou d’une communauté sur une page adaptée aux ordinateurs et aux mobiles.
 
 ## Fonctionnalités
 
@@ -27,6 +29,8 @@ Links est une page de liens auto-hébergée, personnalisable et accompagnée d�
 - Filtres par période et par source.
 
 ### Back office
+
+L’administration possède sa propre identité LinKs ; votre page publique conserve votre identité. L’éditeur présente les champs essentiels, un aperçu utilisant le rendu public et des options avancées pour les réglages moins fréquents.
 
 Gestion des contenus, campagnes, boutons, paramètres, citations et statistiques. Les citations peuvent être ajoutées individuellement, en masse ou importées depuis un fichier texte, dans une limite de 300.
 
@@ -98,4 +102,4 @@ Links est distribué sous [licence MIT](LICENSE). Utilisation, modification et r
 
 ## Origine
 
-Links a été créé initialement pour DomotiK Studio. Cette origine ne conditionne pas la configuration d’une nouvelle installation.
+LinKs a été créé initialement pour DomotiK Studio. Cette origine ne conditionne pas la configuration d’une nouvelle installation.

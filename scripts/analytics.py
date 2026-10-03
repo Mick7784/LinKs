@@ -21,7 +21,7 @@ DATA_DIR=Path(DB).parent
 STATIC=ROOT/"site" if (ROOT/"site").exists() else Path("/usr/share/nginx/html")
 AUTH_ATTEMPTS=[]
 AUTH_LOCK=threading.Lock()
-TYPES={"classic","promo","featured"}; ICONS={"youtube","instagram","tiktok","discord","mail","website","cart","home"}
+TYPES={"classic","promo","featured"}; ICONS={"youtube","instagram","tiktok","discord","mail","website","cart","home","amazon"}
 BADGES={"","Promo","Nouveau","Partenaire","Bon plan"}
 IMAGE_TYPES={"image/jpeg":".jpg","image/png":".png","image/webp":".webp","image/gif":".gif"}
 
@@ -88,7 +88,7 @@ def init():
         db.execute("CREATE TABLE IF NOT EXISTS footer_quotes(id TEXT PRIMARY KEY,text TEXT NOT NULL UNIQUE,active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),created_at TEXT NOT NULL)")
         instance.initialize(db,legacy,CONFIG,[DATA_DIR/"assets",STATIC/"assets"],DATA_DIR)
         init_version(db)
-        ORIGIN=instance.get(db,"site.url")
+        ORIGIN=instance.site_url(instance.get(db,"site.url"),allow_empty=True)
         PARIS=ZoneInfo(instance.get(db,"app.timezone","UTC"))
 
 def checked_version(value):
@@ -111,7 +111,7 @@ def analytics_enabled():
 
 def sync_configuration(db):
     global ORIGIN,PARIS
-    ORIGIN=instance.get(db,"site.url");PARIS=ZoneInfo(instance.get(db,"app.timezone","UTC"))
+    ORIGIN=instance.site_url(instance.get(db,"site.url"),allow_empty=True);PARIS=ZoneInfo(instance.get(db,"app.timezone","UTC"))
 
 def record_promo_copy(data):
     if not analytics_enabled():return
@@ -576,7 +576,7 @@ def restore_backup(data):
 
 
 def validate_settings(values):
-    if 'site.url' in values:instance.site_url(values['site.url'],allow_empty=True)
+    if 'site.url' in values:values['site.url']=instance.site_url(values['site.url'],allow_empty=True)
     if 'app.timezone' in values:instance.timezone_name(values['app.timezone'])
     if 'analytics.source_rules' in values:instance.source_rules(values['analytics.source_rules'])
     for key in ['analytics.enabled','video.enabled','app.setup_completed']:
@@ -638,6 +638,7 @@ class Handler(BaseHTTPRequestHandler):
             ready=instance.get(db,'app.setup_completed')=='true';mode=instance.get(db,'auth.mode','local');session=instance.session(db,self.headers)
         if path=='/api/auth/status':
             self.json(200,{'setup_completed':ready,'mode':mode,'authenticated':ready and (mode=='external' or bool(session)),'csrf':session['csrf'] if session else ''});return True
+        if path in {'/brand.svg','/mark.svg'}:return False
         if path in {'/access.js','/access.css'}:
             self.file(ADMIN/path[1:]);return True
         if path in {'/setup','/login'}:
@@ -748,6 +749,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.server.admin and self.auth_get():return
         url=urlsplit(self.path)
+        if self.server.admin and url.path in {"/brand.svg","/mark.svg"}:return self.file(ADMIN/url.path[1:],"image/svg+xml")
         if url.path.startswith('/go/'):
             return self.redirect_story(url.path.removeprefix('/go/'))
         if url.path=="/healthz":
@@ -775,6 +777,8 @@ class Handler(BaseHTTPRequestHandler):
                 with connection() as db:return self.json(200,profile(db))
             if url.path=="/api/public-config":return self.json(200,public_config())
         except (ValueError,TypeError) as exc:return self.json(400,{"error":str(exc) or "Paramètres invalides"})
+        if url.path=="/preview/cards.js":return self.file(STATIC/"cards.js","application/javascript")
+        if url.path=="/preview/icons.css":return self.file(STATIC/"icons.css","text/css")
         if url.path=="/preview/style.css":return self.file(ROOT/"site"/"style.css" if (ROOT/"site"/"style.css").exists() else Path("/usr/share/nginx/html/style.css"),"text/css")
         if url.path=="/preview/preview.css":return self.file(ADMIN/"promo-preview.css","text/css")
         files={"/":("index.html","text/html;charset=utf-8"),"/app.js":("app.js","application/javascript"),"/dates.js":("dates.js","application/javascript"),"/style.css":("style.css","text/css")}

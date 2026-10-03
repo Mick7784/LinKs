@@ -60,7 +60,7 @@ jobs:
           done
           python3 scripts/smoke.py http://127.0.0.1:18080 http://127.0.0.1:18081 "$(docker exec links-test cat /data/setup-code)"
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18080/api/stats)" = 404
-          for file in style.css icons.css config.js app.js metrics.js assets/link-shopping.webp; do
+          for file in style.css icons.css config.js cards.js app.js metrics.js assets/link-shopping.webp; do
             curl -fsS "http://127.0.0.1:18080/$file" -o /dev/null
           done
       - name: Choose official release version
