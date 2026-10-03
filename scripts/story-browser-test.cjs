@@ -96,7 +96,7 @@ const { join, resolve } = require('node:path');
     await page.goto(admin);
     await page.waitForFunction(() => document.getElementById('story-clicks').textContent === '4');
     assert.equal(await page.locator('#story-promos').textContent(), '2');
-    const labels = await page.locator('.story-row span').allTextContents();
+    const labels = await page.locator('#story-list .engagement-copy strong').allTextContents();
     assert.deepEqual(labels, ['Promotion renommée', 'Deuxième campagne']);
     assert.equal(errors.length, 0, errors.join('\n'));
     console.log('Story browser journey, clipboard, period/source filters, desktop/mobile, dynamic URL, archive and deletion: OK');

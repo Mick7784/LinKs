@@ -2025,3 +2025,44 @@ button.primary{background:#3B82F6;color:#fff;border-color:#3B82F6;box-shadow:non
 button.primary{color:#0B0F14}button.primary:hover{background:#3B82F6;border-color:#3B82F6;filter:brightness(.95)}
 
 #chart .chart-value.on-bar text{fill:#0B0F14}
+/* Analytics presentation: daily overlays, shared engagement rows and source donut. */
+a.brand{cursor:pointer;text-decoration:none;border-radius:5px;transition:opacity .15s}
+a.brand:hover{opacity:.85}
+a.brand:focus-visible{outline:2px solid var(--focus);outline-offset:4px}
+#chart{position:relative}
+#chart .animated-bar{transform-box:fill-box;transform-origin:center bottom;animation:analytics-rise .5s ease-out both}
+@keyframes analytics-rise{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+#chart .chart-grid{stroke-dasharray:2 5;opacity:.6}
+#chart .chart-value rect{fill:var(--surface);stroke:var(--line);stroke-width:.6}
+#chart .chart-value text{font-weight:650;font-size:10px!important;fill:var(--text)}
+#chart .visits-bar-value rect{stroke:var(--accent)}
+#chart .clicks-bar-value rect{stroke:var(--purple)}
+.chart-tooltip{position:absolute;top:5px;z-index:2;display:grid;gap:4px;min-width:145px;padding:9px 11px;font-size:.72rem;background:var(--surface);border:1px solid var(--line);border-radius:6px;box-shadow:0 4px 12px #0002;pointer-events:none}
+.chart-tooltip[hidden]{display:none}
+.engagement-total{font-size:.74rem;color:var(--muted);white-space:nowrap}
+.engagement-total strong{color:var(--text);font-size:.92rem;margin-right:3px}
+.engagement-note{font-size:.7rem;color:var(--muted);margin:-6px 0 8px}
+.engagement-row{display:flex;align-items:start;justify-content:space-between;gap:16px;padding:12px 0;border-bottom:1px solid var(--line);font-size:.78rem}
+.engagement-row:last-child{border-bottom:0;padding-bottom:0}
+.engagement-copy{min-width:0;display:grid;gap:5px;overflow-wrap:anywhere}
+.engagement-copy strong{font-weight:600}
+.engagement-row small{font-size:.69rem;color:var(--muted);line-height:1.5}
+.engagement-value{display:grid;gap:3px;text-align:right;flex-shrink:0;min-width:46px}
+.engagement-value strong{font-size:1rem;font-variant-numeric:tabular-nums}
+.sources-layout{display:grid;grid-template-columns:180px minmax(0,1fr);gap:16px;align-items:center}
+.donut-wrap svg{display:block;width:180px;height:180px;margin:auto;max-width:100%}
+.donut-total{fill:var(--text);font-size:23px;font-weight:650}
+.donut-caption{fill:var(--muted);font-size:11px}
+.donut-segment{cursor:pointer;transition:opacity .15s}
+.donut-segment:hover,.donut-segment.selected{opacity:.75}
+.donut-segment:focus{outline:none;stroke-width:28px}
+.source-list{min-width:0}
+.source-row{width:100%;display:grid;grid-template-columns:8px minmax(0,1fr) max-content 48px;align-items:center;gap:9px;padding:10px 0;min-height:38px;border:0;border-bottom:1px solid var(--line);background:transparent;border-radius:0;text-align:left;font-size:.73rem;color:var(--text)}
+.source-row:last-child{border-bottom:0}.source-row:hover,.source-row.selected{background:var(--accent-soft)}
+.source-dot{width:7px;height:7px;border-radius:50%}.source-name{overflow-wrap:anywhere}
+.source-row small{text-align:right;color:var(--muted);font-size:.68rem}.source-row strong{font-variant-numeric:tabular-nums}
+.source-detail{font-size:.7rem;color:var(--muted);margin:10px 0 0;min-height:18px;overflow-wrap:anywhere}
+@media(max-width:1100px){.sources-layout{grid-template-columns:1fr;gap:8px}}
+@media(prefers-reduced-motion:reduce){#chart .animated-bar{animation:none}.donut-segment,a.brand{transition:none}}
+#chart .visits-bar{fill:#22D3EE}
+#chart .clicks-bar{fill:#8B5CF6}
