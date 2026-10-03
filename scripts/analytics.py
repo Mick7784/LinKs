@@ -257,7 +257,7 @@ def totals(db):
     return result
 def content_list(archived=False):
     with connection() as db:
-        clicks=totals(db); return [serialize(r,clicks) for r in db.execute("SELECT * FROM content_blocks WHERE archived=? ORDER BY CASE WHEN type IN ('promo','featured') THEN 0 ELSE 1 END,position,created_at",(1 if archived else 0,))]
+        clicks=totals(db); timed=json.loads(instance.get(db,"admin.calendar_timed") or "[]"); return [{**serialize(r,clicks),"calendar_timed":r["id"] in timed} for r in db.execute("SELECT * FROM content_blocks WHERE archived=? ORDER BY CASE WHEN type IN ('promo','featured') THEN 0 ELSE 1 END,position,created_at",(1 if archived else 0,))]
 def button_list():
     with connection() as db:
         clicks=totals(db); result=[]
@@ -329,6 +329,7 @@ def valid_url(value):
     parsed=urlsplit(value);return parsed.scheme in {"http","https","mailto","tel"} and bool(parsed.netloc or parsed.path)
 def block_data(data):
     kind=data.get("type","classic")
+    if "calendar_timed" in data and not isinstance(data["calendar_timed"],bool):raise ValueError("Mode horaire invalide")
     if kind not in TYPES:raise ValueError("Type invalide")
     url=required(data,"url",2000)
     if not valid_url(url):raise ValueError("URL invalide")
@@ -339,7 +340,7 @@ def block_data(data):
     if image and not (image.startswith("/uploads/") or image.startswith("/assets/") or valid_url(image)):raise ValueError("Image invalide")
     start,end=instant(data.get("start_at")),instant(data.get("end_at"))
     if start and end and end<=start:raise ValueError("La fin doit suivre le début")
-    return {"type":kind,"internal_name":required(data,"internal_name"),"title":required(data,"title"),"description":optional(data,"description"),"url":url,"icon":icon,"image":image,"badge":badge,"cta":optional(data,"cta",80),**({"promo_code":optional(data,"promo_code",80)} if "promo_code" in data else {}),"priority":priority,"active":1 if data.get("active",True) else 0,"draft":1 if data.get("draft",False) else 0,"start_at":start.isoformat().replace("+00:00","Z") if start else None,"end_at":end.isoformat().replace("+00:00","Z") if end else None}
+    return {**({"calendar_timed":data["calendar_timed"]} if "calendar_timed" in data else {}),"type":kind,"internal_name":required(data,"internal_name"),"title":required(data,"title"),"description":optional(data,"description"),"url":url,"icon":icon,"image":image,"badge":badge,"cta":optional(data,"cta",80),**({"promo_code":optional(data,"promo_code",80)} if "promo_code" in data else {}),"priority":priority,"active":1 if data.get("active",True) else 0,"draft":1 if data.get("draft",False) else 0,"start_at":start.isoformat().replace("+00:00","Z") if start else None,"end_at":end.isoformat().replace("+00:00","Z") if end else None}
 def promotion_rows(db,exclude_id=None):
     query="SELECT * FROM content_blocks WHERE type IN ('promo','featured') AND active=1 AND draft=0 AND archived=0"
     params=[]
@@ -409,6 +410,7 @@ def valid_metric(key):
 
 def save_content(db,item,item_id=None):
     ensure_promotion_capacity(item,item_id,db)
+    item=dict(item);timed=item.pop("calendar_timed",None)
     stamp=now_iso()
     if item_id:
         if not isinstance(item_id,str) or not db.execute("SELECT 1 FROM content_blocks WHERE id=?",(item_id,)).fetchone():raise ValueError("Bloc introuvable")
@@ -419,6 +421,12 @@ def save_content(db,item,item_id=None):
         pos=db.execute("SELECT COALESCE(MAX(position),-1)+1 FROM content_blocks WHERE archived=0").fetchone()[0]
         values={**item,"id":item_id,"position":pos,"archived":0,"created_at":stamp,"updated_at":stamp}
         db.execute("INSERT INTO content_blocks ("+",".join(values)+") VALUES ("+",".join("?" for _ in values)+")",list(values.values()))
+    if timed is not None:
+        ids=set(json.loads(instance.get(db,"admin.calendar_timed") or "[]"))
+        ids.intersection_update(r[0] for r in db.execute("SELECT id FROM content_blocks"))
+        if timed:ids.add(item_id)
+        else:ids.discard(item_id)
+        instance.put(db,"admin.calendar_timed",json.dumps(sorted(ids)))
     return item_id
 
 BACKUP_TABLES=('content_blocks','top_buttons','settings','counts','story_links','footer_quotes')
@@ -577,6 +585,9 @@ def restore_backup(data):
 
 
 def validate_settings(values):
+    if 'admin.calendar_timed' in values:
+        ids=json.loads(values['admin.calendar_timed'])
+        if not isinstance(ids,list) or any(not isinstance(x,str) or not re.fullmatch(r'[a-f0-9-]{36}',x) for x in ids):raise ValueError('Modes horaires invalides')
     if 'admin.content_order' in values:
         order=json.loads(values['admin.content_order'])
         if not isinstance(order,list) or len(order)!=3 or any(not isinstance(x,str) for x in order) or set(order)!={'classic','video','highlight'}:raise ValueError('Ordre des sections invalide')
@@ -797,7 +808,7 @@ class Handler(BaseHTTPRequestHandler):
         if url.path=="/preview/icons.css":return self.file(STATIC/"icons.css","text/css")
         if url.path=="/preview/style.css":return self.file(ROOT/"site"/"style.css" if (ROOT/"site"/"style.css").exists() else Path("/usr/share/nginx/html/style.css"),"text/css")
         if url.path=="/preview/preview.css":return self.file(ADMIN/"promo-preview.css","text/css")
-        files={"/":("index.html","text/html;charset=utf-8"),"/app.js":("app.js","application/javascript"),"/dates.js":("dates.js","application/javascript"),"/style.css":("style.css","text/css")}
+        files={"/":("index.html","text/html;charset=utf-8"),"/app.js":("app.js","application/javascript"),"/dates.js":("dates.js","application/javascript"),"/calendar.js":("calendar.js","application/javascript"),"/style.css":("style.css","text/css")}
         return self.file(ADMIN/files[url.path][0],files[url.path][1]) if url.path in files else self.send(404)
     def do_POST(self):
         if self.server.admin and self.auth_post():return
@@ -930,7 +941,10 @@ class Handler(BaseHTTPRequestHandler):
             if action=="duplicate":
                 new_id=str(uuid.uuid4());stamp=now_iso();pos=db.execute("SELECT COALESCE(MAX(position),-1)+1 FROM content_blocks").fetchone()[0]
                 db.execute("""INSERT INTO content_blocks(id,type,internal_name,title,description,url,icon,image,badge,cta,position,active,draft,start_at,end_at,archived,created_at,updated_at,priority)
-                  VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",(new_id,row["type"],row["internal_name"]+" (copie)",row["title"],row["description"],row["url"],row["icon"],row["image"],row["badge"],row["cta"],pos,0,1,row["start_at"],row["end_at"],0,stamp,stamp,row["priority"]));db.execute('UPDATE content_blocks SET promo_code=? WHERE id=?',(row['promo_code'],new_id));return self.json(201,{"id":new_id})
+                  VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",(new_id,row["type"],row["internal_name"]+" (copie)",row["title"],row["description"],row["url"],row["icon"],row["image"],row["badge"],row["cta"],pos,0,1,row["start_at"],row["end_at"],0,stamp,stamp,row["priority"]));db.execute('UPDATE content_blocks SET promo_code=? WHERE id=?',(row['promo_code'],new_id))
+                timed=json.loads(instance.get(db,'admin.calendar_timed') or '[]')
+                if item_id in timed:instance.put(db,'admin.calendar_timed',json.dumps(timed+[new_id]))
+                return self.json(201,{"id":new_id})
             if action=="restore":ensure_promotion_capacity(dict(row),item_id,db)
             db.execute("UPDATE content_blocks SET archived=?,updated_at=? WHERE id=?",(1 if action=="archive" else 0,now_iso(),item_id))
         return self.send(204)
