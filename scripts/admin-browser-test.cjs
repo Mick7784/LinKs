@@ -101,7 +101,7 @@ const { join, resolve } = require('node:path');
   const result=await request('/api/content',undefined,'GET');assert(result.items.some(x=>x.draft&&x.internal_name.includes('Guide')));
   // Minimal classic creation: private name derives from title, advanced fields stay available.
   await page.locator('[data-action="new-block"]').click();assert.equal(await page.locator('#block-advanced').getAttribute('open'),null);
-  await page.locator('#block-form [name=title]').fill('Lien simple');await page.locator('#block-form [name=url]').fill('mailto:contact@example.com');
+  await page.locator('#block-form [name=title]').fill('Lien simple');await page.locator('#block-form [name=url]').fill('invalid');await page.locator('#block-dialog button[value=default]').click();await page.locator('#block-feedback').filter({hasText:'URL invalide'}).waitFor();assert(await page.locator('#block-feedback').isVisible());await page.locator('#block-form [name=url]').fill('mailto:contact@example.com');
   await page.frameLocator('#block-preview iframe').locator('.card-title').filter({hasText:'Lien simple'}).waitFor();
   await page.locator('.image-editor details summary').click();await page.locator('#block-form [name=image]').fill('/assets/link-shopping.webp');await page.locator('#block-form [name=image]').dispatchEvent('input');
   await page.frameLocator('#block-preview iframe').locator('.promo-visual img').waitFor();await page.locator('#clear-block-image').click();

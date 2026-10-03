@@ -1,2 +1,145 @@
-:root{color-scheme:dark;font-family:system-ui,sans-serif;background:#0a111e;color:#f1f4fa}*{box-sizing:border-box}[hidden]{display:none!important}body{margin:0;padding:24px 16px}main{max-width:520px;margin:4vh auto;padding:28px;border:1px solid #7acfe533;border-radius:20px;background:#131e2e}h1{color:#7acfe5}h2{font-size:1.25rem}p{color:#b0bdd0;line-height:1.5}label{display:block;margin:16px 0;font-size:.9rem}input{display:block;width:100%;margin-top:7px;padding:12px;border:1px solid #58647a;border-radius:9px;background:#0a111e;color:inherit;font:inherit}.check{display:flex;gap:9px;align-items:center}.check input{width:auto;margin:0}button{padding:12px 18px;border:0;border-radius:10px;background:#7acfe5;color:#0a111e;font-weight:700;cursor:pointer}.actions{display:flex;gap:10px;justify-content:flex-end;margin-top:24px}dt{color:#b0bdd0;margin-top:12px}dd{margin:4px 0;overflow-wrap:anywhere}#feedback{color:#ffb9bd}button:disabled{opacity:.5}input:focus-visible,button:focus-visible{outline:2px solid #b19bdc;outline-offset:3px}@media(max-width:400px){main{padding:20px 16px}.actions{flex-wrap:wrap}}
-body{background:radial-gradient(ellipse at 20% 0%,#31c9e50a,transparent 45%),radial-gradient(ellipse at 85% 80%,#9b5ce60a,transparent 50%),#0b101a}main{background:#131b29;border-color:#29364a;box-shadow:0 20px 70px #0002;padding:32px}.access-brand{display:block;width:min(260px,100%);height:auto;margin-bottom:28px}.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}button{background:linear-gradient(120deg,#65d4e8,#a99af2);color:#0b101a}input{background:#0e1521;border-color:#35445a}h2{letter-spacing:-.025em}.actions button{min-height:44px}.check{line-height:1.5}input[type=file]{max-width:100%}
+:root {
+  color-scheme: dark;
+  font-family: system-ui, sans-serif;
+  background: #0a111e;
+  color: #f1f4fa;
+}
+* {
+  box-sizing: border-box;
+}
+[hidden] {
+  display: none !important;
+}
+body {
+  margin: 0;
+  padding: 24px 16px;
+}
+main {
+  max-width: 520px;
+  margin: 4vh auto;
+  padding: 28px;
+  border: 1px solid #7acfe533;
+  border-radius: 20px;
+  background: #131e2e;
+}
+h1 {
+  color: #7acfe5;
+}
+h2 {
+  font-size: 1.25rem;
+}
+p {
+  color: #b0bdd0;
+  line-height: 1.5;
+}
+label {
+  display: block;
+  margin: 16px 0;
+  font-size: 0.9rem;
+}
+input {
+  display: block;
+  width: 100%;
+  margin-top: 7px;
+  padding: 12px;
+  border: 1px solid #58647a;
+  border-radius: 9px;
+  background: #0a111e;
+  color: inherit;
+  font: inherit;
+}
+.check {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+}
+.check input {
+  width: auto;
+  margin: 0;
+}
+button {
+  padding: 12px 18px;
+  border: 0;
+  border-radius: 10px;
+  background: #7acfe5;
+  color: #0a111e;
+  font-weight: 700;
+  cursor: pointer;
+}
+.actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 24px;
+}
+dt {
+  color: #b0bdd0;
+  margin-top: 12px;
+}
+dd {
+  margin: 4px 0;
+  overflow-wrap: anywhere;
+}
+#feedback {
+  color: #ffb9bd;
+}
+button:disabled {
+  opacity: 0.5;
+}
+input:focus-visible,
+button:focus-visible {
+  outline: 2px solid #b19bdc;
+  outline-offset: 3px;
+}
+@media (max-width: 400px) {
+  main {
+    padding: 20px 16px;
+  }
+  .actions {
+    flex-wrap: wrap;
+  }
+}
+body {
+  background:
+    radial-gradient(ellipse at 20% 0%, #31c9e50a, transparent 45%),
+    radial-gradient(ellipse at 85% 80%, #9b5ce60a, transparent 50%), #0b101a;
+}
+main {
+  background: #131b29;
+  border-color: #29364a;
+  box-shadow: 0 20px 70px #0002;
+  padding: 32px;
+}
+.access-brand {
+  display: block;
+  width: min(260px, 100%);
+  height: auto;
+  margin-bottom: 28px;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+button {
+  background: linear-gradient(120deg, #65d4e8, #a99af2);
+  color: #0b101a;
+}
+input {
+  background: #0e1521;
+  border-color: #35445a;
+}
+h2 {
+  letter-spacing: -0.025em;
+}
+.actions button {
+  min-height: 44px;
+}
+.check {
+  line-height: 1.5;
+}
+input[type="file"] {
+  max-width: 100%;
+}

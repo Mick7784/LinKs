@@ -403,6 +403,15 @@ class AnalyticsTests(unittest.TestCase):
         self.assertEqual(self.a.add_quotes({'text':'After clear'})['added'],1)
 
 
+    def test_saved_trailing_slash_origin_is_normalized_on_restart(self):
+        origin=self.a.ORIGIN
+        with self.a.connection() as db:db.execute("UPDATE settings SET value=? WHERE key='site.url'",(origin+'/',))
+        self.a.init()
+        self.assertEqual(self.a.ORIGIN,origin)
+        public=self.server()
+        self.assertEqual(self.request(public+'/metrics',{'kind':'view'},{'Origin':origin,'Content-Type':'application/json'})[0],204)
+        self.assertEqual(self.request(public+'/metrics',{'kind':'view'},{'Origin':'https://foreign.example','Content-Type':'application/json'})[0],403)
+
     def test_promo_code_copy_snapshot_filters_and_history(self):
         public=self.server(False);item={'id':self.promo(),'internal_name':'Domadoo - Aquara days'}
         with self.a.connection() as db:db.execute("UPDATE content_blocks SET promo_code='OLD' WHERE id=?",(item['id'],))
