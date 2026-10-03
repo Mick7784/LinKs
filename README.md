@@ -73,7 +73,9 @@ Une copie de code est une action, sans indication d’achat. Les compteurs sont 
 
 ## Version actuelle
 
-Version actuelle : **V1.1 — 2 octobre 2026**.
+Version du code : **V1.201** (correctifs de V1.2 ; publication à décider).
+
+Les corrections suivent V1.201, V1.202… ; la prochaine version fonctionnelle est V1.3, suivie de V1.301… Les releases automatiques explicites utilisent `[release]` pour un correctif ou `[release minor]` pour une version fonctionnelle. Un merge ordinaire ne crée pas de release numérotée.
 
 ## Nouveautés V1.1
 
@@ -87,6 +89,14 @@ Version actuelle : **V1.1 — 2 octobre 2026**.
 - Pictogramme Amazon dédié.
 
 ## Historique des versions
+
+### V1.201 — correctifs en préparation
+
+Fond Amazon, aperçu fidèle, images de profil et formulaires ciblés.
+
+### V1.2 — refonte du back office
+
+Navigation et formulaires simplifiés, identité LinKs by DomotiK et fiabilisation de la copie des codes promo.
 
 ### V1.1 — 2 octobre 2026
 

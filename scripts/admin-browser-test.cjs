@@ -72,7 +72,7 @@ const { join, resolve } = require('node:path');
   await page.locator('#block-dialog button[value="default"]').click();await page.waitForFunction(()=>!document.getElementById('block-dialog').open);
   const kept=(await request('/api/content',undefined,'GET')).items.find(x=>x.id===promo.id);assert.equal(kept.title,'Offre partenaire');assert.equal(kept.promo_code,'TEST10');assert.equal(kept.description,'Description historique conservée');assert.equal(kept.cta,'CTA historique');assert.equal(kept.badge,'Partenaire');
   await page.locator('[data-action="new-block"]').click();assert(await page.locator('#block-dialog').isVisible(),await page.locator('#notice').textContent());await page.selectOption('#block-form [name="type"]','promo');
-  await page.locator('#block-advanced summary').click();await page.locator('#block-form [name="internal_name"]').fill('Nouvelle promo minimale');await page.locator('#block-form [name="url"]').fill('https://partner.example/new');await page.locator('#block-form [name="draft"]').check();
+  await page.locator('#block-form [name="internal_name"]').fill('Nouvelle promo minimale');await page.locator('#block-form [name="url"]').fill('https://partner.example/new');await page.locator('#block-form [name="draft"]').check();
   await page.locator('#block-dialog button[value="default"]').click();await page.waitForFunction(()=>!document.getElementById('block-dialog').open);
   assert.equal((await request('/api/content',undefined,'GET')).items.find(x=>x.internal_name==='Nouvelle promo minimale').title,'Nouvelle promo minimale');
   // Both offer types share the simplified editor for creation and editing.
@@ -85,7 +85,7 @@ const { join, resolve } = require('node:path');
       for(const field of ['title','promo_code'])assert(await page.locator('#block-form [name="'+field+'"]').isVisible(),type+' visible '+field);
       const offer=page.frameLocator('#block-preview iframe');
       await offer.locator('.offer-title').waitFor();assert.equal(await offer.locator('.offer-cta').count(),0);
-      if(!existing)await page.locator('#block-advanced summary').click();await page.locator('#block-form [name="internal_name"]').fill('Fallback '+type);
+      await page.locator('#block-form [name="internal_name"]').fill('Fallback '+type);
       await page.locator('#block-form [name="title"]').fill('');
       await page.locator('#block-form [name="url"]').fill('https://example.com/'+type);
       await page.locator('#block-form [name="draft"]').check();
@@ -96,7 +96,7 @@ const { join, resolve } = require('node:path');
     }
   }
   const item=page.locator(`[data-id="${other.id}"]`);
-  await item.locator('[data-action="edit"]').click();for(const field of ['description','icon','badge','cta','title'])assert(await page.locator('#block-form [name="'+field+'"]').isVisible(),'Classic visible '+field);assert(await page.locator('#block-form [name="promo_code"]').isHidden());await page.locator('#block-form [name="title"]').fill('Guide mis à jour');await page.locator('#block-dialog button[value="default"]').click();await page.waitForFunction(()=>!document.getElementById('block-dialog').open);assert.equal((await request('/api/content',undefined,'GET')).items.find(x=>x.id===other.id).title,'Guide mis à jour');
+  await item.locator('[data-action="edit"]').click();for(const field of ['description','icon','title'])assert(await page.locator('#block-form [name="'+field+'"]').isVisible(),'Classic visible '+field);assert(await page.locator('#block-form [name="promo_code"]').isHidden());await page.locator('#block-form [name="title"]').fill('Guide mis à jour');await page.locator('#block-dialog button[value="default"]').click();await page.waitForFunction(()=>!document.getElementById('block-dialog').open);assert.equal((await request('/api/content',undefined,'GET')).items.find(x=>x.id===other.id).title,'Guide mis à jour');
   await item.locator('summary').click();await item.locator('[data-action="duplicate"]').click();await page.waitForFunction(()=>document.getElementById('notice').textContent==='Bloc dupliqué en brouillon.');
   const result=await request('/api/content',undefined,'GET');assert(result.items.some(x=>x.draft&&x.internal_name.includes('Guide')));
   // Minimal classic creation: private name derives from title, advanced fields stay available.

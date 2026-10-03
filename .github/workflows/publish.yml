@@ -42,10 +42,12 @@ jobs:
           "$RUNNER_TEMP/story-browser/node_modules/.bin/playwright" install --with-deps chromium
           python3 scripts/analytics_test.py
           python3 scripts/instance_test.py
+          python3 scripts/release_version_test.py
           node --test scripts/metrics.test.cjs scripts/dates.test.cjs scripts/video-api.test.mjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/instance-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/story-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/admin-browser-test.cjs
+          NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/targeted-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/public-browser-test.cjs
       - name: Build and smoke-test
         shell: bash
