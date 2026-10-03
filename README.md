@@ -1,6 +1,10 @@
 # LinKs · by DomotiK
 
-![LinKs by DomotiK](docs/assets/links-brand.svg)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/links-logo-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/links-logo-light.png">
+  <img src="docs/assets/links-logo-light.png" alt="LinKs by DomotiK" width="320">
+</picture>
 
 LinKs est une page de liens auto-hébergée, personnalisable et accompagnée d’un back office. Elle réunit les liens, réseaux sociaux et offres d’un créateur, d’un projet ou d’une communauté sur une page adaptée aux ordinateurs et aux mobiles.
 
@@ -26,11 +30,24 @@ LinKs est une page de liens auto-hébergée, personnalisable et accompagnée d�
 - Visites, clics, sources, impressions et CTR.
 - Activité des Stories présentée séparément.
 - Copies de codes promo et taux de copie, avec historique du code réellement copié.
-- Filtres par période et par source.
+- Histogramme quotidien : visites en cyan et clics en violet, superposés sur le même axe.
+- Vue de 14 jours par défaut ; périodes de 7, 30 ou 90 jours disponibles, avec conservation des jours sans activité.
+- Valeurs lisibles, repères intermédiaires et détail au survol, au toucher ou au clavier.
+- Répartition des sources en donut, avec total, valeurs et pourcentages.
+- Filtres par période et par source, sans modification des compteurs historiques.
 
 ### Back office
 
-L’administration possède sa propre identité LinKs ; votre page publique conserve votre identité. L’éditeur présente les champs essentiels, un aperçu utilisant le rendu public et des options avancées pour les réglages moins fréquents.
+L’administration possède sa propre identité LinKs ; votre page publique conserve votre identité.
+
+- Navigation latérale sur ordinateur et menu compact sur mobile.
+- Thèmes clair, sombre et système, avec préférence conservée.
+- Dashboard avec visites, clics, CTR, Stories, copies promo et campagnes en cours.
+- Cartes Stories et copies promo harmonisées : totaux en en-tête, métriques alignées et détails secondaires.
+- Formulaire de lien classique centré sur le titre, la description, l’URL, l’icône et l’image ; réglages de campagne présentés séparément.
+- Aperçu utilisant le rendu public, avec image de fond et overlay.
+- Logo et avatar gérés par aperçu, remplacement et retrait.
+- Animations discrètes respectant la préférence de réduction des animations.
 
 Gestion des contenus, campagnes, boutons, paramètres, citations et statistiques. Les citations peuvent être ajoutées individuellement, en masse ou importées depuis un fichier texte, dans une limite de 300.
 
@@ -73,26 +90,36 @@ Une copie de code est une action, sans indication d’achat. Les compteurs sont 
 
 ## Version actuelle
 
-Version du code : **V1.201** (correctifs de V1.2 ; publication à décider).
+Version du code : **V1.201**.
+
+L’image `ghcr.io/mick7784/links:latest` inclut les correctifs et améliorations du dashboard intégrés sur `main`. Elle est publiée pour **AMD64 et ARM64** ; une image `sha-<commit>` permet de sélectionner un build précis. La version applicative reste V1.201 : ces mises à jour n’ont pas créé de nouvelle release officielle.
 
 Les corrections suivent V1.201, V1.202… ; la prochaine version fonctionnelle est V1.3, suivie de V1.301… Les releases automatiques explicites utilisent `[release]` pour un correctif ou `[release minor]` pour une version fonctionnelle. Un merge ordinaire ne crée pas de release numérotée.
 
-## Nouveautés V1.1
+## Dernières mises à jour
 
-- Configuration générique persistante et assistant initial.
-- Connexion locale et maintien de la protection externe.
-- Migration des instances historiques et conservation des assets.
-- Sauvegardes incluant citations, images et nouveaux paramètres.
-- Cartes d’offres cliquables et suivi des copies de codes promo.
-- Dashboard enrichi, éditeur promo / mise en avant corrigé.
-- Citations compactes, limite de 300 et suppression globale.
-- Pictogramme Amazon dédié.
+Les mises à jour intégrées à V1.201 comprennent :
+
+- Back office sobre dans l’esprit d’un dashboard SaaS, avec le K officiel et des logos adaptés aux thèmes clair/sombre.
+- Dashboard analytics : barres quotidiennes rapprochées et animées, lecture des valeurs, tooltips et donut des sources.
+- Présentation uniforme des Stories et codes copiés, avec conservation des données et calculs existants.
+- Logo de l’administration ouvrant le dépôt GitHub du projet.
+- Fond de carte Amazon rétabli et traitement de son icône dédié.
+- Aperçu des liens corrigé, images de profil visibles et séparation des formulaires lien/campagne.
+
+Ces changements concernent principalement l’administration. Ils n’imposent pas l’identité LinKs à la page publique de l’utilisateur.
+
+## Mise à jour et sauvegarde
+
+Effectuer une sauvegarde avant de mettre à jour. Conserver le fichier Compose, le volume `/data`, les images persistantes et la configuration existante ; mettre à jour uniquement le service LinKs. La publication d’une image ne redémarre pas automatiquement votre instance.
+
+Les sauvegardes applicatives v1, v2 et v3 restent compatibles. Le format v3 comprend les contenus, paramètres, statistiques, citations et images référencées. Les comptes administrateur ne sont pas exportés. Voir [installation, migration et sauvegarde](docs/INSTALL.md) pour les précautions et la procédure complète.
 
 ## Historique des versions
 
-### V1.201 — correctifs en préparation
+### V1.201 — correctifs et améliorations de présentation
 
-Fond Amazon, aperçu fidèle, images de profil et formulaires ciblés.
+Fond Amazon, aperçu fidèle, remplacement/retrait des images de profil, formulaires lien/campagne distincts, thèmes et dashboard analytics améliorés. Image disponible via `latest`, sans nouvelle release numérotée pour les mises à jour de présentation.
 
 ### V1.2 — refonte du back office
 
