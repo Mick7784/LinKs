@@ -51,7 +51,7 @@ await page.setViewportSize({width:390,height:844});await page.selectOption('#the
 const today=new Date().toLocaleDateString('en-CA',{timeZone:'Europe/Paris'});
 let fixture={rows:[],stories:[],promo_code_copies:[],campaign_metrics:[]};
 await page.route('**/api/stats?*',route=>route.fulfill({json:fixture}));
-const refresh=async()=>{await page.selectOption('#period','14');await page.waitForTimeout(120);};
+const refresh=async()=>{await page.selectOption('#period','14');await page.waitForFunction(()=>document.querySelectorAll('.chart-bucket').length===14);};
 await refresh();assert.equal(await page.locator('.chart-bucket').count(),14);assert.equal(await page.locator('.animated-bar[height="0"]').count(),28);assert.equal(await page.locator('#sources .donut-segment').count(),0);assert.equal(await page.locator('.engagement-row').count(),0);
 fixture={rows:[{day:today,source:'direct-inconnu',kind:'view',link:'',total:1}],stories:[{promotion_id:'one',label:'Une Story',total:1,source:'instagram-story',day:today}],promo_code_copies:[{id:'one',name:'Une offre',code:'CODE',source:'direct-inconnu',total:1,day:today}],campaign_metrics:[]};
 await page.selectOption('#period','7');await page.waitForFunction(()=>document.querySelector('#story-total').textContent==='1');assert.equal(await page.locator('.engagement-row').count(),2);assert.equal(await page.locator('#promo-copy-list .engagement-copy small').textContent(),'CODE');
