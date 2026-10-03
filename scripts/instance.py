@@ -7,9 +7,9 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 CONFIG_KEYS={'profile.name','profile.tagline','profile.description','profile.logo','profile.avatar',
  'footer.owner','site.url','app.timezone','app.setup_completed','app.config_schema_version',
- 'app.version','app.release_id','content.initialized','video.enabled','video.channel_id',
+ 'admin.content_order','app.version','app.release_id','content.initialized','video.enabled','video.channel_id',
  'analytics.enabled','analytics.source_rules','analytics.metric_aliases','auth.mode'}
-DEFAULTS={'profile.name':'Links','profile.tagline':'','profile.description':'','profile.logo':'',
+DEFAULTS={'admin.content_order':'["classic","video","highlight"]','profile.name':'Links','profile.tagline':'','profile.description':'','profile.logo':'',
  'profile.avatar':'','footer.owner':'','site.url':'','app.timezone':'UTC','video.enabled':'false',
  'video.channel_id':'','analytics.enabled':'false','analytics.source_rules':'[]',
  'analytics.metric_aliases':'{}','auth.mode':'local','app.setup_completed':'false',

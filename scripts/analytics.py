@@ -228,6 +228,7 @@ def story_link(promotion_id):
 def profile(db):
     values=instance.settings(db)
     return {**{k:values.get("profile."+k,"") for k in ["name","tagline","description","avatar","logo"]},
+      "content_order":json.loads(values.get("admin.content_order",'["classic","video","highlight"]')),
       "app_version":values.get("app.version",""),"footer_owner":values.get("footer.owner",values.get("profile.name","")),
       "site_url":values.get("site.url",""),"timezone":values.get("app.timezone","UTC"),
       "analytics_enabled":values.get("analytics.enabled")=="true","video_enabled":values.get("video.enabled")=="true",
@@ -275,7 +276,7 @@ def public_config():
     result["setup_completed"]=result["profile"]["setup_completed"]
     result["timezone"]=result["profile"]["timezone"]
     result["analytics_enabled"]=result["profile"]["analytics_enabled"]
-    for key in ["auth_mode","source_rules","video_channel_id"]:result["profile"].pop(key,None)
+    for key in ["auth_mode","source_rules","video_channel_id","content_order"]:result["profile"].pop(key,None)
     return result
 
 def write_public_fallback():
@@ -576,6 +577,9 @@ def restore_backup(data):
 
 
 def validate_settings(values):
+    if 'admin.content_order' in values:
+        order=json.loads(values['admin.content_order'])
+        if not isinstance(order,list) or len(order)!=3 or any(not isinstance(x,str) for x in order) or set(order)!={'classic','video','highlight'}:raise ValueError('Ordre des sections invalide')
     if 'site.url' in values:values['site.url']=instance.site_url(values['site.url'],allow_empty=True)
     if 'app.timezone' in values:instance.timezone_name(values['app.timezone'])
     if 'analytics.source_rules' in values:instance.source_rules(values['analytics.source_rules'])
@@ -587,6 +591,14 @@ def validate_settings(values):
         if not isinstance(aliases,dict) or any(not isinstance(k,str) or not isinstance(v,str) or not v.startswith(('block:','button:')) for k,v in aliases.items()):raise ValueError('Correspondances statistiques invalides')
 
 def configuration_input(data):
+    if data and set(data)<= {'content_order','video_enabled'}:
+        values={}
+        if 'content_order' in data:values['admin.content_order']=json.dumps(data['content_order'])
+        if 'video_enabled' in data:
+            if type(data['video_enabled']) is not bool:raise ValueError('Choix invalide')
+            values['video.enabled']='true' if data['video_enabled'] else 'false'
+        validate_settings(values)
+        return values
     values={'profile.name':required(data,'name',120),'profile.tagline':optional(data,'tagline',200),'profile.description':optional(data,'description',300)}
     for key,limit in [('avatar',2048),('logo',2048),('footer_owner',120),('site_url',2048),('timezone',100),('video_channel_id',100)]:
         if key in data:values[{'avatar':'profile.avatar','logo':'profile.logo','footer_owner':'footer.owner','site_url':'site.url','timezone':'app.timezone','video_channel_id':'video.channel_id'}[key]]=optional(data,key,limit)
