@@ -464,6 +464,38 @@ class AnalyticsTests(unittest.TestCase):
         final=json.loads(self.request(admin+'/api/settings')[1])
         self.assertFalse(final['video_enabled']);self.assertEqual(final['name'],before['name'])
 
+    def test_shortcuts_additive_migration_and_legacy_backup(self):
+        with self.a.connection() as db:
+            db.execute("INSERT INTO counts VALUES('2026-10-04','direct','click','button:legacy-button-2',7)")
+            db.execute("UPDATE top_buttons SET active=0 WHERE id='legacy-button-1'")
+            before=[tuple(r) for r in db.execute('SELECT id,icon,label,url,position,active,created_at,updated_at FROM top_buttons ORDER BY position')]
+            db.execute('ALTER TABLE top_buttons DROP COLUMN custom_icon')
+        self.a.init();self.a.init()
+        with self.a.connection() as db:
+            self.assertEqual(before,[tuple(r) for r in db.execute('SELECT id,icon,label,url,position,active,created_at,updated_at FROM top_buttons ORDER BY position')])
+            self.assertTrue(all(not r[0] for r in db.execute('SELECT custom_icon FROM top_buttons')))
+        self.assertEqual(self.a.button_list()[2]['clicks'],7)
+        backup=json.loads(self.a.export_backup())
+        for row in backup['tables']['top_buttons']:row.pop('custom_icon')
+        self.a.restore_backup(backup)
+        self.assertEqual(self.a.button_list()[2]['clicks'],7)
+        self.assertEqual(self.a.button_list()[2]['id'],'legacy-button-2')
+
+    def test_shortcut_upload_validation_and_portable_backup(self):
+        admin=self.server(True)
+        for mime,raw in [('image/svg+xml',b'<svg/>'),('image/png',b'not an image'),('image/webp',b'RIFFxxxxWEBP'+b'x'*(1024*1024))]:
+            self.assertEqual(self.request(admin+'/api/upload',{'type':mime,'data':base64.b64encode(raw).decode(),'purpose':'icon'})[0],400)
+        raw=(Path(__file__).parent.parent/'site/assets/link-shopping.webp').read_bytes()
+        status,body=self.request(admin+'/api/upload',{'type':'image/webp','data':base64.b64encode(raw).decode(),'purpose':'icon'});self.assertEqual(status,201)
+        image=json.loads(body)['url']
+        for url in ['https://example.com','http://example.com','mailto:test@example.com','tel:+33123456789','#contact']:
+            status,body=self.request(admin+'/api/buttons',{'icon':'email','label':url,'url':url,'custom_icon':image});self.assertEqual(status,201,body)
+        for url in ['javascript:alert(1)','# bad']:
+            self.assertEqual(self.request(admin+'/api/buttons',{'icon':'mail','label':'Bad','url':url})[0],400)
+        backup=json.loads(self.a.export_backup());self.a.restore_backup(backup)
+        for item in self.a.button_list()[3:]:
+            self.assertEqual(item['icon'],'mail');self.assertEqual((self.a.UPLOADS/item['custom_icon'].split('/')[-1]).read_bytes(),raw)
+
 if __name__=='__main__':unittest.main()
 
 

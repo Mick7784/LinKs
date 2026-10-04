@@ -61,7 +61,7 @@ class ThemeTests(unittest.TestCase):
   for i in range(3):self.save(theme=self.custom())
   with self.a.connection() as db,self.assertRaises(ValueError):themes.import_package(db,package,self.a.UPLOADS)
  def test_system_background_and_icons(self):
-  self.assertEqual(len(themes.BACKGROUNDS),12)
+  self.assertEqual(len(themes.BACKGROUNDS),18)
   for asset in themes.LIBRARY['backgrounds']:self.assertTrue((themes.STATIC/asset['url'][1:]).exists())
   data={'type':'classic','internal_name':'Test','title':'Test','url':'https://example.com','image':'system:shopping','icon':'homeassistant'}
   self.assertEqual(self.a.block_data(data)['image'],'system:shopping');self.assertEqual(self.a.block_data(data)['icon'],'homeassistant')

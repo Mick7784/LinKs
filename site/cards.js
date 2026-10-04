@@ -62,9 +62,10 @@ function icon(name, cls = "") {
 }
 function validUrl(value) {
   if (!value) return false;
+  if (/^#[A-Za-z][\w:-]*$/.test(value)) return true;
   try {
     return (
-      ["https:", "mailto:", "tel:"].includes(new URL(value).protocol) ||
+      ["http:", "https:", "mailto:", "tel:"].includes(new URL(value).protocol) ||
       value.startsWith("#")
     );
   } catch {
@@ -311,3 +312,7 @@ function externalAction() {
   action.append(icon("arrow"));
   return action;
 }
+
+const LinksIconNames={youtube:'YouTube',instagram:'Instagram',tiktok:'TikTok',discord:'Discord',twitch:'Twitch',facebook:'Facebook',x:'X',threads:'Threads',github:'GitHub',homeassistant:'Home Assistant',amazon:'Amazon',cart:'Boutique',website:'Site web',mail:'Mail',phone:'Téléphone',whatsapp:'WhatsApp',telegram:'Telegram',video:'Vidéo',podcast:'Podcast',blog:'Blog',download:'Téléchargement',calendar:'Calendrier',location:'Localisation',network:'Communauté',link:'Lien',linkedin:'LinkedIn',pinterest:'Pinterest',reddit:'Reddit',snapchat:'Snapchat',contact:'Contact',home:'Maison',tag:'Promotion'};
+function shortcutIcon(item){if(/^\/uploads\/[a-f0-9-]{36}\.(png|jpg|webp|gif)$/.test(item.custom_icon||"")){const img=new Image();img.src=item.custom_icon;img.alt="";img.className="custom-shortcut-icon";return img}return icon(item.platform==="email"?"mail":item.platform||item.icon)}
+function renderShortcut(item){const a=document.createElement("a");a.className="social";a.dataset.metric=item.metricKey||"social:"+item.platform;external(a,item.url);a.setAttribute("aria-label",item.label||item.platform);a.title=item.label||item.platform;a.append(shortcutIcon(item));return a}

@@ -85,6 +85,8 @@ def init():
         db.execute("""CREATE TABLE IF NOT EXISTS top_buttons(
           id TEXT PRIMARY KEY,icon TEXT NOT NULL,label TEXT NOT NULL,url TEXT NOT NULL,position INTEGER NOT NULL,
           active INTEGER NOT NULL DEFAULT 1,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)""")
+        if "custom_icon" not in {row[1] for row in db.execute("PRAGMA table_info(top_buttons)")}:
+            db.execute("ALTER TABLE top_buttons ADD COLUMN custom_icon TEXT NOT NULL DEFAULT ''")
         db.execute("CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL)")
         db.execute("""CREATE TABLE IF NOT EXISTS story_links(
           token TEXT PRIMARY KEY,promotion_id TEXT NOT NULL UNIQUE,name TEXT NOT NULL,
@@ -274,7 +276,7 @@ def public_config():
         blocks=[serialize(r) for r in db.execute("SELECT * FROM content_blocks WHERE archived=0 ORDER BY CASE WHEN type IN ('promo','featured') THEN 0 ELSE 1 END,CASE WHEN priority='high' THEN 0 ELSE 1 END,position,created_at") if status_of(r)=="Actif"]
         quote=db.execute("SELECT text FROM footer_quotes WHERE active=1 ORDER BY RANDOM() LIMIT 1").fetchone()
         buttons=[dict(r) for r in db.execute("SELECT * FROM top_buttons WHERE active=1 ORDER BY position,created_at")]
-        result={"profile":profile(db),"socials":[{"id":x["id"],"platform":x["icon"],"label":x["label"],"url":x["url"],"metricKey":"button:"+x["id"]} for x in buttons],
+        result={"profile":profile(db),"socials":[{"id":x["id"],"platform":x["icon"],"custom_icon":x["custom_icon"],"label":x["label"],"url":x["url"],"metricKey":"button:"+x["id"]} for x in buttons],
                 "links":[{"id":x["id"],"type":x["type"],"title":x["title"],"description":x["description"],"url":x["url"],"icon":x["icon"],"image":x["image"],"badge":x["badge"],"cta":x["cta"],"priority":x["priority"],"start_at":x["start_at"],"end_at":x["end_at"],"promo_code":x["promo_code"],"metricKey":"block:"+x["id"]} for x in blocks]}
         result["appearance"]=themes.public(db)
         result["profile"]["footer_quote"]=quote["text"] if quote else ""
@@ -402,12 +404,14 @@ def ensure_promotion_capacity(item,exclude_id=None,db=None):
     if not check["allowed"]:raise ValueError("Limite de 3 promotions simultanées dépassée")
     return check
 def button_data(data):
-    icon=data.get("icon","website");url=required(data,"url",2000)
+    icon=data.get("icon","website");icon="mail" if icon=="email" else icon;url=required(data,"url",2000)
+    custom_icon=optional(data,"custom_icon",200)
+    if custom_icon and not re.fullmatch(r"/uploads/[a-f0-9-]{36}\.(png|jpg|webp|gif)",custom_icon):raise ValueError("Icône personnelle invalide")
     if icon not in ICONS:raise ValueError("Icône invalide")
     if url.startswith("#"):
         if not re.fullmatch(r"#[A-Za-z][\w:-]*",url):raise ValueError("Ancre invalide")
     elif not valid_url(url):raise ValueError("URL invalide")
-    return {"icon":icon,"label":required(data,"label",100),"url":url,"active":1 if data.get("active",True) else 0}
+    return {"icon":icon,"custom_icon":custom_icon,"label":required(data,"label",100),"url":url,"active":1 if data.get("active",True) else 0}
 def valid_metric(key):
     if key=="latest-video":return True
     table,prefix=("content_blocks","block:") if key.startswith("block:") else (("top_buttons","button:") if key.startswith("button:") else (None,None))
@@ -444,6 +448,7 @@ def export_backup():
     with DATA_LOCK,connection() as db:
         tables={table:[dict(row) for row in db.execute('SELECT * FROM '+table)] for table in BACKUP_TABLES}
         references={r['image'] for r in tables['content_blocks']}
+        references.update(r['custom_icon'] for r in tables['top_buttons'])
         references.update(r['value'] for r in tables['settings'] if r['key'] in {'profile.avatar','profile.logo'})
         references.update(themes.references(themes.state(db)['items'][1:]))
         images={};size=0
@@ -510,6 +515,7 @@ def restore_backup(data):
                 if len(keys)!=len(set(keys)):raise ValueError('Identifiants en double : '+table)
                 for row in rows:
                     if table=='content_blocks' and isinstance(row,dict) and 'promo_code' not in row:row['promo_code']=''
+                    if table=='top_buttons' and isinstance(row,dict) and 'custom_icon' not in row:row['custom_icon']=''
                     if not isinstance(row,dict) or set(row)!=set(columns):raise ValueError('Structure incompatible : '+table)
                     for column in schema:
                         value=row[column['name']]
@@ -564,6 +570,10 @@ def restore_backup(data):
                 if row['image'].startswith('/uploads/'):
                     if row['image'] not in mapping:raise ValueError('Image manquante dans la sauvegarde')
                     row['image']=mapping[row['image']]
+            for row in tables['top_buttons']:
+                if row['custom_icon']:
+                    if row['custom_icon'] not in mapping:raise ValueError('Icône personnelle manquante')
+                    row['custom_icon']=mapping[row['custom_icon']]
             for row in tables['settings']:
                 if row['key'] in {'profile.avatar','profile.logo'} and row['value'].startswith('/uploads/'):
                     if row['value'] not in mapping:raise ValueError('Image de profil manquante')
@@ -881,7 +891,7 @@ class Handler(BaseHTTPRequestHandler):
         if url.path=="/preview/style.css":return self.file(ROOT/"site"/"style.css" if (ROOT/"site"/"style.css").exists() else Path("/usr/share/nginx/html/style.css"),"text/css")
         if url.path=="/preview/preview.css":return self.file(ADMIN/"promo-preview.css","text/css")
         if url.path.startswith("/preview/") and url.path[9:] in {"index.html","app.js","config.js","metrics.js","theme.js","theme.css","theme-tokens.json","asset-library.json"}:return self.file(STATIC/url.path[9:])
-        if url.path in {"/appearance.js","/appearance.css"}:return self.file(ADMIN/url.path[1:])
+        if url.path in {"/appearance.js","/appearance.css","/shortcuts.js"}:return self.file(ADMIN/url.path[1:])
         files={"/":("index.html","text/html;charset=utf-8"),"/app.js":("app.js","application/javascript"),"/dates.js":("dates.js","application/javascript"),"/calendar.js":("calendar.js","application/javascript"),"/style.css":("style.css","text/css")}
         return self.file(ADMIN/files[url.path][0],files[url.path][1]) if url.path in files else self.send(404)
     def do_POST(self):
@@ -1041,18 +1051,24 @@ class Handler(BaseHTTPRequestHandler):
                 db.execute(f"UPDATE {table} SET position=?,updated_at=? WHERE id=?",(pos,now_iso(),item_id))
         return self.send(204)
     def create_button(self,data):
-        item=button_data(data);item_id=str(uuid.uuid4());stamp=now_iso()
-        with connection() as db:pos=db.execute("SELECT COALESCE(MAX(position),-1)+1 FROM top_buttons").fetchone()[0];db.execute("INSERT INTO top_buttons VALUES(?,?,?,?,?,?,?,?)",(item_id,item["icon"],item["label"],item["url"],pos,item["active"],stamp,stamp))
+        item=button_data(data)
+        if item['custom_icon'] and not (UPLOADS/Path(item['custom_icon']).name).is_file():raise ValueError('Icône personnelle introuvable')
+        item_id=str(uuid.uuid4());stamp=now_iso()
+        with connection() as db:pos=db.execute("SELECT COALESCE(MAX(position),-1)+1 FROM top_buttons").fetchone()[0];db.execute("INSERT INTO top_buttons(id,icon,label,url,position,active,created_at,updated_at,custom_icon) VALUES(?,?,?,?,?,?,?,?,?)",(item_id,item["icon"],item["label"],item["url"],pos,item["active"],stamp,stamp,item["custom_icon"]))
         return self.json(201,{"id":item_id})
     def update_button(self,item_id,data):
         item=button_data(data)
-        with connection() as db:changed=db.execute("UPDATE top_buttons SET icon=?,label=?,url=?,active=?,updated_at=? WHERE id=?",(item["icon"],item["label"],item["url"],item["active"],now_iso(),item_id)).rowcount
+        if item['custom_icon'] and not (UPLOADS/Path(item['custom_icon']).name).is_file():raise ValueError('Icône personnelle introuvable')
+        with connection() as db:changed=db.execute("UPDATE top_buttons SET icon=?,label=?,url=?,active=?,updated_at=?,custom_icon=? WHERE id=?",(item["icon"],item["label"],item["url"],item["active"],now_iso(),item["custom_icon"],item_id)).rowcount
         return self.send(204) if changed else self.send(404)
     def upload(self,data):
         mime=data.get("type","");encoded=data.get("data","")
         if mime not in IMAGE_TYPES or not isinstance(encoded,str):raise ValueError("Format d’image non pris en charge")
         raw=base64.b64decode(encoded.split(",",1)[-1],validate=True)
         if not raw or len(raw)>4*1024*1024:raise ValueError("Image vide ou supérieure à 4 Mo")
+        if data.get("purpose")=="icon":
+            if len(raw)>1024*1024:raise ValueError("Icône supérieure à 1 Mo")
+            if not themes.image_valid(raw,IMAGE_TYPES[mime][1:]):raise ValueError("Le contenu ne correspond pas au format image")
         name=str(uuid.uuid4())+IMAGE_TYPES[mime];(UPLOADS/name).write_bytes(raw);return self.json(201,{"url":"/uploads/"+name})
     def save_settings(self,data):
         values=configuration_input(data)

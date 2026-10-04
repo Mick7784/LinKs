@@ -6,84 +6,144 @@
       "name": "Communauté",
       "category": "Communauté",
       "url": "/assets/link-community.webp",
-      "existing": true
+      "existing": true,
+      "family": "links"
     },
     {
       "id": "creator",
       "name": "Créateur",
       "category": "Créateur / réseaux sociaux",
       "url": "/assets/link-instagram.webp",
-      "existing": true
+      "existing": true,
+      "family": "links"
     },
     {
       "id": "smarthome",
       "name": "Domotique",
       "category": "Tech / domotique",
       "url": "/assets/link-smarthome.webp",
-      "existing": true
+      "existing": true,
+      "family": "links"
     },
     {
       "id": "shopping",
       "name": "Boutique",
       "category": "Boutique / promotions",
       "url": "/assets/link-shopping.webp",
-      "existing": true
+      "existing": true,
+      "family": "links"
     },
     {
       "id": "collaboration",
       "name": "Collaboration",
       "category": "Pro / contact",
       "url": "/assets/link-collaboration.webp",
-      "existing": true
+      "existing": true,
+      "family": "links"
     },
     {
       "id": "studio",
       "name": "Studio",
       "category": "Générique / abstrait",
       "url": "/assets/studio-links.webp",
-      "existing": true
+      "existing": true,
+      "family": "links"
     },
     {
       "id": "network",
       "name": "Réseau",
       "category": "Communauté",
       "url": "/assets/background-network.svg",
-      "existing": false
+      "existing": false,
+      "family": "gradient"
     },
     {
       "id": "video",
       "name": "Vidéo",
       "category": "Créateur / réseaux sociaux",
       "url": "/assets/background-video.svg",
-      "existing": false
+      "existing": false,
+      "family": "gradient"
     },
     {
       "id": "technology",
       "name": "Technologie",
       "category": "Tech / domotique",
       "url": "/assets/background-technology.svg",
-      "existing": false
+      "existing": false,
+      "family": "gradient"
     },
     {
       "id": "offers",
       "name": "Offres",
       "category": "Boutique / promotions",
       "url": "/assets/background-offers.svg",
-      "existing": false
+      "existing": false,
+      "family": "gradient"
     },
     {
       "id": "contact",
       "name": "Contact",
       "category": "Pro / contact",
       "url": "/assets/background-contact.svg",
-      "existing": false
+      "existing": false,
+      "family": "gradient"
     },
     {
       "id": "aurora",
       "name": "Aurore",
       "category": "Générique / abstrait",
       "url": "/assets/background-aurora.svg",
-      "existing": false
+      "existing": false,
+      "family": "gradient"
+    },
+    {
+      "id": "photo-community",
+      "name": "Communauté photo",
+      "category": "Communauté",
+      "url": "/assets/photo-community.webp",
+      "existing": false,
+      "family": "photo"
+    },
+    {
+      "id": "photo-creator",
+      "name": "Créateur photo",
+      "category": "Créateur / réseaux sociaux",
+      "url": "/assets/photo-creator.webp",
+      "existing": false,
+      "family": "photo"
+    },
+    {
+      "id": "photo-technology",
+      "name": "Maison connectée photo",
+      "category": "Tech / domotique",
+      "url": "/assets/photo-technology.webp",
+      "existing": false,
+      "family": "photo"
+    },
+    {
+      "id": "photo-shopping",
+      "name": "Boutique photo",
+      "category": "Boutique / promotions",
+      "url": "/assets/photo-shopping.webp",
+      "existing": false,
+      "family": "photo"
+    },
+    {
+      "id": "photo-professional",
+      "name": "Contact pro photo",
+      "category": "Pro / contact",
+      "url": "/assets/photo-professional.webp",
+      "existing": false,
+      "family": "photo"
+    },
+    {
+      "id": "photo-lifestyle",
+      "name": "Lifestyle photo",
+      "category": "Générique / abstrait",
+      "url": "/assets/photo-lifestyle.webp",
+      "existing": false,
+      "family": "photo"
     }
   ]
 }

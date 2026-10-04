@@ -678,6 +678,70 @@
       "label": "Séparateurs",
       "type": "color",
       "default": "#9cb1cc38"
+    },
+    "--links-social-color": {
+      "group": "Réseaux & raccourcis",
+      "label": "Couleur des raccourcis",
+      "type": "color",
+      "default": "#d7e2ed"
+    },
+    "--links-social-background": {
+      "group": "Réseaux & raccourcis",
+      "label": "Fond des raccourcis",
+      "type": "color",
+      "default": "#1b293baa"
+    },
+    "--links-social-border-color": {
+      "group": "Réseaux & raccourcis",
+      "label": "Bordure des raccourcis",
+      "type": "color",
+      "default": "#9cb1cc24"
+    },
+    "--links-social-border-width": {
+      "group": "Réseaux & raccourcis",
+      "label": "Épaisseur de bordure",
+      "type": "length",
+      "default": 1,
+      "min": 0,
+      "max": 4
+    },
+    "--links-social-icon-size": {
+      "group": "Réseaux & raccourcis",
+      "label": "Taille des pictogrammes sociaux",
+      "type": "length",
+      "default": 21,
+      "min": 16,
+      "max": 40
+    },
+    "--links-social-padding": {
+      "group": "Réseaux & raccourcis",
+      "label": "Marge intérieure des raccourcis",
+      "type": "length",
+      "default": 0,
+      "min": 0,
+      "max": 12
+    },
+    "--links-social-opacity": {
+      "group": "Réseaux & raccourcis",
+      "label": "Opacité des raccourcis",
+      "type": "number",
+      "default": 1,
+      "min": 0.3,
+      "max": 1
+    },
+    "--links-social-glow": {
+      "group": "Réseaux & raccourcis",
+      "label": "Lueur des raccourcis",
+      "type": "number",
+      "default": 0,
+      "min": 0,
+      "max": 0.8
+    },
+    "--links-social-hover-background": {
+      "group": "Réseaux & raccourcis",
+      "label": "Fond au survol des raccourcis",
+      "type": "color",
+      "default": "#253447"
     }
   }
 }

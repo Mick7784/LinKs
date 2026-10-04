@@ -58,7 +58,7 @@ async function start(){
  document.querySelector(".logo-badge").hidden=!profile.logo;document.querySelector(".portrait-wrap").hidden=!profile.avatar&&!profile.logo;
  if(!profile.avatar&&profile.logo){image("profile-avatar",profile.logo);document.querySelector(".logo-badge").hidden=true}
  const favicon=document.getElementById("site-favicon");if(profile.logo)favicon.href=profile.logo;else favicon.removeAttribute("href");
- const socials=document.getElementById("socials");for(const item of (config.socials||[]).filter(x=>validUrl(x.url))){const a=document.createElement("a");a.className="social";a.dataset.metric=item.metricKey||"social:"+item.platform;external(a,item.url);a.setAttribute("aria-label",item.label||item.platform);a.title=item.label||item.platform;a.append(icon(item.platform));socials.append(a)}
+ const socials=document.getElementById("socials");for(const item of (config.socials||[]).filter(x=>validUrl(x.url))){socials.append(renderShortcut(item))}
  const video=document.getElementById("latest-video");if(config.latestVideo)fetch("/latest-video.json",{cache:"no-store"}).then(r=>{if(!r.ok)throw new Error();return r.json()}).then(data=>renderVideo(video,data)).catch(()=>{video.hidden=true});
  const visible=(config.links||[]).filter(x=>validUrl(x.url)),offers=visible.filter(x=>x.type==="promo"||x.type==="featured"),permanent=visible.filter(x=>x.type==="classic");renderOffers(offers);const links=document.getElementById("links");if(permanent.length){decorateSectionTitle("links-title","link");for(const item of permanent)links.append(renderBlock(item));document.getElementById("links-section").hidden=false}document.getElementById("year").textContent=new Intl.DateTimeFormat("fr-FR",{year:"numeric",timeZone:publicTimezone}).format(new Date())
 }
