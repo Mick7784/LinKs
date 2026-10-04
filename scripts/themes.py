@@ -1,5 +1,7 @@
 """Versioned appearance data. Only typed allowlisted tokens reach public CSS."""
 import base64, binascii, json, re, uuid
+import images
+import storage
 from pathlib import Path
 
 FORMAT='links-theme'
@@ -76,7 +78,7 @@ def save(db,data,uploads):
         if incoming['id']==ORIGINAL:raise ValueError('LinKs Original ne peut pas être écrasé')
         if target and incoming['id']!=target:raise ValueError('Identifiant incompatible')
         for ref in references([incoming]):
-            if not (uploads/ref.removeprefix('/uploads/')).is_file():raise ValueError('Image de thème introuvable')
+            storage.require_file(uploads,ref,db)
         found=next((x for x in rows if x['id']==incoming['id']),None)
         if found:rows[rows.index(found)]=incoming
         else:
@@ -115,7 +117,8 @@ def css_import(value):
     return {'tokens':values,'ignored_rules':ignored}
 
 def image_valid(raw,ext):
-    return (ext=='png' and raw.startswith(b'\x89PNG\r\n\x1a\n') or ext=='jpg' and raw.startswith(b'\xff\xd8\xff') or ext=='gif' and raw.startswith((b'GIF87a',b'GIF89a')) or ext=='webp' and raw[:4]==b'RIFF' and raw[8:12]==b'WEBP')
+    try:images.validate(raw,ext);return True
+    except ValueError:return False
 
 def export(theme,uploads):
     assets={}

@@ -14,6 +14,10 @@ for path in ['/brand.svg','/mark.svg']:
 config=call(public,'/api/public-config');assert not config['setup_completed'];assert not config['links'];assert not config['socials']
 call(admin,'/api/setup',{'bootstrap':bootstrap,'username':'smoke-admin','password':'A-long-smoke-password','confirmation':'A-long-smoke-password','name':'Smoke test','link_title':'First link','link_url':'https://example.com','site_url':public,'timezone':'UTC','analytics_enabled':True})
 csrf=call(admin,'/api/auth/status')['csrf'];assert csrf
+assert call(admin,'/api/storage')['grace_days']==7
+assert call(admin,'/api/storage',{'action':'cleanup'},csrf)['unused']==0
+for path in ['/uploads.js','/storage.js']:
+    with opener.open(admin+path) as response:assert response.status==200
 with opener.open(admin+'/shortcuts.js') as response:assert b'LinksShortcuts' in response.read()
 assert len(call(admin,'/api/content')['items'])==1
 call(public,'/metrics',{'kind':'view','source':'youtube'})

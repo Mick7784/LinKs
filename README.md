@@ -104,7 +104,7 @@ Une copie de code est une action, sans indication d’achat. Les compteurs sont 
 
 ## Version actuelle
 
-Version du code : **V1.301**.
+Version du code : **V1.302**.
 
 L’image `ghcr.io/mick7784/links:latest` inclut les correctifs et améliorations du dashboard intégrés sur `main`. Elle est publiée pour **AMD64 et ARM64** ; une image `sha-<commit>` permet de sélectionner un build précis. Chaque publication validée réserve une version persistante et publie également un tag Docker numéroté.
 
@@ -128,6 +128,12 @@ Les mises à jour intégrées à V1.201 comprennent :
 Ces changements concernent principalement l’administration. Ils n’imposent pas l’identité LinKs à la page publique de l’utilisateur.
 
 ## Mise à jour et sauvegarde
+
+### Fichiers personnels et corbeille (V1.302)
+
+Paramètres → Stockage affiche les uploads, leurs tailles et toutes leurs utilisations. Les fichiers inutilisés sont mis en corbeille pour sept jours, puis supprimés automatiquement (vérification au démarrage et chaque heure). Les actions Nettoyer et Vider la corbeille revérifient toutes les références ; la seconde permet une suppression immédiate des fichiers inutilisés après confirmation. Les contenus inactifs, liens archivés, profils, raccourcis et thèmes non actifs protègent leurs fichiers. Les campagnes archivées détachent leur image en conservant leurs autres données et statistiques. Les assets système et historiques dans `/assets/` ne sont jamais nettoyés.
+
+La migration ajoute uniquement la table de suivi `upload_trash` et libère les images des campagnes déjà archivées. Un fichier ancien nouvellement identifié comme orphelin bénéficie du délai complet. Une réutilisation annule la suppression. La sauvegarde JSON contient les images référencées ; sauvegardez aussi le volume `/data` pour conserver la corbeille. Les images importées doivent être décodables et non corrompues : PNG/JPEG/WebP/GIF, 4 Mo maximum (1 Mo pour les nouvelles icônes), 8192 px et 16 millions de pixels maximum. Le runtime Python utilise Pillow, inclus dans Docker.
 
 Effectuer une sauvegarde avant de mettre à jour. Conserver le fichier Compose, le volume `/data`, les images persistantes et la configuration existante ; mettre à jour uniquement le service LinKs. La publication d’une image ne redémarre pas automatiquement votre instance.
 

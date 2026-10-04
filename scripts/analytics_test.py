@@ -1,3 +1,4 @@
+from images_test import raster
 import base64, importlib.util, json, os, tempfile, threading, unittest
 from datetime import date
 from urllib.request import Request, urlopen, build_opener, HTTPRedirectHandler
@@ -216,7 +217,7 @@ class AnalyticsTests(unittest.TestCase):
 
     def test_image_upload_is_persistent_and_publicly_readable(self):
         admin=self.server(True)
-        png=base64.b64encode(b'\x89PNG\r\n\x1a\nminimal-test').decode()
+        png=base64.b64encode(raster()).decode()
         status,body=self.request(admin+'/api/upload',{'type':'image/png','data':png},{'Content-Type':'application/json'})
         self.assertEqual(status,201)
         path=json.loads(body)['url']
@@ -278,7 +279,7 @@ class AnalyticsTests(unittest.TestCase):
 
     def test_backup_roundtrip_including_images_and_counts(self):
         name='12345678-1234-1234-1234-123456789abc.png'
-        raw=b'\x89PNG\r\n\x1a\nbackup-test';(self.a.UPLOADS/name).write_bytes(raw)
+        raw=raster();(self.a.UPLOADS/name).write_bytes(raw)
         with self.a.connection() as db:
             db.execute('UPDATE content_blocks SET image=? WHERE id=?',('/uploads/'+name,'legacy-link-0'))
         self.a.record('click','youtube','block:legacy-link-0')
@@ -311,7 +312,7 @@ class AnalyticsTests(unittest.TestCase):
         from unittest.mock import patch
         backup=json.loads(self.a.export_backup())
         name='12345678-1234-1234-1234-123456789abc.png'
-        backup['images'][name]=base64.b64encode(b'image').decode()
+        backup['images'][name]=base64.b64encode(raster()).decode()
         backup['tables']['content_blocks'][0]['title']='Changed'
         backup['tables']['content_blocks'][0]['image']='/uploads/'+name
         before=self.a.content_list()
@@ -354,23 +355,18 @@ class AnalyticsTests(unittest.TestCase):
         self.assertEqual(self.request(url,method='DELETE')[0],404)
 
 
-    def test_application_version_manual_and_release_restart(self):
+    def test_software_version_is_not_manually_editable(self):
         from unittest.mock import patch
         admin=self.server(True)
-        self.assertEqual(self.a.public_config()['profile']['app_version'],(self.a.ROOT/'VERSION').read_text().strip())
-        for value in ['V2.001','V1.1000','V1.060']:
-            status,body=self.request(admin+'/api/app-version',{'app_version':value})
-            self.assertEqual(status,200);self.assertEqual(self.a.public_config()['profile']['app_version'],value)
-        for value in ['1.046','V1.','V1.046<script>',None]:
-            self.assertEqual(self.request(admin+'/api/app-version',{'app_version':value})[0],400)
-        with patch.dict(os.environ,{'APP_RELEASE_VERSION':'V1.047','APP_RELEASE_ID':'release-a'}):
+        self.assertEqual(self.request(admin+'/api/app-version',{'app_version':'V2.001'})[0],404)
+        with patch.dict(os.environ,{'APP_RELEASE_VERSION':'V1.302','APP_RELEASE_ID':'release-a'}):
             self.a.init()
-            self.assertEqual(self.a.public_config()['profile']['app_version'],'V1.047')
-            self.request(admin+'/api/app-version',{'app_version':'V2.001'})
-            self.a.init()
-            self.assertEqual(self.a.public_config()['profile']['app_version'],'V2.001')
-        backup=json.loads(self.a.export_backup());self.a.restore_backup(backup)
-        self.assertEqual(self.a.public_config()['profile']['app_version'],'V2.001')
+            backup=json.loads(self.a.export_backup())
+            self.assertEqual(backup['software_version'],'V1.302')
+            for row in backup['tables']['settings']:
+                if row['key']=='app.version':row['value']='V1.3'
+            self.a.restore_backup(backup)
+            self.assertEqual(self.a.public_config()['profile']['app_version'],'V1.302')
 
     def test_bundled_version_applied_once(self):
         with self.a.connection() as db:
@@ -380,7 +376,7 @@ class AnalyticsTests(unittest.TestCase):
         self.assertEqual(self.a.public_config()['profile']['app_version'],(self.a.ROOT/'VERSION').read_text().strip())
         with self.a.connection() as db:db.execute("UPDATE settings SET value='V2.1' WHERE key='app.version'")
         self.a.init()
-        self.assertEqual(self.a.public_config()['profile']['app_version'],'V2.1')
+        self.assertEqual(self.a.public_config()['profile']['app_version'],(self.a.ROOT/'VERSION').read_text().strip())
 
     def test_release_increment_keeps_major(self):
         spec=importlib.util.spec_from_file_location('release_version',Path(__file__).with_name('release-version.py'))

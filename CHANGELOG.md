@@ -1,5 +1,38 @@
 # Changelog
 
+## V1.302
+
+### 🐛 Corrections
+
+- Les uploads des liens, campagnes, profils, thèmes et raccourcis restent liés à leur éditeur. Les réponses tardives sont ignorées, l’état d’import est affiché et l’enregistrement est protégé pendant l’opération.
+- Les anciennes dates des liens classiques sont à nouveau visibles, modifiables et supprimables, permettant leur réactivation.
+- Les images sont réellement décodées et contrôlées : PNG, JPEG, WebP et GIF, fichiers corrompus ou tronqués rejetés, limites de taille et de dimensions. La même validation couvre uploads, configuration initiale, thèmes et restaurations.
+- Les adresses d’images non supportées sont refusées sans élargir la CSP. Les pastilles des statistiques affichent leurs couleurs. HEX, sélecteur de couleur et opacité restent synchronisés.
+- Une ancienne sauvegarde ne change plus la version du logiciel affichée. La modification manuelle de version a été retirée. L’ordre des sections est explicitement celui de l’administration.
+
+### ✨ Nouveautés
+
+- Paramètres > Stockage affiche l’espace utilisé, les fichiers personnels, leurs miniatures, leur taille et leurs utilisations, ainsi que la corbeille.
+- Les fichiers inutilisés sont suivis dans une corbeille et supprimés automatiquement après sept jours. Une réutilisation annule leur suppression. Les actions Nettoyer et Vider la corbeille vérifient toutes les références avant suppression ; les assets système sont exclus.
+- L’archivage des campagnes détache leur image tout en conservant noms, dates, URL, codes promo, statistiques et liens Story. Un fichier partagé reste protégé par ses autres utilisations.
+
+### 🎨 Interface
+
+- Les cartes « Offre du moment » gagnent environ 12 % de hauteur sur desktop et 6 % sur mobile. Le dégradé reste limité à la zone texte pour montrer davantage l’image, notamment carrée, sans déplacer le texte du bas de la carte.
+
+### ⚙️ Technique
+
+- Le healthcheck Docker vérifie le backend et SQLite ; `/nginx-healthz` conserve un contrôle séparé de Nginx.
+- Validation d’images avec Pillow et ajout d’une table SQLite additive `upload_trash`. Le suivi automatique tourne au démarrage puis chaque heure, et après les modifications de contenus.
+- Tests de régression sur les réponses tardives, images invalides, anciennes sauvegardes, références partagées, délais de corbeille, campagnes archivées et rendu desktop/mobile. Le smoke Docker provoque puis répare une indisponibilité SQLite pour vérifier le healthcheck réel.
+
+### ⬆️ Mise à jour
+
+- Les identifiants, contenus, statuts et statistiques existants sont conservés. Les campagnes déjà archivées libèrent leur image à la mise à jour ; les fichiers nouvellement identifiés comme inutilisés bénéficient du délai complet de sept jours.
+- Les fichiers historiques valides restent utilisables. Une sauvegarde contenant une image réellement corrompue est refusée sans remplacer les données actuelles.
+- Les sauvegardes restent au format 3 et ajoutent une métadonnée `software_version`, indépendante du numéro de format. Elles contiennent les images référencées, pas la corbeille ; sauvegardez le volume serveur si vous souhaitez conserver aussi les fichiers inutilisés.
+- Comme convenu, la mise en production sur votre serveur se fait après votre pull de la release ou de l’image Docker publiée.
+
 ## V1.301
 
 ### ✨ Nouveautés

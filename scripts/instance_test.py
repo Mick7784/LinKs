@@ -1,3 +1,4 @@
+from images_test import raster
 import base64, contextlib, importlib.util, io, json, os, sqlite3, tempfile, threading, unittest
 from pathlib import Path
 from urllib.request import Request, urlopen
@@ -86,7 +87,7 @@ class InstanceTests(unittest.TestCase):
         with self.a.connection() as db:self.assertFalse(any('ip' in row[1] for row in db.execute('PRAGMA table_info(admin_sessions)')))
     def test_backup_restore_all_tables_uploads_and_legacy_preservation(self):
         admin=self.server();self.setup(admin)
-        raw=b'\x89PNG\r\n\x1a\nfixture';names=['11111111-1111-4111-8111-111111111111.png','22222222-2222-4222-8222-222222222222.png']
+        raw=raster();names=['11111111-1111-4111-8111-111111111111.png','22222222-2222-4222-8222-222222222222.png']
         for name in names:(self.a.UPLOADS/name).write_bytes(raw)
         with self.a.connection() as db:
             self.a.instance.put(db,'profile.logo','/uploads/'+names[0]);self.a.instance.put(db,'profile.avatar','/uploads/'+names[1])
@@ -105,7 +106,7 @@ class InstanceTests(unittest.TestCase):
         self.assertEqual(self.request(admin+'/api/auth/login',{'username':'receiver','password':'A-long-test-password'})[0],200)
         restored=json.loads(self.a.export_backup())
         for table in ['top_buttons','counts','story_links','footer_quotes']:self.assertEqual(restored['tables'][table],before['tables'][table])
-        self.assertEqual(len(restored['tables']['content_blocks']),2);item=self.a.content_list(True)[0];self.assertEqual(item['promo_code'],'NEW');self.assertEqual((self.a.UPLOADS/item['image'][9:]).read_bytes(),raw)
+        self.assertEqual(len(restored['tables']['content_blocks']),2);item=self.a.content_list(True)[0];self.assertEqual(item['promo_code'],'NEW');self.assertEqual(item['image'],'')  # Archived campaigns release only their image reference.
         with self.a.connection() as db:
             copy=db.execute("SELECT link FROM counts WHERE kind='promo_code_copy'").fetchone();self.assertEqual(json.loads(copy[0])['code'],'OLD');self.assertEqual(self.a.instance.get(db,'profile.name'),'Example Creator');self.assertEqual(self.a.instance.get(db,'auth.mode'),'local');self.assertEqual(db.execute('SELECT username FROM admin_accounts').fetchone()[0],'receiver')
         legacy=json.loads(json.dumps(restored));legacy['format']='domotik-links-backup';legacy['version']=1;del legacy['tables']['footer_quotes'];del legacy['tables']['story_links'];legacy['tables']['counts']=[];legacy['tables']['settings']=[r for r in legacy['tables']['settings'] if r['key'].startswith('profile.')]

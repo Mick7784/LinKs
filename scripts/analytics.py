@@ -10,6 +10,8 @@ sys.path.insert(0,str(Path(__file__).resolve().parent))
 import instance
 import youtube
 import themes
+import images as user_images
+import storage
 from urllib.request import urlopen
 
 ROOT=Path(__file__).resolve().parent
@@ -94,24 +96,36 @@ def init():
         db.execute("CREATE TABLE IF NOT EXISTS footer_quotes(id TEXT PRIMARY KEY,text TEXT NOT NULL UNIQUE,active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),created_at TEXT NOT NULL)")
         instance.initialize(db,legacy,CONFIG,[DATA_DIR/"assets",STATIC/"assets"],DATA_DIR)
         themes.initialize(db)
+        storage.initialize(db)
+        # Archived campaigns retain all metadata/statistics, but release their image reference.
+        db.execute("UPDATE content_blocks SET image='' WHERE archived=1 AND type IN ('promo','featured') AND image!=''")
         init_version(db)
         ORIGIN=instance.site_url(instance.get(db,"site.url"),allow_empty=True)
         PARIS=ZoneInfo(instance.get(db,"app.timezone","UTC"))
+        storage.scan(db,UPLOADS)
 
 def checked_version(value):
     if not isinstance(value,str) or not re.fullmatch(r"V[0-9]+\.[0-9]+",value) or len(value)>40:
         raise ValueError("Format attendu : V1.2, V1.201 ou V2.1")
     return value
 
+def software_version():
+    return checked_version(os.environ.get("APP_RELEASE_VERSION") or (ROOT/"VERSION").read_text().strip())
+
 def init_version(db):
-    release=os.environ.get("APP_RELEASE_VERSION") or (ROOT/"VERSION").read_text().strip()
+    release=software_version()
     release_id=os.environ.get("APP_RELEASE_ID") or "bundled:"+release
-    if release:checked_version(release)
-    db.execute("INSERT OR IGNORE INTO settings VALUES('app.version',?)",(release or (ROOT/"VERSION").read_text().strip(),))
-    applied=db.execute("SELECT value FROM settings WHERE key='app.release_id'").fetchone()
-    if release and release_id and (not applied or applied[0]!=release_id):
-        db.execute("INSERT INTO settings VALUES('app.version',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(release,))
-        db.execute("INSERT INTO settings VALUES('app.release_id',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(release_id,))
+    for key,value in [('app.version',release),('app.release_id',release_id)]:
+        db.execute("INSERT INTO settings VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(key,value))
+
+def storage_state(action='scan'):
+    with connection() as db:return storage.scan(db,UPLOADS,action)
+
+def storage_worker():
+    while True:
+        time.sleep(3600)
+        try:storage_state('cleanup')
+        except (OSError,sqlite3.Error,ValueError):print('Links : nettoyage automatique temporairement indisponible.',flush=True)
 
 def analytics_enabled():
     with connection() as db:return instance.get(db,"analytics.enabled")=="true"
@@ -236,7 +250,7 @@ def profile(db):
     values=instance.settings(db)
     return {**{k:values.get("profile."+k,"") for k in ["name","tagline","description","avatar","logo"]},
       "content_order":json.loads(values.get("admin.content_order",'["classic","video","highlight"]')),
-      "app_version":values.get("app.version",""),"footer_owner":values.get("footer.owner",values.get("profile.name","")),
+      "app_version":software_version(),"footer_owner":values.get("footer.owner",values.get("profile.name","")),
       "site_url":values.get("site.url",""),"timezone":values.get("app.timezone","UTC"),
       "analytics_enabled":values.get("analytics.enabled")=="true","video_enabled":values.get("video.enabled")=="true",
       "video_channel_id":values.get("video.channel_id",""),"auth_mode":values.get("auth.mode","local"),
@@ -335,7 +349,16 @@ def optional(data,key,limit=1000):
 def valid_url(value):
     if not isinstance(value,str) or len(value)>2000:return False
     parsed=urlsplit(value);return parsed.scheme in {"http","https","mailto","tel"} and bool(parsed.netloc or parsed.path)
-def block_data(data):
+def supported_image(value):
+    if not value:return True
+    if value.startswith("system:"):return value[7:] in themes.BACKGROUNDS
+    if re.fullmatch(r"/(uploads|assets)/[A-Za-z0-9._-]+",value):return True
+    try:
+        parsed=urlsplit(value)
+        return parsed.scheme=="https" and parsed.netloc=="i.ytimg.com" and not parsed.username and not parsed.password
+    except ValueError:return False
+
+def block_data(data,allow_legacy_image=False):
     kind=data.get("type","classic")
     if "calendar_timed" in data and not isinstance(data["calendar_timed"],bool):raise ValueError("Mode horaire invalide")
     if kind not in TYPES:raise ValueError("Type invalide")
@@ -346,7 +369,7 @@ def block_data(data):
     if badge not in BADGES:raise ValueError("Badge invalide")
     if priority not in {"normal","high"}:raise ValueError("Priorité invalide")
     if image.startswith("system:") and image[7:] not in themes.BACKGROUNDS:raise ValueError("Fond système inconnu")
-    if image and not (image.startswith("system:") or image.startswith("/uploads/") or image.startswith("/assets/") or valid_url(image)):raise ValueError("Image invalide")
+    if image and not supported_image(image) and not (allow_legacy_image and valid_url(image)):raise ValueError("Image non prise en charge : importer une image locale ou choisir un fond LinKs")
     start,end=instant(data.get("start_at")),instant(data.get("end_at"))
     if start and end and end<=start:raise ValueError("La fin doit suivre le début")
     return {**({"calendar_timed":data["calendar_timed"]} if "calendar_timed" in data else {}),"type":kind,"internal_name":required(data,"internal_name"),"title":required(data,"title"),"description":optional(data,"description"),"url":url,"icon":icon,"image":image,"badge":badge,"cta":optional(data,"cta",80),**({"promo_code":optional(data,"promo_code",80)} if "promo_code" in data else {}),"priority":priority,"active":1 if data.get("active",True) else 0,"draft":1 if data.get("draft",False) else 0,"start_at":start.isoformat().replace("+00:00","Z") if start else None,"end_at":end.isoformat().replace("+00:00","Z") if end else None}
@@ -420,6 +443,7 @@ def valid_metric(key):
     return (key.startswith("social:") or key.startswith("link:")) and len(key)<=2048
 
 def save_content(db,item,item_id=None):
+    storage.require_file(UPLOADS,item.get("image"),db)
     ensure_promotion_capacity(item,item_id,db)
     item=dict(item);timed=item.pop("calendar_timed",None)
     stamp=now_iso()
@@ -464,7 +488,7 @@ def export_backup():
         assets={}
         for path in (DATA_DIR/'assets').glob('*'):
             if path.is_file():assets[path.name]=base64.b64encode(path.read_bytes()).decode('ascii')
-        result={'format':'links-backup','version':3,'created_at':now_iso(),'tables':tables,'images':images,'assets':assets}
+        result={'format':'links-backup','version':3,'created_at':now_iso(),'software_version':software_version(),'tables':tables,'images':images,'assets':assets}
         encoded=json.dumps(result,ensure_ascii=False).encode()
         if len(encoded)>BACKUP_LIMIT:raise ValueError('Sauvegarde supérieure à 64 Mo : sauvegarder le volume serveur')
         return encoded
@@ -489,7 +513,7 @@ def restore_backup(data):
     for name,encoded in assets.items():
         if not isinstance(name,str) or not re.fullmatch(r'[A-Za-z0-9._-]+\.(webp|jpg|jpeg|png|gif)',name) or not isinstance(encoded,str):raise ValueError('Asset invalide')
         raw=base64.b64decode(encoded,validate=True)
-        if not 0<len(raw)<=4*1024*1024:raise ValueError('Asset trop volumineux')
+        user_images.validate(raw,Path(name).suffix)
         old=DATA_DIR/'assets'/name
         if old.exists() and old.read_bytes()!=raw:raise ValueError('Asset historique différent : restauration refusée pour conserver son URL')
         asset_bytes[name]=raw
@@ -501,6 +525,7 @@ def restore_backup(data):
         except (ValueError,binascii.Error) as exc:raise ValueError('Image corrompue') from exc
         size+=len(raw)
         if not 0<len(raw)<=4*1024*1024 or size>40*1024*1024:raise ValueError('Images trop volumineuses')
+        user_images.validate(raw,Path(name).suffix)
         new_name=str(uuid.uuid4())+Path(name).suffix
         mapping['/uploads/'+name]='/uploads/'+new_name;decoded[new_name]=raw
     try:
@@ -525,7 +550,7 @@ def restore_backup(data):
                             if type(value) is not int or not 0<=value<2**53:raise ValueError('Compteur ou position invalide')
                         elif not isinstance(value,str) or len(value)>16384:raise ValueError('Texte invalide')
                     if table=='content_blocks':
-                        block_data(row)
+                        block_data(row,allow_legacy_image=True)
                         if any(row[k] not in (0,1) for k in ['active','draft','archived']):raise ValueError('État invalide')
                     elif table=='top_buttons':
                         button_data({**row,'icon':'mail' if row['icon']=='email' else row['icon']})
@@ -602,6 +627,9 @@ def restore_backup(data):
             for name,raw in asset_bytes.items():
                 target=DATA_DIR/'assets'/name
                 if not target.exists():written.append(target);target.write_bytes(raw)
+            init_version(db)
+            db.execute("UPDATE content_blocks SET image='' WHERE archived=1 AND type IN ('promo','featured')")
+            storage.scan(db,UPLOADS)
             db.execute('DELETE FROM admin_sessions')
         with connection() as db:sync_configuration(db)
         return {'blocks':len(tables['content_blocks']),'buttons':len(tables['top_buttons']),'images':len(images)}
@@ -692,8 +720,13 @@ class Handler(BaseHTTPRequestHandler):
         self.response_status=0
         super().handle_one_request()
         if self.server.admin and getattr(self,'command','') in {'POST','PUT','DELETE'} and 200<=self.response_status<300:
-            try:write_public_fallback()
-            except (OSError,sqlite3.Error):print('Links : actualisation du secours public indisponible.',flush=True)
+            path=urlsplit(self.path).path
+            if path.startswith(('/api/content','/api/buttons','/api/appearance','/api/settings','/api/restore','/api/auth/setup','/api/promotions/replace')):
+                try:storage_state()
+                except (OSError,sqlite3.Error,ValueError):print('Links : suivi des fichiers temporairement indisponible.',flush=True)
+            if path not in {'/api/upload','/api/storage','/api/appearance/css','/api/promotions/check','/api/quotes/analyze','/api/youtube/test'}:
+                try:write_public_fallback()
+                except (OSError,sqlite3.Error):print('Links : actualisation du secours public indisponible.',flush=True)
     def send_response(self,code,message=None):
         self.response_status=code
         return super().send_response(code,message)
@@ -771,7 +804,7 @@ class Handler(BaseHTTPRequestHandler):
                     if logo is not None:
                         if not isinstance(logo,dict) or logo.get('type') not in IMAGE_TYPES or not isinstance(logo.get('data'),str):raise ValueError('Logo invalide.')
                         logo_raw=base64.b64decode(logo['data'].split(',',1)[-1],validate=True)
-                        if not 0<len(logo_raw)<=4*1024*1024:raise ValueError('Logo vide ou supérieur à 4 Mo.')
+                        user_images.validate(logo_raw,IMAGE_TYPES[logo["type"]])
                         name=str(uuid.uuid4())+IMAGE_TYPES[logo['type']];values['profile.logo']='/uploads/'+name
                     # No writes happen until all fields and credentials validate.
                     instance.account(db,data.get('username'),data.get('password'))
@@ -852,7 +885,7 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 with connection() as db:db.execute("SELECT total FROM counts LIMIT 1").fetchone()
                 return self.send(200,b"ok","text/plain")
-            except sqlite3.Error:return self.send(503)
+            except (sqlite3.Error,OSError):return self.send(503)
         if self.server.admin and url.path.startswith("/preview/assets/"):
             name=url.path.removeprefix("/preview/assets/")
             if not re.fullmatch(r"[A-Za-z0-9._-]+",name):return self.send(404)
@@ -878,6 +911,7 @@ class Handler(BaseHTTPRequestHandler):
             if url.path=="/api/youtube":return self.json(200,youtube_status())
             if url.path=="/api/quotes":return self.json(200,{"items":quote_list()})
             if url.path=="/api/backup":return self.send(200,export_backup())
+            if url.path=="/api/storage":return self.json(200,storage_state())
             if url.path=="/api/stats":
                 q=parse_qs(url.query);today=datetime.now(PARIS).date();return self.json(200,report(q.get("start",[(today-timedelta(days=29)).isoformat()])[0],q.get("end",[today.isoformat()])[0],q.get("source",[""])[0]))
             if url.path=="/api/content":return self.json(200,{"items":content_list(parse_qs(url.query).get("archived",["0"])[0]=="1")})
@@ -886,12 +920,13 @@ class Handler(BaseHTTPRequestHandler):
                 with connection() as db:return self.json(200,profile(db))
             if url.path=="/api/public-config":return self.json(200,public_config())
         except (ValueError,TypeError) as exc:return self.json(400,{"error":str(exc) or "Paramètres invalides"})
+        except (OSError,sqlite3.Error):return self.json(503,{"error":"Stockage temporairement indisponible."})
         if url.path=="/preview/cards.js":return self.file(STATIC/"cards.js","application/javascript")
         if url.path=="/preview/icons.css":return self.file(STATIC/"icons.css","text/css")
         if url.path=="/preview/style.css":return self.file(ROOT/"site"/"style.css" if (ROOT/"site"/"style.css").exists() else Path("/usr/share/nginx/html/style.css"),"text/css")
         if url.path=="/preview/preview.css":return self.file(ADMIN/"promo-preview.css","text/css")
         if url.path.startswith("/preview/") and url.path[9:] in {"index.html","app.js","config.js","metrics.js","theme.js","theme.css","theme-tokens.json","asset-library.json"}:return self.file(STATIC/url.path[9:])
-        if url.path in {"/appearance.js","/appearance.css","/shortcuts.js"}:return self.file(ADMIN/url.path[1:])
+        if url.path in {"/appearance.js","/appearance.css","/shortcuts.js","/uploads.js","/storage.js"}:return self.file(ADMIN/url.path[1:])
         files={"/":("index.html","text/html;charset=utf-8"),"/app.js":("app.js","application/javascript"),"/dates.js":("dates.js","application/javascript"),"/calendar.js":("calendar.js","application/javascript"),"/style.css":("style.css","text/css")}
         return self.file(ADMIN/files[url.path][0],files[url.path][1]) if url.path in files else self.send(404)
     def do_POST(self):
@@ -908,13 +943,12 @@ class Handler(BaseHTTPRequestHandler):
                 if kind not in {"view","click","impression"} or not isinstance(key,str) or (kind in {"click","impression"} and not valid_metric(key)):raise ValueError()
                 record(kind,source_of(data),key if kind in {"click","impression"} else "");return self.send(204)
             except (ValueError,TypeError,json.JSONDecodeError):return self.send(400)
-            except sqlite3.Error:return self.send(503)
+            except (sqlite3.Error,OSError):return self.send(503)
         try:
             data=self.body(BACKUP_LIMIT if path=="/api/restore" else themes.MAX_BYTES if path=="/api/appearance/import" else 8*1024*1024)
             if path=="/api/appearance/css":return self.json(200,themes.css_import(data.get("css")))
             if path=="/api/appearance":
                 with connection() as db:result=themes.save(db,data,UPLOADS)
-                write_public_fallback()
                 return self.json(200,result)
             if path=="/api/appearance/import":
                 with connection() as db:result=themes.import_package(db,data,UPLOADS)
@@ -936,10 +970,10 @@ class Handler(BaseHTTPRequestHandler):
             if path=="/api/buttons":return self.create_button(data)
             if path=="/api/buttons/reorder":return self.reorder("top_buttons",data)
             if path=="/api/upload":return self.upload(data)
-            if path=="/api/app-version":
-                value=checked_version(data.get("app_version"))
-                with connection() as db:db.execute("INSERT INTO settings VALUES('app.version',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(value,))
-                return self.json(200,{"app_version":value})
+            if path=="/api/storage":
+                action=data.get('action')
+                if action not in {'cleanup','empty'}:raise ValueError('Action de stockage inconnue')
+                return self.json(200,storage_state(action))
             if path=="/api/settings":return self.save_settings(data)
             return self.send(404)
         except (ValueError,TypeError,json.JSONDecodeError,binascii.Error,sqlite3.IntegrityError) as exc:return self.json(400,{"error":str(exc) or "Requête invalide"})
@@ -1041,6 +1075,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json(201,{"id":new_id})
             if action=="restore":ensure_promotion_capacity(dict(row),item_id,db)
             db.execute("UPDATE content_blocks SET archived=?,updated_at=? WHERE id=?",(1 if action=="archive" else 0,now_iso(),item_id))
+            if action=="archive" and row["type"] in {"promo","featured"}:db.execute("UPDATE content_blocks SET image='' WHERE id=?",(item_id,))
         return self.send(204)
     def reorder(self,table,data):
         ids=data.get("ids")
@@ -1052,27 +1087,32 @@ class Handler(BaseHTTPRequestHandler):
         return self.send(204)
     def create_button(self,data):
         item=button_data(data)
-        if item['custom_icon'] and not (UPLOADS/Path(item['custom_icon']).name).is_file():raise ValueError('Icône personnelle introuvable')
         item_id=str(uuid.uuid4());stamp=now_iso()
-        with connection() as db:pos=db.execute("SELECT COALESCE(MAX(position),-1)+1 FROM top_buttons").fetchone()[0];db.execute("INSERT INTO top_buttons(id,icon,label,url,position,active,created_at,updated_at,custom_icon) VALUES(?,?,?,?,?,?,?,?,?)",(item_id,item["icon"],item["label"],item["url"],pos,item["active"],stamp,stamp,item["custom_icon"]))
+        with connection() as db:
+            storage.require_file(UPLOADS,item["custom_icon"],db)
+            pos=db.execute("SELECT COALESCE(MAX(position),-1)+1 FROM top_buttons").fetchone()[0];db.execute("INSERT INTO top_buttons(id,icon,label,url,position,active,created_at,updated_at,custom_icon) VALUES(?,?,?,?,?,?,?,?,?)",(item_id,item["icon"],item["label"],item["url"],pos,item["active"],stamp,stamp,item["custom_icon"]))
         return self.json(201,{"id":item_id})
     def update_button(self,item_id,data):
         item=button_data(data)
-        if item['custom_icon'] and not (UPLOADS/Path(item['custom_icon']).name).is_file():raise ValueError('Icône personnelle introuvable')
-        with connection() as db:changed=db.execute("UPDATE top_buttons SET icon=?,label=?,url=?,active=?,updated_at=?,custom_icon=? WHERE id=?",(item["icon"],item["label"],item["url"],item["active"],now_iso(),item["custom_icon"],item_id)).rowcount
+        with connection() as db:
+            storage.require_file(UPLOADS,item["custom_icon"],db)
+            changed=db.execute("UPDATE top_buttons SET icon=?,label=?,url=?,active=?,updated_at=?,custom_icon=? WHERE id=?",(item["icon"],item["label"],item["url"],item["active"],now_iso(),item["custom_icon"],item_id)).rowcount
         return self.send(204) if changed else self.send(404)
     def upload(self,data):
         mime=data.get("type","");encoded=data.get("data","")
         if mime not in IMAGE_TYPES or not isinstance(encoded,str):raise ValueError("Format d’image non pris en charge")
         raw=base64.b64decode(encoded.split(",",1)[-1],validate=True)
         if not raw or len(raw)>4*1024*1024:raise ValueError("Image vide ou supérieure à 4 Mo")
-        if data.get("purpose")=="icon":
-            if len(raw)>1024*1024:raise ValueError("Icône supérieure à 1 Mo")
-            if not themes.image_valid(raw,IMAGE_TYPES[mime][1:]):raise ValueError("Le contenu ne correspond pas au format image")
-        name=str(uuid.uuid4())+IMAGE_TYPES[mime];(UPLOADS/name).write_bytes(raw);return self.json(201,{"url":"/uploads/"+name})
+        user_images.validate(raw,IMAGE_TYPES[mime],1024*1024 if data.get("purpose")=="icon" else user_images.MAX_BYTES)
+        name=str(uuid.uuid4())+IMAGE_TYPES[mime]
+        with connection() as db:
+            (UPLOADS/name).write_bytes(raw)
+            storage.scan(db,UPLOADS)
+        return self.json(201,{"url":"/uploads/"+name})
     def save_settings(self,data):
         values=configuration_input(data)
         with connection() as db:
+            for key in ["profile.logo","profile.avatar"]:storage.require_file(UPLOADS,values.get(key),db)
             for key,value in values.items():instance.put(db,key,value)
             sync_configuration(db)
         return self.send(204)
@@ -1081,4 +1121,4 @@ class Handler(BaseHTTPRequestHandler):
 def serve(port,admin,host):
     server=ThreadingHTTPServer((host,port),Handler);server.admin=admin;return server
 if __name__=="__main__":
-    init();write_public_fallback();public=serve(3003,False,"127.0.0.1");threading.Thread(target=public.serve_forever,daemon=True).start();serve(8081,True,"0.0.0.0").serve_forever()
+    init();write_public_fallback();threading.Thread(target=storage_worker,daemon=True).start();public=serve(3003,False,"127.0.0.1");threading.Thread(target=public.serve_forever,daemon=True).start();serve(8081,True,"0.0.0.0").serve_forever()

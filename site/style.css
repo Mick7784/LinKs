@@ -134,3 +134,9 @@ footer{text-align:center;display:flex;flex-direction:column;align-items:center;g
 .card[data-icon="amazon"] .card-icon{color:#fff;background:linear-gradient(135deg,#394454,#1a2534)}
 
 .social .custom-shortcut-icon{width:21px;height:21px;object-fit:contain;display:block}
+
+/* V1.302: extra image space; contrast overlay stays confined to the text zone. */
+.carousel-slide .offer-card{min-height:505px;padding-top:165px}
+.carousel-slide .offer-card::after{inset:auto 0 0;height:310px;background:linear-gradient(0deg,#07101bfc 0%,#07101be8 35%,#07101b99 65%,#07101b22 87%,transparent 100%)}
+.offer-copy::before{inset:-24px -26px -35px;background:radial-gradient(ellipse at 30% 75%,#050b14a0 5%,#050b1440 50%,transparent 78%)}
+@media(max-width:599px){.carousel-slide .offer-card{min-height:465px;padding-top:140px}.carousel-slide .offer-card::after{height:300px}}

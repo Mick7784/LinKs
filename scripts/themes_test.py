@@ -1,3 +1,4 @@
+from images_test import raster
 import base64, importlib.util, json, os, sqlite3, tempfile, unittest, uuid
 from pathlib import Path
 from unittest.mock import patch
@@ -44,7 +45,7 @@ class ThemeTests(unittest.TestCase):
   for value in ['body{display:none}',':root{--links-evil:5}',':root{--links-page-width:9999px}',':root{--links-primary:var(--evil)}',':root{--links-page-image:url(https://evil)}']:
    with self.assertRaises(ValueError):themes.css_import(value)
  def test_portable_personal_assets_and_backup(self):
-  raw=base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWZkAAAAASUVORK5CYII=');ref='/uploads/'+str(uuid.uuid4())+'.png';(self.a.UPLOADS/ref[9:]).write_bytes(raw)
+  raw=raster();ref='/uploads/'+str(uuid.uuid4())+'.png';(self.a.UPLOADS/ref[9:]).write_bytes(raw)
   row=self.custom(tokens={'--links-page-image':ref,'--links-card-image':'system:shopping'});self.save(theme=row,publish=True)
   package=themes.export(row,self.a.UPLOADS)
   with self.a.connection() as db:result=themes.import_package(db,package,self.a.UPLOADS)

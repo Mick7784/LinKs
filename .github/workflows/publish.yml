@@ -42,6 +42,9 @@ jobs:
           set -euo pipefail
           npm install --prefix "$RUNNER_TEMP/story-browser" playwright
           "$RUNNER_TEMP/story-browser/node_modules/.bin/playwright" install --with-deps chromium
+          python3 -m pip install Pillow
+          python3 scripts/storage_test.py
+          python3 scripts/images_test.py
           python3 scripts/analytics_test.py
           python3 scripts/instance_test.py
           python3 scripts/release_version_test.py
@@ -59,6 +62,7 @@ jobs:
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/public-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/appearance-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/shortcuts-browser-test.cjs
+          NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/audit-fixes-browser-test.cjs
       - name: Build and smoke-test
         shell: bash
         run: |
@@ -71,6 +75,12 @@ jobs:
             sleep 1
           done
           python3 scripts/smoke.py http://127.0.0.1:18080 http://127.0.0.1:18081 "$(docker exec links-test cat /data/setup-code)"
+          # Nginx alone must never mask a database failure.
+          docker exec links-test python3 -c "import sqlite3; db=sqlite3.connect('/data/analytics.db'); db.execute('ALTER TABLE counts RENAME TO healthcheck_counts'); db.commit(); db.close()"
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18080/healthz)" = 503
+          docker exec links-test python3 -c "import sqlite3; db=sqlite3.connect('/data/analytics.db'); db.execute('ALTER TABLE healthcheck_counts RENAME TO counts'); db.commit(); db.close()"
+          curl -fsS http://127.0.0.1:18080/healthz
+          curl -fsS http://127.0.0.1:18080/nginx-healthz
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18080/api/stats)" = 404
           for file in style.css icons.css config.js cards.js app.js metrics.js theme.js theme.css theme-tokens.json asset-library.json assets/link-shopping.webp assets/background-network.svg assets/photo-community.webp assets/photo-creator.webp assets/photo-technology.webp assets/photo-shopping.webp assets/photo-professional.webp assets/photo-lifestyle.webp; do
             curl -fsS "http://127.0.0.1:18080/$file" -o /dev/null
