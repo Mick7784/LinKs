@@ -56,7 +56,7 @@ class ThemeTests(unittest.TestCase):
    for ref in themes.references(restored['items']):self.assertTrue((self.a.UPLOADS/ref[9:]).exists())
  def test_secure_package_rejection(self):
   package=themes.export(self.custom(),self.a.UPLOADS)
-  for changes in [{'version':2},{'format':'bad'},{'scripts':'alert(1)'},{'assets':{'../evil.svg':'x'}},{'compatibility':{'engine':2}}]:
+  for changes in [{'version':2},{'format':'bad'},{'scripts':'alert(1)'},{'assets':{'../evil.svg':'x'}},{'compatibility':{'engine':2}},{'compatibility':0},{'compatibility':None},{'compatibility':{'engine':True}}]:
    with self.subTest(changes=changes),self.a.connection() as db,self.assertRaises(ValueError):themes.import_package(db,{**package,**changes},self.a.UPLOADS)
   for i in range(3):self.save(theme=self.custom())
   with self.a.connection() as db,self.assertRaises(ValueError):themes.import_package(db,package,self.a.UPLOADS)

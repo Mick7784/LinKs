@@ -127,7 +127,8 @@ def export(theme,uploads):
 
 def import_package(db,package,uploads):
     if not isinstance(package,dict) or package.get('format')!=FORMAT or type(package.get('version')) is not int or package['version']!=VERSION:raise ValueError('Format de thème incompatible')
-    if package.get('compatibility',{}).get('engine')!=1:raise ValueError('Moteur de thème incompatible')
+    compatibility=package.get('compatibility')
+    if not isinstance(compatibility,dict) or set(compatibility)!={'engine'} or type(compatibility.get('engine')) is not int or compatibility['engine']!=1:raise ValueError('Moteur de thème incompatible')
     if set(package)-{'format','version','compatibility','theme','assets'}:raise ValueError('Code ou fichier arbitraire interdit')
     if len(json.dumps(package).encode())>MAX_BYTES:raise ValueError('Thème trop volumineux (12 Mo maximum)')
     incoming=record(package.get('theme'));assets=package.get('assets',{})
