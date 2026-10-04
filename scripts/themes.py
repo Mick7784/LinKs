@@ -149,7 +149,7 @@ def import_package(db,package,uploads):
     written=[]
     try:
         for ref,raw in decoded.items():
-            target=uploads/ref[9:];target.write_bytes(raw);written.append(target)
+            target=uploads/ref[9:];storage.write(target,raw);written.append(target)
         return save(db,{'theme':incoming},uploads)
     except Exception:
         for target in written:target.unlink(missing_ok=True)

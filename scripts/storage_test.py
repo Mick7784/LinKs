@@ -1,4 +1,4 @@
-import base64, importlib.util, json, os, tempfile, threading, unittest, uuid
+import base64, importlib.util, json, os, tempfile, threading, time, unittest, uuid
 from pathlib import Path
 from unittest.mock import patch
 from urllib.request import Request,urlopen
@@ -96,5 +96,72 @@ class StorageTests(unittest.TestCase):
         with self.assertRaises(ValueError):self.a.block_data(item)
         self.assertEqual(self.a.block_data(item,allow_legacy_image=True)['image'],item['image'])
         item['image']='https://i.ytimg.com/vi/test/default.jpg';self.a.block_data(item)
+
+    def test_global_legacy_assets_shared_replacement_and_system_protection(self):
+        assets=self.root/'assets';assets.mkdir(exist_ok=True)
+        old=assets/'old-custom.png';storage.write(old,raster())
+        system=assets/'link-shopping.webp';storage.write(system,(self.a.STATIC/'assets/link-shopping.webp').read_bytes())
+        with self.a.connection() as db:
+            db.execute("UPDATE settings SET value='/assets/old-custom.png' WHERE key='profile.logo'")
+            db.execute("UPDATE content_blocks SET image='/assets/old-custom.png' WHERE id='legacy-link-0'")
+            first=storage.scan(db,self.a.UPLOADS,now=100,assets=assets,system_assets=self.a.STATIC/'assets')
+            item=next(x for x in first['items'] if x['name']=='assets/old-custom.png')
+            self.assertEqual(set(item['categories']),{'profile','links'});self.assertEqual(len(item['uses']),2)
+            self.assertEqual(sum(first['categories'].values()),first['bytes'])
+            self.assertNotIn('assets/link-shopping.webp',[x['name'] for x in first['items']])
+            db.execute("UPDATE settings SET value='' WHERE key='profile.logo'")
+            storage.scan(db,self.a.UPLOADS,'empty',200,assets,self.a.STATIC/'assets')
+            self.assertTrue(old.exists())
+            db.execute("UPDATE content_blocks SET image='' WHERE id='legacy-link-0'")
+            orphan=storage.scan(db,self.a.UPLOADS,now=300,assets=assets,system_assets=self.a.STATIC/'assets')
+            self.assertEqual(orphan['unused'],1)
+            storage.scan(db,self.a.UPLOADS,now=300+storage.GRACE_SECONDS-1,assets=assets,system_assets=self.a.STATIC/'assets')
+            self.assertTrue(old.exists())
+            storage.scan(db,self.a.UPLOADS,now=300+storage.GRACE_SECONDS,assets=assets,system_assets=self.a.STATIC/'assets')
+            self.assertFalse(old.exists());self.assertTrue(system.exists())
+
+    def test_future_owner_protection_and_additive_metadata(self):
+        ref=self.file()
+        with self.a.connection() as db:
+            db.execute("INSERT INTO settings VALUES('future.assets',?)",(json.dumps({'images':[ref]}),))
+            result=storage.scan(db,self.a.UPLOADS,'empty',now=100)
+            item=next(x for x in result['items'] if x['url']==ref)
+            self.assertEqual(item['category'],'other');self.assertIn('future.assets / images',item['uses'])
+            created=item['created_at'];storage.initialize(db)
+            self.assertEqual(storage.scan(db,self.a.UPLOADS,now=200)['items'][0]['created_at'],created)
+        self.assertTrue((self.a.UPLOADS/ref[9:]).exists())
+
+    def test_legacy_asset_reattach_cancels_trash_and_missing_rejected(self):
+        assets=self.root/'assets';assets.mkdir(exist_ok=True);path=assets/'custom.png';storage.write(path,raster())
+        with self.a.connection() as db:
+            storage.scan(db,self.a.UPLOADS,now=100,assets=assets)
+            storage.require_file(self.a.UPLOADS,'/assets/custom.png',db,assets,self.a.STATIC/'assets')
+            db.execute("UPDATE settings SET value='/assets/custom.png' WHERE key='profile.avatar'")
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM upload_trash WHERE name='assets/custom.png'").fetchone()[0],0)
+            storage.scan(db,self.a.UPLOADS,now=100+storage.GRACE_SECONDS,assets=assets)
+            self.assertTrue(path.exists())
+            with self.assertRaises(ValueError):storage.require_file(self.a.UPLOADS,'/assets/missing.png',db,assets,self.a.STATIC/'assets')
+
+    def test_snapshot_changes_only_with_public_data_and_stable_quotes(self):
+        self.a.add_quotes({'text':'One\nTwo'})
+        target=self.root/'public-fallback.json'
+        self.assertTrue(self.a.write_public_fallback());before=target.read_bytes();stamp=target.stat().st_mtime_ns
+        for _ in range(5):self.assertFalse(self.a.write_public_fallback())
+        self.assertEqual(target.stat().st_mtime_ns,stamp)
+        with self.a.connection() as db:
+            db.execute("UPDATE content_blocks SET internal_name='Private label' WHERE id='legacy-link-0'")
+        self.assertFalse(self.a.write_public_fallback());self.assertEqual(target.read_bytes(),before)
+        self.assertEqual(self.request('/api/settings',{'name':'Test Creator','tagline':'Visible change'})[0],204)
+        for _ in range(100):
+            if target.read_bytes()!=before:break
+            time.sleep(.01)
+        self.assertNotEqual(target.read_bytes(),before)
+        for path in ['/api/storage','/api/upload','/api/auth/access','/api/quotes/analyze','/api/youtube/test','/api/appearance/css']:
+            self.assertFalse(self.a.public_mutation(path),path)
+
+    def test_overview_excludes_lists_and_private_secrets(self):
+        status,raw=self.request('/api/settings/overview');self.assertEqual(status,200)
+        data=json.loads(raw);self.assertIn('storage',data);self.assertIn('quotes',data)
+        self.assertNotIn('items',data['storage']);self.assertNotIn('api_key',raw.decode())
 
 if __name__=='__main__':unittest.main()

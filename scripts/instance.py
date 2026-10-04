@@ -1,5 +1,6 @@
 """Instance configuration and admin authentication; no production defaults."""
 import base64, hashlib, hmac, json, os, re, secrets, time
+import storage
 from pathlib import Path
 from http.cookies import SimpleCookie
 from urllib.parse import urlsplit
@@ -94,7 +95,7 @@ def initialize(db,legacy,config,asset_dirs,data_dir):
             candidates=[Path(p)/name for p in asset_dirs]
             origin=next((p for p in candidates if p.is_file()),None)
             if not origin:raise RuntimeError('Migration interrompue : asset historique manquant. Exécuter preserve-instance.py sur l’ancienne image avant la mise à jour.')
-            target.write_bytes(origin.read_bytes())
+            storage.write(target,origin.read_bytes())
         aliases=saved.get('metric_aliases',{})
         if not aliases:
             for collection,prefix,idprefix,label in [('links','block:','legacy-link-','title'),('socials','button:','legacy-button-','label')]:

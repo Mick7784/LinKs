@@ -63,6 +63,7 @@ jobs:
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/appearance-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/shortcuts-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/audit-fixes-browser-test.cjs
+          NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/optimization-browser-test.cjs
       - name: Build and smoke-test
         shell: bash
         run: |

@@ -102,7 +102,7 @@ def init():
         init_version(db)
         ORIGIN=instance.site_url(instance.get(db,"site.url"),allow_empty=True)
         PARIS=ZoneInfo(instance.get(db,"app.timezone","UTC"))
-        storage.scan(db,UPLOADS)
+        storage.scan(db,UPLOADS,assets=DATA_DIR/'assets',system_assets=STATIC/'assets')
 
 def checked_version(value):
     if not isinstance(value,str) or not re.fullmatch(r"V[0-9]+\.[0-9]+",value) or len(value)>40:
@@ -119,7 +119,7 @@ def init_version(db):
         db.execute("INSERT INTO settings VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(key,value))
 
 def storage_state(action='scan'):
-    with connection() as db:return storage.scan(db,UPLOADS,action)
+    with connection() as db:return storage.scan(db,UPLOADS,action,assets=DATA_DIR/'assets',system_assets=STATIC/'assets')
 
 def storage_worker():
     while True:
@@ -285,10 +285,10 @@ def button_list():
         for row in db.execute("SELECT * FROM top_buttons ORDER BY position,created_at"):
             item=dict(row);item["active"]=bool(item["active"]);item["clicks"]=clicks.get(("click","button:"+item["id"]),0);result.append(item)
         return result
-def public_config():
+def public_config(snapshot=False):
     with connection() as db:
         blocks=[serialize(r) for r in db.execute("SELECT * FROM content_blocks WHERE archived=0 ORDER BY CASE WHEN type IN ('promo','featured') THEN 0 ELSE 1 END,CASE WHEN priority='high' THEN 0 ELSE 1 END,position,created_at") if status_of(r)=="Actif"]
-        quote=db.execute("SELECT text FROM footer_quotes WHERE active=1 ORDER BY RANDOM() LIMIT 1").fetchone()
+        quote=db.execute("SELECT text FROM footer_quotes WHERE active=1 ORDER BY " + ("created_at,id" if snapshot else "RANDOM()") + " LIMIT 1").fetchone()
         buttons=[dict(r) for r in db.execute("SELECT * FROM top_buttons WHERE active=1 ORDER BY position,created_at")]
         result={"profile":profile(db),"socials":[{"id":x["id"],"platform":x["icon"],"custom_icon":x["custom_icon"],"label":x["label"],"url":x["url"],"metricKey":"button:"+x["id"]} for x in buttons],
                 "links":[{"id":x["id"],"type":x["type"],"title":x["title"],"description":x["description"],"url":x["url"],"icon":x["icon"],"image":x["image"],"badge":x["badge"],"cta":x["cta"],"priority":x["priority"],"start_at":x["start_at"],"end_at":x["end_at"],"promo_code":x["promo_code"],"metricKey":"block:"+x["id"]} for x in blocks]}
@@ -304,9 +304,11 @@ def public_config():
 def write_public_fallback():
     """Public-only snapshot for static fallback; never serialize private settings."""
     with DATA_LOCK:
-        temporary=DATA_DIR/'public-fallback.tmp';target=DATA_DIR/'public-fallback.json'
-        temporary.write_text(json.dumps(public_config(),ensure_ascii=False),encoding='utf-8')
-        temporary.replace(target)
+        target=DATA_DIR/'public-fallback.json'
+        payload=json.dumps(public_config(snapshot=True),ensure_ascii=False,sort_keys=True).encode('utf-8')
+        if target.is_file() and target.read_bytes()==payload:return False
+        storage.write(target,payload)
+        return True
 
 
 def quote_list():
@@ -443,7 +445,7 @@ def valid_metric(key):
     return (key.startswith("social:") or key.startswith("link:")) and len(key)<=2048
 
 def save_content(db,item,item_id=None):
-    storage.require_file(UPLOADS,item.get("image"),db)
+    storage.require_file(UPLOADS,item.get("image"),db,DATA_DIR/"assets",STATIC/"assets")
     ensure_promotion_capacity(item,item_id,db)
     item=dict(item);timed=item.pop("calendar_timed",None)
     stamp=now_iso()
@@ -622,14 +624,14 @@ def restore_backup(data):
                 ensure_promotion_capacity(dict(row),row['id'],db)
             # New filenames ensure that a failed restore cannot overwrite current images.
             for name,raw in decoded.items():
-                target=UPLOADS/name;written.append(target);target.write_bytes(raw)
+                target=UPLOADS/name;written.append(target);storage.write(target,raw)
             (DATA_DIR/'assets').mkdir(exist_ok=True)
             for name,raw in asset_bytes.items():
                 target=DATA_DIR/'assets'/name
-                if not target.exists():written.append(target);target.write_bytes(raw)
+                if not target.exists():written.append(target);storage.write(target,raw)
             init_version(db)
             db.execute("UPDATE content_blocks SET image='' WHERE archived=1 AND type IN ('promo','featured')")
-            storage.scan(db,UPLOADS)
+            storage.scan(db,UPLOADS,assets=DATA_DIR/'assets',system_assets=STATIC/'assets')
             db.execute('DELETE FROM admin_sessions')
         with connection() as db:sync_configuration(db)
         return {'blocks':len(tables['content_blocks']),'buttons':len(tables['top_buttons']),'images':len(images)}
@@ -715,6 +717,12 @@ def latest_video():
         with urlopen('http://127.0.0.1:3002/latest-video.json',timeout=9) as response:return json.load(response)
     raise ValueError('Source vidéo non configurée.')
 
+def public_mutation(path):
+    return (path.startswith(('/api/content','/api/buttons','/api/settings','/api/restore','/api/auth/setup','/api/promotions/replace'))
+            or path=='/api/youtube' or (path.startswith('/api/quotes') and path!='/api/quotes/analyze')
+            or (path.startswith('/api/appearance') and path not in {'/api/appearance/css','/api/appearance/export'}))
+
+
 class Handler(BaseHTTPRequestHandler):
     def handle_one_request(self):
         self.response_status=0
@@ -724,7 +732,7 @@ class Handler(BaseHTTPRequestHandler):
             if path.startswith(('/api/content','/api/buttons','/api/appearance','/api/settings','/api/restore','/api/auth/setup','/api/promotions/replace')):
                 try:storage_state()
                 except (OSError,sqlite3.Error,ValueError):print('Links : suivi des fichiers temporairement indisponible.',flush=True)
-            if path not in {'/api/upload','/api/storage','/api/appearance/css','/api/promotions/check','/api/quotes/analyze','/api/youtube/test'}:
+            if public_mutation(path):
                 try:write_public_fallback()
                 except (OSError,sqlite3.Error):print('Links : actualisation du secours public indisponible.',flush=True)
     def send_response(self,code,message=None):
@@ -814,7 +822,7 @@ class Handler(BaseHTTPRequestHandler):
                     db.execute("DELETE FROM auth_state WHERE key='bootstrap_hash'")
                     token=instance.new_session(db)
                     if logo_raw is not None:
-                        self.setup_upload=UPLOADS/name;self.setup_upload.write_bytes(logo_raw)
+                        self.setup_upload=UPLOADS/name;storage.write(self.setup_upload,logo_raw)
                 elif path=='/api/auth/login':
                     if not ready or instance.get(db,'auth.mode')!='local':raise ValueError('Connexion indisponible.')
                     row=db.execute('SELECT * FROM admin_accounts WHERE id=1').fetchone()
@@ -916,6 +924,13 @@ class Handler(BaseHTTPRequestHandler):
                 q=parse_qs(url.query);today=datetime.now(PARIS).date();return self.json(200,report(q.get("start",[(today-timedelta(days=29)).isoformat()])[0],q.get("end",[today.isoformat()])[0],q.get("source",[""])[0]))
             if url.path=="/api/content":return self.json(200,{"items":content_list(parse_qs(url.query).get("archived",["0"])[0]=="1")})
             if url.path=="/api/buttons":return self.json(200,{"items":button_list()})
+            if url.path=="/api/settings/overview":
+                with connection() as db:
+                    sizes=storage.summary(db,UPLOADS,DATA_DIR/'assets')
+                    configured=bool(instance.get(db,'profile.name') and instance.get(db,'site.url'))
+                    count=db.execute('SELECT COUNT(*) FROM footer_quotes').fetchone()[0]
+                video=youtube_status()
+                return self.json(200,{'identity':configured,'youtube':video['configured'],'analytics':analytics_enabled(),'quotes':count,'storage':sizes})
             if url.path=="/api/settings":
                 with connection() as db:return self.json(200,profile(db))
             if url.path=="/api/public-config":return self.json(200,public_config())
@@ -926,7 +941,7 @@ class Handler(BaseHTTPRequestHandler):
         if url.path=="/preview/style.css":return self.file(ROOT/"site"/"style.css" if (ROOT/"site"/"style.css").exists() else Path("/usr/share/nginx/html/style.css"),"text/css")
         if url.path=="/preview/preview.css":return self.file(ADMIN/"promo-preview.css","text/css")
         if url.path.startswith("/preview/") and url.path[9:] in {"index.html","app.js","config.js","metrics.js","theme.js","theme.css","theme-tokens.json","asset-library.json"}:return self.file(STATIC/url.path[9:])
-        if url.path in {"/appearance.js","/appearance.css","/shortcuts.js","/uploads.js","/storage.js"}:return self.file(ADMIN/url.path[1:])
+        if url.path in {"/appearance.js","/appearance.css","/shortcuts.js","/uploads.js","/storage.js","/settings.js"}:return self.file(ADMIN/url.path[1:])
         files={"/":("index.html","text/html;charset=utf-8"),"/app.js":("app.js","application/javascript"),"/dates.js":("dates.js","application/javascript"),"/calendar.js":("calendar.js","application/javascript"),"/style.css":("style.css","text/css")}
         return self.file(ADMIN/files[url.path][0],files[url.path][1]) if url.path in files else self.send(404)
     def do_POST(self):
@@ -1089,13 +1104,13 @@ class Handler(BaseHTTPRequestHandler):
         item=button_data(data)
         item_id=str(uuid.uuid4());stamp=now_iso()
         with connection() as db:
-            storage.require_file(UPLOADS,item["custom_icon"],db)
+            storage.require_file(UPLOADS,item["custom_icon"],db,DATA_DIR/"assets",STATIC/"assets")
             pos=db.execute("SELECT COALESCE(MAX(position),-1)+1 FROM top_buttons").fetchone()[0];db.execute("INSERT INTO top_buttons(id,icon,label,url,position,active,created_at,updated_at,custom_icon) VALUES(?,?,?,?,?,?,?,?,?)",(item_id,item["icon"],item["label"],item["url"],pos,item["active"],stamp,stamp,item["custom_icon"]))
         return self.json(201,{"id":item_id})
     def update_button(self,item_id,data):
         item=button_data(data)
         with connection() as db:
-            storage.require_file(UPLOADS,item["custom_icon"],db)
+            storage.require_file(UPLOADS,item["custom_icon"],db,DATA_DIR/"assets",STATIC/"assets")
             changed=db.execute("UPDATE top_buttons SET icon=?,label=?,url=?,active=?,updated_at=?,custom_icon=? WHERE id=?",(item["icon"],item["label"],item["url"],item["active"],now_iso(),item["custom_icon"],item_id)).rowcount
         return self.send(204) if changed else self.send(404)
     def upload(self,data):
@@ -1106,13 +1121,13 @@ class Handler(BaseHTTPRequestHandler):
         user_images.validate(raw,IMAGE_TYPES[mime],1024*1024 if data.get("purpose")=="icon" else user_images.MAX_BYTES)
         name=str(uuid.uuid4())+IMAGE_TYPES[mime]
         with connection() as db:
-            (UPLOADS/name).write_bytes(raw)
-            storage.scan(db,UPLOADS)
+            storage.write(UPLOADS/name,raw)
+            storage.scan(db,UPLOADS,assets=DATA_DIR/'assets',system_assets=STATIC/'assets')
         return self.json(201,{"url":"/uploads/"+name})
     def save_settings(self,data):
         values=configuration_input(data)
         with connection() as db:
-            for key in ["profile.logo","profile.avatar"]:storage.require_file(UPLOADS,values.get(key),db)
+            for key in ["profile.logo","profile.avatar"]:storage.require_file(UPLOADS,values.get(key),db,DATA_DIR/"assets",STATIC/"assets")
             for key,value in values.items():instance.put(db,key,value)
             sync_configuration(db)
         return self.send(204)
