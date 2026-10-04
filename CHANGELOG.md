@@ -1,5 +1,23 @@
 # Changelog
 
+## V1.301
+
+### ✨ Nouveautés
+
+- Six fonds photo panoramiques : communauté, création, maison connectée, boutique, contact professionnel et lifestyle. Les filtres Tous, Photos, Dégradés et LinKs se combinent avec les catégories métier.
+- Réseaux & raccourcis affiche désormais les vraies icônes. L’éditeur partage la bibliothèque d’icônes existante et permet de rechercher, importer, remplacer ou supprimer une icône personnelle.
+- Aperçu public Desktop/Mobile avec le thème actif et réglages dédiés aux couleurs, bordures, dimensions, opacité, effets et survol des raccourcis.
+
+### 🐛 Corrections
+
+- Les raccourcis vers une ancre sont correctement rendus. Les anciennes icônes e-mail restent compatibles.
+- Les sauvegardes conservent les icônes personnelles et restent compatibles avec les sauvegardes précédentes.
+
+### Mise à jour
+
+- Migration automatique additive : identifiants, liens, ordre, statuts et statistiques sont conservés. Les douze fonds déjà disponibles et le rendu LinKs Original restent inchangés.
+- Les icônes personnelles acceptent PNG, JPEG, WebP ou GIF jusqu’à 1 Mo. Préférez une image carrée avec fond transparent.
+
 ## V1.3
 
 ### ✨ Nouveautés
