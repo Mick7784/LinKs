@@ -82,6 +82,20 @@ Les informations de l’assistant restent modifiables depuis le back office : id
 
 La vidéo est facultative. Désactiver les statistiques laisse la page et son administration fonctionnelles.
 
+## Apparence publique
+
+Le menu **Apparence** sépare la personnalisation de votre page publique des thèmes clair/sombre/système de l’administration.
+
+- **LinKs Original** est permanent, protégé et restaurable ; le restaurer conserve vos thèmes personnalisés.
+- Enregistrez jusqu’à **trois thèmes personnalisés**, y compris les imports. Créez, modifiez, renommez, dupliquez, supprimez et activez vos thèmes.
+- L’éditeur utilise vos contenus dans un aperçu Desktop/Mobile. Les brouillons restent locaux jusqu’à **Enregistrer** ; **Enregistrer / Publier** active aussi le thème. Enregistrer une modification du thème déjà actif met son apparence publique à jour.
+- Couleurs, opacité, nuanciers, variantes, couleurs récentes et alertes de contraste accompagnent les réglages de profil, typographie, cartes, médias, icônes et effets.
+- **Bibliothèque** centralise douze fonds et les icônes. Dans un lien, choisissez Bibliothèque, Importer, URL ou Aucune image. Les assets système sont référencés par identifiant ; les anciens fichiers et URLs restent utilisables.
+- **Import / Export** propose le format portable JSON **.links-theme v1** : nom, auteur, compatibilité du moteur, variables et images personnelles embarquées (12 Mo maximum, 4 Mo par image). Les fonds système conservent leurs IDs. Un thème importé est enregistré sans activation.
+- Le **CSS Expert** contient les 91 variables autorisées, leurs valeurs et catégories. Son import crée un brouillon et valide unités, plages, couleurs et références d’images ; les règles CSS arbitraires sont ignorées. Aucun JavaScript n’est accepté. Un fichier CSS seul ne transporte pas les images personnelles ; utilisez le thème complet pour les partager.
+
+La migration ajoute les réglages d’apparence à SQLite et active LinKs Original. Contenus, campagnes, carrousels et préférences de l’administration sont conservés. Les sauvegardes applicatives v3 incluent les thèmes et les images qu’ils utilisent.
+
 ## Confidentialité
 
 Les statistiques sont facultatives et agrégées. Elles comptabilisent des actions, pas des personnes uniques. La collecte ne crée ni cookie analytics ni identifiant visiteur ; aucune adresse IP n’est stockée dans la base de statistiques. Do Not Track et Global Privacy Control sont respectés.
@@ -94,7 +108,11 @@ Version du code : **V1.203**.
 
 L’image `ghcr.io/mick7784/links:latest` inclut les correctifs et améliorations du dashboard intégrés sur `main`. Elle est publiée pour **AMD64 et ARM64** ; une image `sha-<commit>` permet de sélectionner un build précis. Chaque publication validée réserve une version persistante et publie également un tag Docker numéroté.
 
-Les corrections suivent V1.201, V1.202… ; la prochaine version fonctionnelle est V1.3, suivie de V1.301… Chaque merge validé sur `main` incrémente automatiquement `VERSION`. Une réservation associée au commit source garantit qu’une relance ne double pas l’incrément ; son commit `[skip ci]` évite les boucles. Le champ `version` du workflow permet un jalon explicite (V1.3, V2.1…). À V1.299, un jalon explicite est requis. La création d’une page GitHub Release reste facultative.
+Les corrections suivent V1.201, V1.202… ; un jalon manuel V1.3 est suivi de V1.301, V1.302… La source persistante est VERSION avec .release-state.json pour réserver une version une seule fois par commit validé. À V1.299, un jalon explicite est requis.
+
+Les push et PR lancent les validations sans incrément ni publication. Une production est demandée explicitement via **Run workflow** sur main (official_release=true, validation_only=false, version facultative), ou un commit dont le titre commence par **Release Vx.xxx**. Après les tests et le build, la chaîne réserve VERSION, prépare les notes et CHANGELOG, publie les images AMD64/ARM64, crée le tag Git et la GitHub Release stable Latest. VERSION, l’interface, le tag Git et le tag Docker utilisent exactement la même casse, par exemple **V1.3**. Les relances réutilisent la réservation ; les anciens runs ne peuvent pas ramener latest en arrière.
+
+Les notes manuelles des jalons se trouvent dans **docs/releases/Vx.xxx.md** ; sinon une base structurée est générée depuis les titres des commits (feat, theme, fix, perf…). Les notes et **CHANGELOG.md** proviennent du même texte. Le commit de réservation porte [skip ci] et ne déclenche pas de nouvelle publication. Une release n’est complète qu’après vérification de l’identité des manifests Docker version/latest et de la GitHub Release. Le redémarrage de votre instance reste une opération de déploiement distincte.
 
 ## Dernières mises à jour
 

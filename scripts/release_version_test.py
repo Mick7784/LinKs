@@ -1,4 +1,4 @@
-import importlib.util, unittest
+import importlib.util, unittest, sys
 from pathlib import Path
 spec=importlib.util.spec_from_file_location('release',Path(__file__).with_name('release-version.py'));release=importlib.util.module_from_spec(spec);spec.loader.exec_module(release)
 class VersionTest(unittest.TestCase):
@@ -37,8 +37,8 @@ class VersionTest(unittest.TestCase):
    git('init','-b','main');git('config','user.name','Test');git('config','user.email','test@example.invalid');git('remote','add','origin',str(remote))
    (root/'scripts').mkdir();shutil.copy(Path(__file__).with_name('release-version.py'),root/'scripts/release-version.py');(root/'VERSION').write_text('V1.201');git('add','.');git('commit','-m','Initial');git('push','origin','main');first=git('rev-parse','HEAD')
    def run(source,override=''):
-    output=root/'output';output.write_text('');subprocess.run(['python3',str(root/'scripts/release-version.py')],env={**os.environ,'GITHUB_SHA':source,'GITHUB_OUTPUT':str(output),'RELEASE_OVERRIDE':override},check=True,capture_output=True);return dict(line.split('=',1) for line in output.read_text().splitlines())
-   self.assertEqual(run(first)['version'],'V1.202');reserved=git('rev-parse','HEAD');self.assertIn('[skip ci]',git('log','-1','--format=%s'))
+    output=root/'output';output.write_text('');subprocess.run([sys.executable,str(root/'scripts/release-version.py')],env={**os.environ,'GITHUB_SHA':source,'GITHUB_OUTPUT':str(output),'RELEASE_OVERRIDE':override},check=True,capture_output=True);return dict(line.split('=',1) for line in output.read_text().splitlines())
+   output=run(first);self.assertEqual(output['version'],'V1.202');self.assertEqual(output['tag'],'V1.202');reserved=git('rev-parse','HEAD');self.assertIn('[skip ci]',git('log','-1','--format=%s'))
    self.assertEqual(run(first)['version'],'V1.202');self.assertEqual(git('rev-parse','HEAD'),reserved)
    git('commit','--allow-empty','-m','Next validated change');git('push','origin','HEAD:main');second=git('rev-parse','HEAD');self.assertEqual(run(second)['version'],'V1.203')
    self.assertEqual(run(first)['eligible'],'false');self.assertEqual((root/'VERSION').read_text().strip(),'V1.203')

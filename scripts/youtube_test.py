@@ -27,6 +27,7 @@ class YouTubeTests(unittest.TestCase):
   for value in ['https://evil.example/@test','https://youtube.com/watch?v=foo','foo']:
    with self.assertRaises(ValueError):youtube.channel_query(value)
   with tempfile.TemporaryDirectory() as directory,patch.dict(os.environ,{},clear=True):
-   youtube.store_key(directory,'a'*39);self.assertEqual(youtube.read_key(directory),'a'*39);self.assertEqual(youtube.key_path(directory).stat().st_mode&0o777,0o600)
+   youtube.store_key(directory,'a'*39);self.assertEqual(youtube.read_key(directory),'a'*39)
+   if os.name!='nt':self.assertEqual(youtube.key_path(directory).stat().st_mode&0o777,0o600)
    youtube.store_key(directory,'');self.assertEqual(youtube.read_key(directory),'')
 if __name__=='__main__':unittest.main()

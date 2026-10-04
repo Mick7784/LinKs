@@ -1,0 +1,683 @@
+{
+  "format": "links-tokens",
+  "version": 1,
+  "tokens": {
+    "--links-primary": {
+      "group": "Identité",
+      "label": "Principale",
+      "type": "color",
+      "default": "#7acfe5"
+    },
+    "--links-secondary": {
+      "group": "Identité",
+      "label": "Secondaire",
+      "type": "color",
+      "default": "#b19bdc"
+    },
+    "--links-accent": {
+      "group": "Identité",
+      "label": "Accent",
+      "type": "color",
+      "default": "#0057f5"
+    },
+    "--links-page-background": {
+      "group": "Page",
+      "label": "Fond de page",
+      "type": "color",
+      "default": "#0a111e"
+    },
+    "--links-text-primary": {
+      "group": "Page",
+      "label": "Texte principal",
+      "type": "color",
+      "default": "#f1f4fa"
+    },
+    "--links-text-secondary": {
+      "group": "Page",
+      "label": "Texte secondaire",
+      "type": "color",
+      "default": "#b0bdd0"
+    },
+    "--links-page-image": {
+      "group": "Page",
+      "label": "Image de fond",
+      "type": "image",
+      "default": "none"
+    },
+    "--links-gradient-start": {
+      "group": "Page",
+      "label": "Dégradé : début",
+      "type": "color",
+      "default": "#0a111e"
+    },
+    "--links-gradient-end": {
+      "group": "Page",
+      "label": "Dégradé : fin",
+      "type": "color",
+      "default": "#131e2e"
+    },
+    "--links-gradient-angle": {
+      "group": "Page",
+      "label": "Angle du dégradé",
+      "type": "number",
+      "default": 130,
+      "min": 0,
+      "max": 360
+    },
+    "--links-gradient-opacity": {
+      "group": "Page",
+      "label": "Intensité du dégradé",
+      "type": "number",
+      "default": 0,
+      "min": 0,
+      "max": 1
+    },
+    "--links-page-image-opacity": {
+      "group": "Page",
+      "label": "Intensité de l’image",
+      "type": "number",
+      "default": 1,
+      "min": 0,
+      "max": 1
+    },
+    "--links-page-overlay-color": {
+      "group": "Page",
+      "label": "Couleur de superposition",
+      "type": "color",
+      "default": "#0a111e"
+    },
+    "--links-page-overlay-opacity": {
+      "group": "Page",
+      "label": "Superposition",
+      "type": "number",
+      "default": 0,
+      "min": 0,
+      "max": 0.95
+    },
+    "--links-page-glow": {
+      "group": "Page",
+      "label": "Lueur du fond",
+      "type": "number",
+      "default": 1,
+      "min": 0,
+      "max": 2
+    },
+    "--links-texture-opacity": {
+      "group": "Page",
+      "label": "Texture",
+      "type": "number",
+      "default": 0,
+      "min": 0,
+      "max": 0.15
+    },
+    "--links-font-family": {
+      "group": "Typographie",
+      "label": "Police",
+      "type": "enum",
+      "default": "Inter,ui-sans-serif,system-ui,-apple-system,\"Segoe UI\",sans-serif",
+      "options": [
+        "Inter,ui-sans-serif,system-ui,-apple-system,\"Segoe UI\",sans-serif",
+        "Georgia,serif",
+        "ui-monospace,monospace",
+        "Arial,sans-serif"
+      ]
+    },
+    "--links-name-size": {
+      "group": "Typographie",
+      "label": "Nom : taille",
+      "type": "length",
+      "default": 38.4,
+      "min": 24,
+      "max": 48
+    },
+    "--links-name-weight": {
+      "group": "Typographie",
+      "label": "Nom : graisse",
+      "type": "number",
+      "default": 750,
+      "min": 400,
+      "max": 900
+    },
+    "--links-name-line-height": {
+      "group": "Typographie",
+      "label": "Nom : interligne",
+      "type": "number",
+      "default": 1.15,
+      "min": 1,
+      "max": 1.8
+    },
+    "--links-letter-spacing": {
+      "group": "Typographie",
+      "label": "Espacement des lettres",
+      "type": "number",
+      "default": -0.045,
+      "min": -0.06,
+      "max": 0.12
+    },
+    "--links-title-size": {
+      "group": "Typographie",
+      "label": "Titre des liens",
+      "type": "length",
+      "default": 17.12,
+      "min": 14,
+      "max": 24
+    },
+    "--links-title-weight": {
+      "group": "Typographie",
+      "label": "Titre : graisse",
+      "type": "number",
+      "default": 700,
+      "min": 400,
+      "max": 900
+    },
+    "--links-title-line-height": {
+      "group": "Typographie",
+      "label": "Titre : interligne",
+      "type": "number",
+      "default": 1.3,
+      "min": 1.1,
+      "max": 2
+    },
+    "--links-description-size": {
+      "group": "Typographie",
+      "label": "Description des liens",
+      "type": "length",
+      "default": 14.4,
+      "min": 12,
+      "max": 20
+    },
+    "--links-description-line-height": {
+      "group": "Typographie",
+      "label": "Description : interligne",
+      "type": "number",
+      "default": 1.45,
+      "min": 1.2,
+      "max": 2
+    },
+    "--links-secondary-size": {
+      "group": "Typographie",
+      "label": "Textes secondaires",
+      "type": "length",
+      "default": 12.8,
+      "min": 12,
+      "max": 18
+    },
+    "--links-bio-size": {
+      "group": "Typographie",
+      "label": "Bio : taille",
+      "type": "length",
+      "default": 16,
+      "min": 12,
+      "max": 22
+    },
+    "--links-avatar-size": {
+      "group": "Profil",
+      "label": "Avatar",
+      "type": "length",
+      "default": 120,
+      "min": 64,
+      "max": 160
+    },
+    "--links-avatar-radius": {
+      "group": "Profil",
+      "label": "Arrondi de l’avatar",
+      "type": "length",
+      "default": 999,
+      "min": 0,
+      "max": 999
+    },
+    "--links-avatar-border-width": {
+      "group": "Profil",
+      "label": "Bordure de l’avatar",
+      "type": "length",
+      "default": 2,
+      "min": 0,
+      "max": 6
+    },
+    "--links-avatar-border-color": {
+      "group": "Profil",
+      "label": "Bordure de l’avatar",
+      "type": "color",
+      "default": "#43b7df"
+    },
+    "--links-avatar-shadow": {
+      "group": "Profil",
+      "label": "Ombre de l’avatar",
+      "type": "number",
+      "default": 0,
+      "min": 0,
+      "max": 1
+    },
+    "--links-profile-gap": {
+      "group": "Profil",
+      "label": "Espace après le profil",
+      "type": "length",
+      "default": 24,
+      "min": 12,
+      "max": 48
+    },
+    "--links-name-color": {
+      "group": "Profil",
+      "label": "Couleur du nom",
+      "type": "color",
+      "default": "#f1f4fa"
+    },
+    "--links-bio-color": {
+      "group": "Profil",
+      "label": "Couleur de la bio",
+      "type": "color",
+      "default": "#b0bdd0"
+    },
+    "--links-card-background": {
+      "group": "Cartes",
+      "label": "Fond des cartes",
+      "type": "color",
+      "default": "#101b29"
+    },
+    "--links-panel-background": {
+      "group": "Cartes",
+      "label": "Fond des médias",
+      "type": "color",
+      "default": "#131e2e"
+    },
+    "--links-card-opacity": {
+      "group": "Cartes",
+      "label": "Opacité du fond",
+      "type": "number",
+      "default": 1,
+      "min": 0.4,
+      "max": 1
+    },
+    "--links-card-radius": {
+      "group": "Cartes",
+      "label": "Arrondi des liens",
+      "type": "length",
+      "default": 15,
+      "min": 0,
+      "max": 32
+    },
+    "--links-media-radius": {
+      "group": "Cartes",
+      "label": "Arrondi des médias",
+      "type": "length",
+      "default": 20,
+      "min": 0,
+      "max": 36
+    },
+    "--links-border-color": {
+      "group": "Cartes",
+      "label": "Bordure",
+      "type": "color",
+      "default": "#9cb1cc38"
+    },
+    "--links-border-width": {
+      "group": "Cartes",
+      "label": "Épaisseur de bordure",
+      "type": "length",
+      "default": 1,
+      "min": 0,
+      "max": 4
+    },
+    "--links-shadow-strength": {
+      "group": "Cartes",
+      "label": "Ombre",
+      "type": "number",
+      "default": 0.12,
+      "min": 0,
+      "max": 0.6
+    },
+    "--links-glow-strength": {
+      "group": "Cartes",
+      "label": "Lueur",
+      "type": "number",
+      "default": 0,
+      "min": 0,
+      "max": 0.8
+    },
+    "--links-card-height": {
+      "group": "Cartes",
+      "label": "Hauteur minimale",
+      "type": "length",
+      "default": 82,
+      "min": 64,
+      "max": 140
+    },
+    "--links-card-padding": {
+      "group": "Cartes",
+      "label": "Marge intérieure",
+      "type": "length",
+      "default": 12,
+      "min": 8,
+      "max": 28
+    },
+    "--links-card-gap": {
+      "group": "Cartes",
+      "label": "Écart entre les liens",
+      "type": "length",
+      "default": 9,
+      "min": 6,
+      "max": 28
+    },
+    "--links-card-overlay-color": {
+      "group": "Cartes",
+      "label": "Superposition des liens",
+      "type": "color",
+      "default": "#0b1522"
+    },
+    "--links-card-overlay-opacity": {
+      "group": "Cartes",
+      "label": "Intensité de superposition",
+      "type": "number",
+      "default": 0.96,
+      "min": 0.5,
+      "max": 1
+    },
+    "--links-card-image": {
+      "group": "Cartes",
+      "label": "Fond de lien par défaut",
+      "type": "image",
+      "default": "none"
+    },
+    "--links-hover-border": {
+      "group": "Cartes",
+      "label": "Bordure au survol",
+      "type": "color",
+      "default": "#8db5ce70"
+    },
+    "--links-icon-size": {
+      "group": "Icônes",
+      "label": "Taille du pictogramme",
+      "type": "length",
+      "default": 27,
+      "min": 20,
+      "max": 36
+    },
+    "--links-icon-container-size": {
+      "group": "Icônes",
+      "label": "Taille du conteneur",
+      "type": "length",
+      "default": 48,
+      "min": 40,
+      "max": 64
+    },
+    "--links-icon-radius": {
+      "group": "Icônes",
+      "label": "Arrondi",
+      "type": "length",
+      "default": 12,
+      "min": 0,
+      "max": 32
+    },
+    "--links-icon-padding": {
+      "group": "Icônes",
+      "label": "Marge intérieure",
+      "type": "length",
+      "default": 0,
+      "min": 0,
+      "max": 8
+    },
+    "--links-icon-background": {
+      "group": "Icônes",
+      "label": "Fond",
+      "type": "color",
+      "default": "#132333"
+    },
+    "--links-icon-color": {
+      "group": "Icônes",
+      "label": "Couleur",
+      "type": "color",
+      "default": "#59bde7"
+    },
+    "--links-icon-opacity": {
+      "group": "Icônes",
+      "label": "Opacité",
+      "type": "number",
+      "default": 1,
+      "min": 0.6,
+      "max": 1
+    },
+    "--links-icon-color-mode": {
+      "group": "Icônes",
+      "label": "Couleurs des icônes",
+      "type": "enum",
+      "default": "platform",
+      "options": [
+        "platform",
+        "theme"
+      ]
+    },
+    "--links-social-size": {
+      "group": "Icônes",
+      "label": "Boutons sociaux",
+      "type": "length",
+      "default": 44,
+      "min": 44,
+      "max": 64
+    },
+    "--links-social-radius": {
+      "group": "Icônes",
+      "label": "Arrondi des boutons sociaux",
+      "type": "length",
+      "default": 999,
+      "min": 0,
+      "max": 999
+    },
+    "--links-image-radius": {
+      "group": "Médias",
+      "label": "Arrondi des images",
+      "type": "length",
+      "default": 0,
+      "min": 0,
+      "max": 28
+    },
+    "--links-image-brightness": {
+      "group": "Médias",
+      "label": "Luminosité",
+      "type": "number",
+      "default": 1,
+      "min": 0.7,
+      "max": 1.3
+    },
+    "--links-image-contrast": {
+      "group": "Médias",
+      "label": "Contraste",
+      "type": "number",
+      "default": 1,
+      "min": 0.7,
+      "max": 1.4
+    },
+    "--links-image-saturation": {
+      "group": "Médias",
+      "label": "Saturation",
+      "type": "number",
+      "default": 1,
+      "min": 0,
+      "max": 1.6
+    },
+    "--links-image-opacity": {
+      "group": "Médias",
+      "label": "Opacité",
+      "type": "number",
+      "default": 1,
+      "min": 0.5,
+      "max": 1
+    },
+    "--links-image-position": {
+      "group": "Médias",
+      "label": "Position",
+      "type": "enum",
+      "default": "center",
+      "options": [
+        "center",
+        "top",
+        "bottom",
+        "left",
+        "right"
+      ]
+    },
+    "--links-media-overlay-opacity": {
+      "group": "Médias",
+      "label": "Overlay des médias",
+      "type": "number",
+      "default": 0.95,
+      "min": 0.6,
+      "max": 1
+    },
+    "--links-transition-duration": {
+      "group": "Effets",
+      "label": "Durée des transitions (ms)",
+      "type": "number",
+      "default": 200,
+      "min": 0,
+      "max": 600
+    },
+    "--links-hover-elevation": {
+      "group": "Effets",
+      "label": "Élévation au survol",
+      "type": "length",
+      "default": 0,
+      "min": 0,
+      "max": 5
+    },
+    "--links-motion": {
+      "group": "Effets",
+      "label": "Animations",
+      "type": "enum",
+      "default": "normal",
+      "options": [
+        "normal",
+        "reduce"
+      ]
+    },
+    "--links-page-width": {
+      "group": "Dimensions",
+      "label": "Largeur maximale",
+      "type": "length",
+      "default": 680,
+      "min": 360,
+      "max": 900
+    },
+    "--links-card-width": {
+      "group": "Dimensions",
+      "label": "Largeur des liens (%)",
+      "type": "number",
+      "default": 100,
+      "min": 80,
+      "max": 100
+    },
+    "--links-page-margin": {
+      "group": "Dimensions",
+      "label": "Marge latérale",
+      "type": "length",
+      "default": 24,
+      "min": 14,
+      "max": 40
+    },
+    "--links-page-padding-top": {
+      "group": "Dimensions",
+      "label": "Marge haute",
+      "type": "length",
+      "default": 32,
+      "min": 16,
+      "max": 64
+    },
+    "--links-section-gap": {
+      "group": "Dimensions",
+      "label": "Espacement des sections",
+      "type": "length",
+      "default": 13,
+      "min": 8,
+      "max": 36
+    },
+    "--links-density": {
+      "group": "Dimensions",
+      "label": "Densité",
+      "type": "number",
+      "default": 1,
+      "min": 0.85,
+      "max": 1.25
+    },
+    "--links-label-color": {
+      "group": "Éléments secondaires",
+      "label": "Labels",
+      "type": "color",
+      "default": "#d4e7f4"
+    },
+    "--links-label-background": {
+      "group": "Éléments secondaires",
+      "label": "Fond des labels",
+      "type": "color",
+      "default": "#253b4cd9"
+    },
+    "--links-label-radius": {
+      "group": "Éléments secondaires",
+      "label": "Arrondi des labels",
+      "type": "length",
+      "default": 99,
+      "min": 0,
+      "max": 99
+    },
+    "--links-arrow-color": {
+      "group": "Éléments secondaires",
+      "label": "Flèches",
+      "type": "color",
+      "default": "#eef2f8"
+    },
+    "--links-arrow-background": {
+      "group": "Éléments secondaires",
+      "label": "Fond des flèches",
+      "type": "color",
+      "default": "#e1e7ef0d"
+    },
+    "--links-dot-color": {
+      "group": "Éléments secondaires",
+      "label": "Indicateur actif",
+      "type": "color",
+      "default": "#f1f4fa"
+    },
+    "--links-dot-inactive-color": {
+      "group": "Éléments secondaires",
+      "label": "Indicateur inactif",
+      "type": "color",
+      "default": "#ffffff50"
+    },
+    "--links-footer-color": {
+      "group": "Éléments secondaires",
+      "label": "Pied de page",
+      "type": "color",
+      "default": "#9aabc2"
+    },
+    "--links-footer-size": {
+      "group": "Éléments secondaires",
+      "label": "Texte du pied de page",
+      "type": "length",
+      "default": 12.48,
+      "min": 12,
+      "max": 18
+    },
+    "--links-button-background": {
+      "group": "Éléments secondaires",
+      "label": "Boutons des offres",
+      "type": "color",
+      "default": "#0057f5"
+    },
+    "--links-button-color": {
+      "group": "Éléments secondaires",
+      "label": "Texte des boutons",
+      "type": "color",
+      "default": "#ffffff"
+    },
+    "--links-button-hover": {
+      "group": "Éléments secondaires",
+      "label": "Boutons au survol",
+      "type": "color",
+      "default": "#1268ff"
+    },
+    "--links-separator-color": {
+      "group": "Éléments secondaires",
+      "label": "Séparateurs",
+      "type": "color",
+      "default": "#9cb1cc38"
+    }
+  }
+}

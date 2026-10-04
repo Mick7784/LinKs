@@ -12,6 +12,7 @@ function sectionTitle(id,label,iconName){const heading=text("h2","section-headin
 function decorateSectionTitle(id,iconName){const heading=document.getElementById(id);if(heading&&!heading.querySelector("svg"))heading.prepend(icon(iconName))}
 
 async function getConfig(){
+ if(window.LINKS_PREVIEW_CONFIG)return window.LINKS_PREVIEW_CONFIG;
  try{const response=await fetch("/api/public-config",{cache:"no-store"});if(!response.ok)throw new Error();return await response.json()}
  catch{let fallback;try{const r=await fetch("/public-fallback.json",{cache:"no-store"});if(!r.ok)throw new Error();fallback=await r.json()}catch{fallback=window.LINKS_CONFIG||{profile:{},socials:[],links:[]}}
  const now=Date.now();return {...fallback,links:(fallback.links||[]).filter(item=>(!item.expiresAt||new Date(item.expiresAt).getTime()>now)&&(!item.start_at||new Date(item.start_at).getTime()<=now)&&(!item.end_at||new Date(item.end_at).getTime()>now)).map(item=>({...item,type:item.type||(item.featured?"featured":"classic")}))}}
@@ -40,14 +41,14 @@ function renderOffers(items){
  let index=0,timer,pauseTimer,touchX=0,visible=false;const announce=()=>{if(visible)window.dispatchEvent(new CustomEvent("links:impression",{detail:{link:offers[index].metricKey}}))};
  const slides=[...track.children];const reducedMotion=matchMedia("(prefers-reduced-motion: reduce)");
  const show=(next,user=false)=>{index=(next+offers.length)%offers.length;track.style.transform=`translateX(-${index*100}%)`;slides.forEach((slide,i)=>{const active=i===index;slide.setAttribute("aria-hidden",String(!active));slide.inert=!active;slide.querySelectorAll("a,button").forEach(link=>active?link.removeAttribute("tabindex"):link.setAttribute("tabindex","-1"))});[...dots.children].forEach((dot,i)=>{const active=i===index;dot.classList.toggle("active",active);dot.setAttribute("aria-current",active?"true":"false")});if(interactive)status.textContent=`Offre ${index+1} sur ${offers.length}`;announce();if(user)pause()};
- const play=()=>{clearInterval(timer);if(interactive&&!reducedMotion.matches)timer=setInterval(()=>show(index+1),6000)};const pause=()=>{if(!interactive)return;clearInterval(timer);clearTimeout(pauseTimer);pauseTimer=setTimeout(play,10000)};
+ const play=()=>{clearInterval(timer);if(interactive&&!reducedMotion.matches&&document.documentElement.dataset.linksMotion!=="reduce")timer=setInterval(()=>show(index+1),6000)};const pause=()=>{if(!interactive)return;clearInterval(timer);clearTimeout(pauseTimer);pauseTimer=setTimeout(play,10000)};
  new IntersectionObserver(entries=>{visible=entries[0].isIntersecting;if(visible)announce()},{threshold:.5}).observe(root);
  if(interactive){slides.forEach((slide,i)=>{slide.setAttribute("role","group");slide.setAttribute("aria-label",`${i+1} sur ${offers.length}`)});offers.forEach((_,i)=>{const dot=document.createElement("button");dot.type="button";dot.setAttribute("aria-label",`Afficher l’offre ${i+1} sur ${offers.length}`);dot.addEventListener("click",event=>{event.stopPropagation();show(i,true)});dots.append(dot)});track.addEventListener("touchstart",event=>{touchX=event.touches[0].clientX;pause()},{passive:true});track.addEventListener("touchend",event=>{const delta=event.changedTouches[0].clientX-touchX;if(Math.abs(delta)>45)show(index+(delta<0?1:-1),true)},{passive:true});root.addEventListener("keydown",event=>{if(event.key==="ArrowLeft"||event.key==="ArrowRight"){event.preventDefault();show(index+(event.key==="ArrowRight"?1:-1),true)}});root.addEventListener("pointerenter",pause);root.addEventListener("focusin",pause);document.addEventListener("visibilitychange",()=>document.hidden?clearInterval(timer):play());reducedMotion.addEventListener("change",play);play()}
  show(0)
 }
 async function start(){
  const config=await getConfig(),profile=config.profile||{};publicTimezone=config.timezone||profile.timezone||"UTC";
- window.LINKS_PUBLIC_CONFIG=config;window.dispatchEvent(new CustomEvent("links:config",{detail:config}));
+ await LinksTheme.apply(config.appearance);window.LINKS_PUBLIC_CONFIG=config;window.dispatchEvent(new CustomEvent("links:config",{detail:config}));
  if(config.setup_completed!==true){document.querySelector("main").replaceChildren(text("p","fallback","Links est en cours de configuration."));return}
  const set=(id,value)=>{const el=document.getElementById(id);if(el){el.textContent=value||"";el.hidden=!value}};
  set("profile-name",profile.name||"Links");set("profile-tagline",profile.tagline);set("profile-description",profile.description);set("footer-name",profile.footer_owner||profile.name);renderFooter(profile);

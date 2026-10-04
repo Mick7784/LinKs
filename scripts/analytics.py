@@ -1,6 +1,6 @@
 """Small SQLite content manager and aggregate analytics service."""
 import base64, binascii, json, mimetypes, os, re, secrets, sqlite3, threading, uuid, sys, time, shutil
-from contextlib import contextmanager
+from contextlib import contextmanager, closing
 from datetime import date, datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 sys.path.insert(0,str(Path(__file__).resolve().parent))
 import instance
 import youtube
+import themes
 from urllib.request import urlopen
 
 ROOT=Path(__file__).resolve().parent
@@ -25,6 +26,7 @@ AUTH_ATTEMPTS=[]
 AUTH_LOCK=threading.Lock()
 TYPES={"classic","promo","featured"}; ICONS={"youtube","instagram","tiktok","discord","mail","website","cart","home","amazon","facebook","x","linkedin","github","threads","twitch","telegram","whatsapp","pinterest","reddit","snapchat","network","contact","link"}
 BADGES={"","Promo","Nouveau","Partenaire","Bon plan"}
+ICONS.update({'phone','video','podcast','blog','download','calendar','location','homeassistant','email','tag'})
 IMAGE_TYPES={"image/jpeg":".jpg","image/png":".png","image/webp":".webp","image/gif":".gif"}
 
 @contextmanager
@@ -58,13 +60,13 @@ def init():
     Path(DB).parent.mkdir(parents=True,exist_ok=True); UPLOADS.mkdir(parents=True,exist_ok=True)
     existed=Path(DB).exists() and Path(DB).stat().st_size>0
     if existed:
-        with sqlite3.connect(DB) as before:
+        with closing(sqlite3.connect(DB)) as before:
             tables={r[0] for r in before.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             legacy="settings" in tables and not before.execute("SELECT 1 FROM settings WHERE key='app.config_schema_version'").fetchone()
             if legacy:
                 target=DATA_DIR/"pre-v11-database.db"
                 if not target.exists():
-                    with sqlite3.connect(target) as backup:before.backup(backup)
+                    with closing(sqlite3.connect(target)) as backup:before.backup(backup)
     else:legacy=False
     with connection() as db:
         db.execute("PRAGMA journal_mode=WAL")
@@ -89,6 +91,7 @@ def init():
           created_at TEXT NOT NULL,deleted INTEGER NOT NULL DEFAULT 0)""")
         db.execute("CREATE TABLE IF NOT EXISTS footer_quotes(id TEXT PRIMARY KEY,text TEXT NOT NULL UNIQUE,active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),created_at TEXT NOT NULL)")
         instance.initialize(db,legacy,CONFIG,[DATA_DIR/"assets",STATIC/"assets"],DATA_DIR)
+        themes.initialize(db)
         init_version(db)
         ORIGIN=instance.site_url(instance.get(db,"site.url"),allow_empty=True)
         PARIS=ZoneInfo(instance.get(db,"app.timezone","UTC"))
@@ -273,6 +276,7 @@ def public_config():
         buttons=[dict(r) for r in db.execute("SELECT * FROM top_buttons WHERE active=1 ORDER BY position,created_at")]
         result={"profile":profile(db),"socials":[{"id":x["id"],"platform":x["icon"],"label":x["label"],"url":x["url"],"metricKey":"button:"+x["id"]} for x in buttons],
                 "links":[{"id":x["id"],"type":x["type"],"title":x["title"],"description":x["description"],"url":x["url"],"icon":x["icon"],"image":x["image"],"badge":x["badge"],"cta":x["cta"],"priority":x["priority"],"start_at":x["start_at"],"end_at":x["end_at"],"promo_code":x["promo_code"],"metricKey":"block:"+x["id"]} for x in blocks]}
+        result["appearance"]=themes.public(db)
         result["profile"]["footer_quote"]=quote["text"] if quote else ""
     if result["profile"]["video_enabled"]:result["latestVideo"]={"enabled":True}
     result["setup_completed"]=result["profile"]["setup_completed"]
@@ -339,7 +343,8 @@ def block_data(data):
     if icon not in ICONS:icon="website"
     if badge not in BADGES:raise ValueError("Badge invalide")
     if priority not in {"normal","high"}:raise ValueError("Priorité invalide")
-    if image and not (image.startswith("/uploads/") or image.startswith("/assets/") or valid_url(image)):raise ValueError("Image invalide")
+    if image.startswith("system:") and image[7:] not in themes.BACKGROUNDS:raise ValueError("Fond système inconnu")
+    if image and not (image.startswith("system:") or image.startswith("/uploads/") or image.startswith("/assets/") or valid_url(image)):raise ValueError("Image invalide")
     start,end=instant(data.get("start_at")),instant(data.get("end_at"))
     if start and end and end<=start:raise ValueError("La fin doit suivre le début")
     return {**({"calendar_timed":data["calendar_timed"]} if "calendar_timed" in data else {}),"type":kind,"internal_name":required(data,"internal_name"),"title":required(data,"title"),"description":optional(data,"description"),"url":url,"icon":icon,"image":image,"badge":badge,"cta":optional(data,"cta",80),**({"promo_code":optional(data,"promo_code",80)} if "promo_code" in data else {}),"priority":priority,"active":1 if data.get("active",True) else 0,"draft":1 if data.get("draft",False) else 0,"start_at":start.isoformat().replace("+00:00","Z") if start else None,"end_at":end.isoformat().replace("+00:00","Z") if end else None}
@@ -440,6 +445,7 @@ def export_backup():
         tables={table:[dict(row) for row in db.execute('SELECT * FROM '+table)] for table in BACKUP_TABLES}
         references={r['image'] for r in tables['content_blocks']}
         references.update(r['value'] for r in tables['settings'] if r['key'] in {'profile.avatar','profile.logo'})
+        references.update(themes.references(themes.state(db)['items'][1:]))
         images={};size=0
         for ref in references:
             if not ref.startswith('/uploads/'):continue
@@ -534,6 +540,7 @@ def restore_backup(data):
                     elif row['key'] not in instance.CONFIG_KEYS:raise ValueError('Réglage inconnu')
             if len(tables["footer_quotes"])>300:raise ValueError("Maximum 300 citations")
             incoming_settings={r["key"]:r["value"] for r in tables["settings"]}
+            theme_rows=themes.validate_backup(incoming_settings)
             validate_settings(incoming_settings)
             for row in tables["settings"]:
                 if row["key"]=="app.version":checked_version(row["value"])
@@ -561,6 +568,13 @@ def restore_backup(data):
                 if row['key'] in {'profile.avatar','profile.logo'} and row['value'].startswith('/uploads/'):
                     if row['value'] not in mapping:raise ValueError('Image de profil manquante')
                     row['value']=mapping[row['value']]
+            for theme in theme_rows:
+                for key,ref in theme['tokens'].items():
+                    if isinstance(ref,str) and ref.startswith('/uploads/'):
+                        if ref not in mapping:raise ValueError('Image de thème manquante')
+                        theme['tokens'][key]=mapping[ref]
+            for row in tables['settings']:
+                if row['key']=='appearance.themes':row['value']=json.dumps(theme_rows)
             refs=[r['image'] for r in tables['content_blocks']]+[r['value'] for r in tables['settings'] if r['key'] in {'profile.logo','profile.avatar'}]
             for ref in refs:
                 if ref.startswith('/assets/') and not (STATIC/ref[1:]).is_file() and not (DATA_DIR/ref[1:]).is_file() and ref[8:] not in asset_bytes:raise ValueError('Asset référencé manquant')
@@ -795,12 +809,20 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self,*_):pass
     def setup(self):super().setup();self.connection.settimeout(15)
     def send(self,status,body=b"",mime="application/json; charset=utf-8"):
+        # Drain bounded request bodies before closing, including early rejection.
+        # Otherwise Windows may reset the socket before the client reads the response.
+        if getattr(self,'command','') in {'POST','PUT'} and not getattr(self,'body_read',False):
+            try:size=int(self.headers.get('Content-Length','0'))
+            except ValueError:size=0
+            if 0<size<=BACKUP_LIMIT:self.rfile.read(size)
+            self.body_read=True
         self.send_response(status);self.send_header("Content-Type",mime);self.send_header("Content-Length",str(len(body)));self.send_header("Cache-Control","no-store");self.send_header("X-Content-Type-Options","nosniff");self.send_header("Content-Security-Policy","default-src 'self';script-src 'self';style-src 'self';img-src 'self' data: https://i.ytimg.com;object-src 'none';frame-ancestors 'none';base-uri 'none'");self.end_headers();self.wfile.write(body)
     def json(self,status,data):self.send(status,json.dumps(data,ensure_ascii=False).encode())
     def body(self,limit=8*1024*1024):
         size=int(self.headers.get("Content-Length","0"))
         if not 0<size<=limit:raise ValueError("Corps invalide")
-        data=json.loads(self.rfile.read(size))
+        raw=self.rfile.read(size);self.body_read=True
+        data=json.loads(raw)
         if not isinstance(data,dict):raise ValueError("Objet attendu")
         return data
     def file(self,path,mime=None):
@@ -835,6 +857,14 @@ class Handler(BaseHTTPRequestHandler):
             return self.file(UPLOADS/name) if re.fullmatch(r"[a-f0-9-]{36}\.(jpg|png|webp|gif)",name) else self.send(404)
         if not self.server.admin:return self.json(200,public_config()) if url.path=="/api/public-config" else self.send(404)
         try:
+            if url.path=="/api/appearance":
+                with connection() as db:return self.json(200,themes.state(db))
+            if url.path=="/api/appearance/export":
+                with connection() as db:
+                    target=parse_qs(url.query).get("id",[themes.ORIGINAL])[0]
+                    theme=next((x for x in themes.state(db)["items"] if x["id"]==target),None)
+                    if theme is None:raise ValueError("Thème introuvable")
+                    return self.json(200,themes.export(theme,UPLOADS))
             if url.path=="/api/youtube":return self.json(200,youtube_status())
             if url.path=="/api/quotes":return self.json(200,{"items":quote_list()})
             if url.path=="/api/backup":return self.send(200,export_backup())
@@ -850,6 +880,8 @@ class Handler(BaseHTTPRequestHandler):
         if url.path=="/preview/icons.css":return self.file(STATIC/"icons.css","text/css")
         if url.path=="/preview/style.css":return self.file(ROOT/"site"/"style.css" if (ROOT/"site"/"style.css").exists() else Path("/usr/share/nginx/html/style.css"),"text/css")
         if url.path=="/preview/preview.css":return self.file(ADMIN/"promo-preview.css","text/css")
+        if url.path.startswith("/preview/") and url.path[9:] in {"index.html","app.js","config.js","metrics.js","theme.js","theme.css","theme-tokens.json","asset-library.json"}:return self.file(STATIC/url.path[9:])
+        if url.path in {"/appearance.js","/appearance.css"}:return self.file(ADMIN/url.path[1:])
         files={"/":("index.html","text/html;charset=utf-8"),"/app.js":("app.js","application/javascript"),"/dates.js":("dates.js","application/javascript"),"/calendar.js":("calendar.js","application/javascript"),"/style.css":("style.css","text/css")}
         return self.file(ADMIN/files[url.path][0],files[url.path][1]) if url.path in files else self.send(404)
     def do_POST(self):
@@ -868,7 +900,15 @@ class Handler(BaseHTTPRequestHandler):
             except (ValueError,TypeError,json.JSONDecodeError):return self.send(400)
             except sqlite3.Error:return self.send(503)
         try:
-            data=self.body(BACKUP_LIMIT if path=="/api/restore" else 8*1024*1024)
+            data=self.body(BACKUP_LIMIT if path=="/api/restore" else themes.MAX_BYTES if path=="/api/appearance/import" else 8*1024*1024)
+            if path=="/api/appearance/css":return self.json(200,themes.css_import(data.get("css")))
+            if path=="/api/appearance":
+                with connection() as db:result=themes.save(db,data,UPLOADS)
+                write_public_fallback()
+                return self.json(200,result)
+            if path=="/api/appearance/import":
+                with connection() as db:result=themes.import_package(db,data,UPLOADS)
+                return self.json(201,result)
             if path=="/api/youtube/test":return self.json(200,youtube_test(data))
             if path=="/api/youtube":return self.json(200,save_youtube(data))
             if path=="/api/quotes/analyze":return self.json(200,add_quotes(data,preview=True))

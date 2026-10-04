@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "backgrounds": [
+    {
+      "id": "community",
+      "name": "Communauté",
+      "category": "Communauté",
+      "url": "/assets/link-community.webp",
+      "existing": true
+    },
+    {
+      "id": "creator",
+      "name": "Créateur",
+      "category": "Créateur / réseaux sociaux",
+      "url": "/assets/link-instagram.webp",
+      "existing": true
+    },
+    {
+      "id": "smarthome",
+      "name": "Domotique",
+      "category": "Tech / domotique",
+      "url": "/assets/link-smarthome.webp",
+      "existing": true
+    },
+    {
+      "id": "shopping",
+      "name": "Boutique",
+      "category": "Boutique / promotions",
+      "url": "/assets/link-shopping.webp",
+      "existing": true
+    },
+    {
+      "id": "collaboration",
+      "name": "Collaboration",
+      "category": "Pro / contact",
+      "url": "/assets/link-collaboration.webp",
+      "existing": true
+    },
+    {
+      "id": "studio",
+      "name": "Studio",
+      "category": "Générique / abstrait",
+      "url": "/assets/studio-links.webp",
+      "existing": true
+    },
+    {
+      "id": "network",
+      "name": "Réseau",
+      "category": "Communauté",
+      "url": "/assets/background-network.svg",
+      "existing": false
+    },
+    {
+      "id": "video",
+      "name": "Vidéo",
+      "category": "Créateur / réseaux sociaux",
+      "url": "/assets/background-video.svg",
+      "existing": false
+    },
+    {
+      "id": "technology",
+      "name": "Technologie",
+      "category": "Tech / domotique",
+      "url": "/assets/background-technology.svg",
+      "existing": false
+    },
+    {
+      "id": "offers",
+      "name": "Offres",
+      "category": "Boutique / promotions",
+      "url": "/assets/background-offers.svg",
+      "existing": false
+    },
+    {
+      "id": "contact",
+      "name": "Contact",
+      "category": "Pro / contact",
+      "url": "/assets/background-contact.svg",
+      "existing": false
+    },
+    {
+      "id": "aurora",
+      "name": "Aurore",
+      "category": "Générique / abstrait",
+      "url": "/assets/background-aurora.svg",
+      "existing": false
+    }
+  ]
+}

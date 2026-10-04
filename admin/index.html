@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>LinKs by DomotiK · Administration</title><link rel="icon" href="/mark.svg">
-<script>try{const p=localStorage.getItem('links-admin-theme')||'dark';document.documentElement.dataset.theme=p==='light'||p==='dark'?p:matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'}catch{document.documentElement.dataset.theme='dark'}</script><link rel="stylesheet" href="/style.css"><script src="/dates.js" defer></script><script src="/preview/cards.js" defer></script><script src="/calendar.js" defer></script><script src="/app.js" defer></script></head>
+<script>try{const p=localStorage.getItem('links-admin-theme')||'dark';document.documentElement.dataset.theme=p==='light'||p==='dark'?p:matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'}catch{document.documentElement.dataset.theme='dark'}</script><link rel="stylesheet" href="/style.css"><script src="/dates.js" defer></script><script src="/preview/cards.js" defer></script><script src="/calendar.js" defer></script><script src="/preview/theme.js" defer></script><script src="/app.js" defer></script><script src="/appearance.js" defer></script><link rel="stylesheet" href="/appearance.css"></head>
 <body class="admin-shell">
 <a class="skip-link" href="#main-content">Aller au contenu</a>
 <aside class="sidebar" aria-label="Links">
@@ -12,6 +12,7 @@
  <button data-tab="dashboard" class="active"><span class="nav-icon" data-icon="dashboard" aria-hidden="true"></span><span>Tableau de bord</span></button>
  <button data-tab="content"><span class="nav-icon" data-icon="links" aria-hidden="true"></span><span>Liens &amp; campagnes</span></button>
  <button data-tab="buttons"><span class="nav-icon" data-icon="buttons" aria-hidden="true"></span><span>Réseaux &amp; raccourcis</span></button>
+ <button data-tab="appearance"><span class="nav-icon" data-icon="settings" aria-hidden="true"></span><span>Apparence</span></button>
  <button data-tab="archives"><span class="nav-icon" data-icon="archive" aria-hidden="true"></span><span>Archives</span></button>
  <button data-tab="settings"><span class="nav-icon" data-icon="settings" aria-hidden="true"></span><span>Paramètres</span></button>
  <a class="public-link mobile-public-link" href="#" hidden target="_blank" rel="noopener noreferrer"><span data-icon="external" aria-hidden="true"></span>Voir la page publique</a>
@@ -52,6 +53,7 @@
  <div class="section-head"><div><h2>Archives</h2><p>Les éléments archivés sont masqués de la page mais conservent leurs statistiques.</p></div></div>
  <div id="archive-list" class="sortable-list"></div>
 </section>
+<section class="view" id="appearance"><div class="page-heading"><h2>Apparence</h2><p>Personnalisez votre page publique.</p></div><div id="appearance-root"></div></section>
 <section class="view" id="settings">
  <div class="section-head"><div><h2>Réglages</h2><p>Personnalisez votre page et gérez votre installation.</p></div></div><nav class="settings-shortcuts" aria-label="Sections des réglages"><a href="#settings-form">Identité</a><a href="#youtube-form">YouTube</a><a href="#analytics-panel">Statistiques</a><a href="#access-form">Accès</a><a href="#quotes-panel">Citations</a><a href="#sharing-panel">Partage</a><a href="#backup-panel">Sauvegarde</a></nav>
  <div class="settings-grid"><form id="settings-form" class="panel form-grid"><h3 class="wide">Identité de la page publique</h3><p class="wide field-help">Votre identité reste indépendante de celle de LinKs.</p>

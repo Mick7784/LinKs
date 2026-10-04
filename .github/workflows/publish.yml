@@ -1,7 +1,7 @@
 name: Build and publish Docker image
 on:
   push:
-    branches: [main, feature/offer-card-two-steps]
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -46,6 +46,8 @@ jobs:
           python3 scripts/instance_test.py
           python3 scripts/release_version_test.py
           python3 scripts/youtube_test.py
+          python3 scripts/themes_test.py
+          python3 scripts/release_notes_test.py
           node --test scripts/metrics.test.cjs scripts/dates.test.cjs scripts/video-api.test.mjs scripts/calendar.test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/instance-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/story-browser-test.cjs
@@ -55,6 +57,7 @@ jobs:
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/settings-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/targeted-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/public-browser-test.cjs
+          NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/appearance-browser-test.cjs
       - name: Build and smoke-test
         shell: bash
         run: |
@@ -68,11 +71,11 @@ jobs:
           done
           python3 scripts/smoke.py http://127.0.0.1:18080 http://127.0.0.1:18081 "$(docker exec links-test cat /data/setup-code)"
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18080/api/stats)" = 404
-          for file in style.css icons.css config.js cards.js app.js metrics.js assets/link-shopping.webp; do
+          for file in style.css icons.css config.js cards.js app.js metrics.js theme.js theme.css theme-tokens.json asset-library.json assets/link-shopping.webp assets/background-network.svg; do
             curl -fsS "http://127.0.0.1:18080/$file" -o /dev/null
           done
       - name: Reserve persistent production version
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && inputs.validation_only != true
+        if: github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && inputs.official_release == true && inputs.validation_only == false) || (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'Release V')))
         id: release
         env:
           RELEASE_MESSAGE: ${{ github.event.head_commit.message }}
@@ -88,12 +91,13 @@ jobs:
       - name: Publish AMD64 and ARM64 images
         if: steps.release.outputs.eligible == 'true'
         env:
-          COMMIT_SHA: ${{ github.sha }}
+          COMMIT_SHA: ${{ steps.release.outputs.commit }}
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
         run: |
           set -euo pipefail
           docker buildx create --use --name links-builder
+          docker build -t links-release-check --build-arg "APP_RELEASE_VERSION=$RELEASE_VERSION" --build-arg "APP_RELEASE_ID=$RELEASE_VERSION:$COMMIT_SHA" .
           release_args=()
           if [ -n "$RELEASE_VERSION" ]; then
             if docker buildx imagetools inspect "$IMAGE:$RELEASE_TAG" >/dev/null 2>&1; then
@@ -101,6 +105,7 @@ jobs:
               revision=$(docker image inspect "$IMAGE:$RELEASE_TAG" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')
               test "$revision" = "$COMMIT_SHA" || { echo "Version tag belongs to another source commit"; exit 1; }
               echo "This production image was already published; keep its immutable version tag."
+              docker buildx imagetools create --tag "$IMAGE:latest" "$IMAGE:$RELEASE_TAG"
               exit 0
             fi
             release_args=(--tag "$IMAGE:$RELEASE_TAG" --build-arg "APP_RELEASE_VERSION=$RELEASE_VERSION" --build-arg "APP_RELEASE_ID=$RELEASE_VERSION:$COMMIT_SHA" --label "org.opencontainers.image.version=$RELEASE_VERSION")
@@ -116,13 +121,21 @@ jobs:
           fi
           git push origin "refs/tags/${{ steps.release.outputs.tag }}"
       - name: Publish GitHub release
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && inputs.validation_only != true && steps.release.outputs.eligible == 'true' && inputs.official_release == true
+        if: github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && inputs.official_release == true && inputs.validation_only == false) || (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'Release V'))) && steps.release.outputs.eligible == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-          COMMIT_SHA: ${{ github.sha }}
+          COMMIT_SHA: ${{ steps.release.outputs.commit }}
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
-        run: gh release create "$RELEASE_TAG" --target "${{ steps.release.outputs.commit }}" --title "$RELEASE_VERSION" --generate-notes
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" --title "$RELEASE_VERSION" --notes-file "docs/releases/$RELEASE_VERSION.md" --latest
+          else
+            gh release create "$RELEASE_TAG" --verify-tag --target "$COMMIT_SHA" --title "$RELEASE_VERSION" --notes-file "docs/releases/$RELEASE_VERSION.md" --latest
+          fi
+          docker buildx imagetools inspect "$IMAGE:$RELEASE_TAG"
+          test "$(docker buildx imagetools inspect "$IMAGE:$RELEASE_TAG" --format '{{.Manifest.Digest}}')" = "$(docker buildx imagetools inspect "$IMAGE:latest" --format '{{.Manifest.Digest}}')"
 
 

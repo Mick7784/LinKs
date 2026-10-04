@@ -5,7 +5,7 @@ from http.cookies import SimpleCookie
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-CONFIG_KEYS={'profile.name','profile.tagline','profile.description','profile.logo','profile.avatar',
+CONFIG_KEYS={'appearance.themes','appearance.active','profile.name','profile.tagline','profile.description','profile.logo','profile.avatar',
  'footer.owner','site.url','app.timezone','app.setup_completed','app.config_schema_version',
  'admin.calendar_timed','admin.content_order','app.version','app.release_id','content.initialized','video.enabled','video.channel_id',
  'analytics.enabled','analytics.source_rules','analytics.metric_aliases','auth.mode'}

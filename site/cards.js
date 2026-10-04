@@ -1,6 +1,14 @@
 "use strict";
 let publicTimezone = "UTC";
 const paths = {
+  phone: '<path d="M5 3h4l2 5-3 2c2 4 3 5 6 6l2-3 5 2v4c-1 5-18-5-18-13Z"/>',
+  video: '<rect x="3" y="5" width="13" height="14" rx="3"/><path d="m16 9 5-3v12l-5-3"/>',
+  podcast: '<rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8"/>',
+  blog: '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 7h8M8 11h8M8 15h5"/>',
+  download: '<path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/>',
+  calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4m10-4v4M3 11h18M7 15h3m4 0h3"/>',
+  location: '<path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="3"/>',
+  homeassistant: '<path d="m2 11 10-9 10 9v11H2Z"/><path d="M12 19V8m0 6-5-4m5 7 5-5"/><circle cx="12" cy="7" r="1"/><circle cx="6" cy="9" r="1"/><circle cx="18" cy="11" r="1"/>',
   facebook: '<path d="M15 21v-8h3l1-4h-4V7c0-1 1-2 2-2h2V2h-3c-3 0-5 2-5 5v2H8v4h3v8"/>',
   x: '<path d="m4 3 16 18h-4L4 3h4l12 18M20 3 4 21"/>',
   linkedin: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 10v7m4 0v-7m0 3c0-4 6-4 6 0v4"/><circle cx="7" cy="7" r=".6"/>',
@@ -134,6 +142,7 @@ function appendCampaignDates(copy, item) {
   }
 }
 function renderBlock(item) {
+  item={...item,image:window.LinksTheme?LinksTheme.asset(item.image):item.image};
   const amazon = isAmazon(item);
   const iconName = amazon ? "amazon" : item.icon || "website";
   const a = document.createElement("a");
@@ -206,6 +215,7 @@ function renderBlock(item) {
 }
 
 function renderOffer(item) {
+  item={...item,image:window.LinksTheme?LinksTheme.asset(item.image):item.image};
   const card = document.createElement("article");
   card.className = "card offer-card";
   const visual = text("span", "offer-visual", "");

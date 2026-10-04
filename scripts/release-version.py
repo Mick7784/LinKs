@@ -39,6 +39,9 @@ def reserve(root,source,override=''):
 if __name__=='__main__':
     root=Path(__file__).resolve().parent.parent
     source=os.environ['GITHUB_SHA'];override=os.environ.get('RELEASE_OVERRIDE','')
+    pinned=re.match(r'^Release (V[0-9]+\.[0-9]+)(?:\s|$)',os.environ.get('RELEASE_MESSAGE',''))
+    if os.environ.get('RELEASE_MESSAGE','').startswith('Release V') and not pinned:raise ValueError('Explicit release title must contain a valid version')
+    if not override and pinned:override=validate(pinned.group(1))
     def git(*args):return subprocess.check_output(['git',*args],cwd=root,text=True,stderr=subprocess.DEVNULL).strip()
     git('fetch','origin','main')
     tip=git('rev-parse','origin/main');state_path=root/'.release-state.json'
@@ -51,9 +54,16 @@ if __name__=='__main__':
         git('checkout','--detach',tip)
         version=reserve(root,source,override)
         git('config','user.name','github-actions[bot]');git('config','user.email','41898282+github-actions[bot]@users.noreply.github.com')
-        git('add','VERSION','.release-state.json',*(['README.md'] if (root/'README.md').exists() else []))
+        notes_script=root/'scripts'/'release-notes.py'
+        extra=[]
+        if notes_script.exists():
+            import importlib.util
+            spec=importlib.util.spec_from_file_location('notes',notes_script);notes=importlib.util.module_from_spec(spec);spec.loader.exec_module(notes)
+            notes.prepare(root,version,source)
+            extra=['CHANGELOG.md',f'docs/releases/{version}.md']
+        git('add','VERSION','.release-state.json',*(['README.md'] if (root/'README.md').exists() else []),*extra)
         if git('diff','--cached','--name-only'):
             git('commit','-m',f'Reserve production {version} [skip ci]');git('push','origin','HEAD:main')
         release_commit=git('rev-parse','HEAD')
     else:version='';release_commit=''
-    with open(os.environ['GITHUB_OUTPUT'],'a') as output:output.write(f'version={version}\ntag={version.lower()}\neligible={str(bool(eligible)).lower()}\ncommit={release_commit}\n')
+    with open(os.environ['GITHUB_OUTPUT'],'a') as output:output.write(f'version={version}\ntag={version}\neligible={str(bool(eligible)).lower()}\ncommit={release_commit}\n')
