@@ -127,5 +127,15 @@ function sourceOptions(){
  const available=state.sources.filter(s=>s.active&&!legacy.has(s.name));
  return available.length?'<optgroup label="Autres sources">'+available.map(s=>`<option value="src_${safe(s.id)}">${safe(s.name)}</option>`).join("")+'</optgroup>':"";
 }
-window.LinksTracking={load,sourceOptions};
+function campaignOptions(){
+ if(!state.sources.length)return null;
+ const codes={"Instagram Story":"instagram","YouTube Post":"youtube","Facebook":"facebook","TikTok":"tiktok"};
+ const preferred=["Instagram Story","YouTube Post","Facebook","TikTok"];
+ const available=state.sources.filter(source=>source.active).sort((a,b)=>{
+   const ai=preferred.indexOf(a.name),bi=preferred.indexOf(b.name);
+   return (ai===-1?100:ai)-(bi===-1?100:bi)||a.name.localeCompare(b.name,"fr");
+ });
+ return available.map(source=>`<option value="${codes[source.name]||"src_"+source.id}">${safe(source.name)}</option>`).join("")+'<option value="">Autre / sans source identifiée</option>';
+}
+window.LinksTracking={load,sourceOptions,campaignOptions};
 })();
