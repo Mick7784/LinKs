@@ -12,6 +12,7 @@ import youtube
 import themes
 import images as user_images
 import storage
+import tracked_links
 from urllib.request import urlopen
 
 ROOT=Path(__file__).resolve().parent
@@ -94,6 +95,7 @@ def init():
           token TEXT PRIMARY KEY,promotion_id TEXT NOT NULL UNIQUE,name TEXT NOT NULL,
           created_at TEXT NOT NULL,deleted INTEGER NOT NULL DEFAULT 0)""")
         db.execute("CREATE TABLE IF NOT EXISTS footer_quotes(id TEXT PRIMARY KEY,text TEXT NOT NULL UNIQUE,active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),created_at TEXT NOT NULL)")
+        tracked_links.initialize(db)
         instance.initialize(db,legacy,CONFIG,[DATA_DIR/"assets",STATIC/"assets"],DATA_DIR)
         themes.initialize(db)
         storage.initialize(db)
@@ -209,7 +211,9 @@ def report(start,end,source=""):
                 copies.append({"day":metric["day"],"source":metric["source"],"total":metric["total"],**snapshot})
             elif metric["link"].startswith("block:"):
                 campaign_metrics.append({"day":metric["day"],"source":metric["source"],"id":metric["link"][6:],"kind":metric["kind"],"total":metric["total"]})
-    return {"rows":rows,"stories":stories,"promo_code_copies":copies,"campaign_metrics":campaign_metrics,"timezone":str(PARIS)}
+        tracked=tracked_links.tracked_events(db,start,end,source)
+        source_names={"tracked:"+r["id"]:r["name"] for r in db.execute("SELECT id,name FROM tracking_sources")}
+    return {"rows":rows,"stories":stories,"tracked":tracked,"source_names":source_names,"promo_code_copies":copies,"campaign_metrics":campaign_metrics,"timezone":str(PARIS)}
 
 STORY_TOKEN=re.compile(r'st_[A-Za-z0-9_-]{16}')
 def story_url_valid(url):
@@ -466,7 +470,9 @@ def save_content(db,item,item_id=None):
         instance.put(db,"admin.calendar_timed",json.dumps(sorted(ids)))
     return item_id
 
-BACKUP_TABLES=('content_blocks','top_buttons','settings','counts','story_links','footer_quotes')
+LEGACY_BACKUP_TABLES=('content_blocks','top_buttons','settings','counts','story_links','footer_quotes')
+TRACKING_BACKUP_TABLES=('tracking_sources','tracked_links','tracked_tokens')
+BACKUP_TABLES=LEGACY_BACKUP_TABLES+TRACKING_BACKUP_TABLES
 BACKUP_LIMIT=64*1024*1024
 UPLOAD_NAME=re.compile(r'[a-f0-9-]{36}\.(jpg|png|webp|gif)')
 
@@ -508,6 +514,14 @@ def restore_backup(data):
             existing={(r['day'],r['source'],r['kind'],r['link']) for r in tables['counts']}
             for r in db.execute("SELECT * FROM counts WHERE kind IN ('story','promo_code_copy')"):
                 if (r['day'],r['source'],r['kind'],r['link']) not in existing:tables['counts'].append(dict(r))
+    missing=set(TRACKING_BACKUP_TABLES)-set(tables)
+    if missing:
+        if missing!=set(TRACKING_BACKUP_TABLES):raise ValueError('Sauvegarde de liens suivis incomplète')
+        with connection() as db:
+            for table in TRACKING_BACKUP_TABLES:tables[table]=[dict(r) for r in db.execute('SELECT * FROM '+table)]
+            old_keys={(r['day'],r['source'],r['kind'],r['link']) for r in tables['counts']}
+            for row in db.execute("SELECT * FROM counts WHERE kind='tracked'"):
+                if (row['day'],row['source'],row['kind'],row['link']) not in old_keys:tables['counts'].append(dict(row))
     if set(tables)!=set(BACKUP_TABLES):raise ValueError('Sauvegarde incomplète')
     assets=data.get('assets',{})
     if not isinstance(assets,dict):raise ValueError('Assets invalides')
@@ -558,15 +572,22 @@ def restore_backup(data):
                         button_data({**row,'icon':'mail' if row['icon']=='email' else row['icon']})
                     elif table=='counts':
                         date.fromisoformat(row['day'])
-                        if row['kind'] not in {'view','click','impression','story','promo_code_copy'} or row['total']<1:raise ValueError('Statistique invalide')
+                        if row['kind'] not in {'view','click','impression','story','tracked','promo_code_copy'} or row['total']<1:raise ValueError('Statistique invalide')
                         if row['kind']=='promo_code_copy':
                             snapshot=json.loads(row['link'])
                             if not isinstance(snapshot,dict) or set(snapshot)!={'id','name','code','timestamp'} or any(not isinstance(v,str) for v in snapshot.values()) or not snapshot['code'] or len(snapshot['code'])>80:raise ValueError('Copie de code invalide')
                             instant(snapshot['timestamp'])
-                        if row['kind']=='story' and (row['source'] not in {'instagram-story','shared-unknown','instagram','youtube','facebook','tiktok','discord','newsletter','site','mail','qr'} or not re.fullmatch(r'story:st_[A-Za-z0-9_-]{16}:\d{2}',row['link']) or int(row['link'][-2:])>23):raise ValueError('Statistique Story invalide')
+                        if row['kind']=='tracked' and (not re.fullmatch(r'tracked:tk_[A-Za-z0-9_-]{16}:\d{2}',row['link']) or int(row['link'][-2:])>23 or not re.fullmatch(r'tracked:[a-f0-9]{32}',row['source'])):raise ValueError('Statistique de lien suivi invalide')
+                        if row['kind']=='story' and ((row['source'] not in {'instagram-story','shared-unknown','instagram','youtube','facebook','tiktok','discord','newsletter','site','mail','qr'} and not re.fullmatch(r'tracked:[a-f0-9]{32}',row['source'])) or not re.fullmatch(r'story:st_[A-Za-z0-9_-]{16}:\d{2}',row['link']) or int(row['link'][-2:])>23):raise ValueError('Statistique Story invalide')
                     elif table=='story_links':
                         if not STORY_TOKEN.fullmatch(row['token']) or row['deleted'] not in (0,1) or not row['name'] or not row['promotion_id']:raise ValueError('Lien Story invalide')
                         instant(row['created_at'])
+                    elif table=='tracking_sources':
+                        if not tracked_links.IDENT.fullmatch(row['id']) or not row['name'].strip() or len(row['name'])>100 or row['active'] not in (0,1):raise ValueError('Source suivie invalide')
+                    elif table=='tracked_links':
+                        if not tracked_links.IDENT.fullmatch(row['id']) or not row['name'].strip() or len(row['name'])>160 or not story_url_valid(row['url']) or row['archived'] not in (0,1) or row['enabled'] not in (0,1):raise ValueError('Lien suivi invalide')
+                    elif table=='tracked_tokens':
+                        if not tracked_links.TOKEN.fullmatch(row['token']) or not tracked_links.IDENT.fullmatch(row['link_id']) or not tracked_links.IDENT.fullmatch(row['source_id']):raise ValueError('Jeton suivi invalide')
                     elif table=='footer_quotes':
                         if not row['text'].strip() or len(row['text'])>1000 or row['active'] not in (0,1):raise ValueError('Citation invalide')
                         instant(row['created_at'])
@@ -590,6 +611,54 @@ def restore_backup(data):
                     if incoming[old['token']]['promotion_id']!=old['promotion_id']:raise ValueError('Un identifiant Story ne peut pas changer de promotion')
                 elif any(r['promotion_id']==old['promotion_id'] for r in incoming.values()):raise ValueError('Identifiants Story incompatibles avec les liens existants')
                 else:tables['story_links'].append({**dict(old),'deleted':int(old['promotion_id'] not in restored_ids)})
+            # Preserve all previously published tracked tokens through restores.
+            existing_links={r['id']:r for r in tables['tracked_links']}
+            existing_sources={r['id']:r for r in tables['tracking_sources']}
+            # A restore must not discard currently configured private links
+            # or source lifetime counters that were added after the backup.
+            for old in db.execute('SELECT * FROM tracked_links'):
+                if old['id'] not in existing_links:
+                    row=dict(old);tables['tracked_links'].append(row);existing_links[old['id']]=row
+            for old in db.execute('SELECT * FROM tracking_sources'):
+                if old['id'] not in existing_sources:
+                    row=dict(old)
+                    taken={source['name'].casefold() for source in existing_sources.values()}
+                    if row['name'].casefold() in taken:
+                        used=db.execute('SELECT 1 FROM tracked_tokens WHERE source_id=? LIMIT 1',(old['id'],)).fetchone()
+                        historic=db.execute("SELECT 1 FROM counts WHERE source=? AND kind IN ('tracked','story') LIMIT 1",('tracked:'+old['id'],)).fetchone()
+                        # Two fresh installations have independent seeded defaults.
+                        # Only one unused copy of a source label is needed.
+                        if not used and not historic and not row['story_click_total']:continue
+                        original=row['name'][:76]
+                        row['name']=original+' (historique '+row['id'][:8]+')'
+                        if row['name'].casefold() in taken:raise ValueError('Collision de sources de publication')
+                    tables['tracking_sources'].append(row);existing_sources[old['id']]=row
+                else:
+                    row=existing_sources[old['id']]
+                    row['story_click_total']=max(row['story_click_total'],old['story_click_total'])
+            incoming_tokens={r['token']:r for r in tables['tracked_tokens']}
+            existing_pairs={(r['link_id'],r['source_id']):r['token'] for r in incoming_tokens.values()}
+            for old in db.execute('SELECT * FROM tracked_tokens'):
+                if old['token'] in incoming_tokens:
+                    row=incoming_tokens[old['token']]
+                    if row['link_id']!=old['link_id'] or row['source_id']!=old['source_id']:raise ValueError('Un lien suivi ne peut pas être réattribué')
+                    row['click_total']=max(row['click_total'],old['click_total'])
+                else:
+                    key=(old['link_id'],old['source_id'])
+                    if key in existing_pairs:raise ValueError('Jetons suivis incompatibles')
+                    incoming_tokens[old['token']]=dict(old)
+                    tables['tracked_tokens'].append(dict(old))
+                if old['link_id'] not in existing_links:
+                    row=dict(db.execute('SELECT * FROM tracked_links WHERE id=?',(old['link_id'],)).fetchone())
+                    tables['tracked_links'].append(row);existing_links[old['link_id']]=row
+                if old['source_id'] not in existing_sources:
+                    row=dict(db.execute('SELECT * FROM tracking_sources WHERE id=?',(old['source_id'],)).fetchone())
+                    tables['tracking_sources'].append(row);existing_sources[old['source_id']]=row
+            old_keys={(r['day'],r['source'],r['kind'],r['link']) for r in tables['counts']}
+            for old in db.execute("SELECT * FROM counts WHERE kind='tracked'"):
+                if (old['day'],old['source'],old['kind'],old['link']) not in old_keys:tables['counts'].append(dict(old))
+            tracked_tokens={r['token'] for r in tables['tracked_tokens']}
+            if any(r['kind']=='tracked' and r['link'].split(':')[1] not in tracked_tokens for r in tables['counts']):raise ValueError('Lien suivi manquant')
             tokens={r['token'] for r in tables['story_links']}
             if any(r['kind']=='story' and r['link'].split(':')[1] not in tokens for r in tables['counts']):raise ValueError('Référent Story manquant')
             # Every uploaded image used by the restored content must exist in this backup.
@@ -615,8 +684,13 @@ def restore_backup(data):
             refs=[r['image'] for r in tables['content_blocks']]+[r['value'] for r in tables['settings'] if r['key'] in {'profile.logo','profile.avatar'}]
             for ref in refs:
                 if ref.startswith('/assets/') and not (STATIC/ref[1:]).is_file() and not (DATA_DIR/ref[1:]).is_file() and ref[8:] not in asset_bytes:raise ValueError('Asset référencé manquant')
-            for table in BACKUP_TABLES:
+            for table in reversed(TRACKING_BACKUP_TABLES):
                 db.execute('DELETE FROM '+table)
+            for table in LEGACY_BACKUP_TABLES:
+                db.execute('DELETE FROM '+table)
+                columns=[c['name'] for c in db.execute('PRAGMA table_info('+table+')')]
+                db.executemany('INSERT INTO '+table+' ('+','.join(columns)+') VALUES ('+','.join('?' for _ in columns)+')',[[row[c] for c in columns] for row in tables[table]])
+            for table in TRACKING_BACKUP_TABLES:
                 columns=[c['name'] for c in db.execute('PRAGMA table_info('+table+')')]
                 db.executemany('INSERT INTO '+table+' ('+','.join(columns)+') VALUES ('+','.join('?' for _ in columns)+')',[[row[c] for c in columns] for row in tables[table]])
             db.execute("INSERT OR REPLACE INTO settings VALUES('content.initialized','1')")
@@ -885,7 +959,8 @@ class Handler(BaseHTTPRequestHandler):
         url=urlsplit(self.path)
         if self.server.admin and url.path in {"/brand.svg","/brand-light.svg","/mark.svg"}:return self.file(ADMIN/url.path[1:],"image/svg+xml")
         if url.path.startswith('/go/'):
-            return self.redirect_story(url.path.removeprefix('/go/'))
+            token=url.path.removeprefix('/go/')
+            return self.redirect_tracked(token) if tracked_links.TOKEN.fullmatch(token) else self.redirect_story(token)
         if url.path=="/latest-video.json":
             try:return self.json(200,latest_video())
             except (OSError,ValueError):return self.json(502,{"error":"Vidéo momentanément indisponible"})
@@ -918,6 +993,12 @@ class Handler(BaseHTTPRequestHandler):
                     return self.json(200,themes.export(theme,UPLOADS))
             if url.path=="/api/youtube":return self.json(200,youtube_status())
             if url.path=="/api/quotes":return self.json(200,{"items":quote_list()})
+            if url.path=="/api/tracking-sources":
+                with connection() as db:return self.json(200,{"items":tracked_links.source_rows(db)})
+            if url.path=="/api/tracked-links":
+                with connection() as db:
+                    q=parse_qs(url.query)
+                    return self.json(200,{"items":tracked_links.list_links(db,q.get("start",[None])[0],q.get("end",[None])[0])})
             if url.path=="/api/backup":return self.send(200,export_backup())
             if url.path=="/api/storage":return self.json(200,storage_state())
             if url.path=="/api/stats":
@@ -941,7 +1022,7 @@ class Handler(BaseHTTPRequestHandler):
         if url.path=="/preview/style.css":return self.file(ROOT/"site"/"style.css" if (ROOT/"site"/"style.css").exists() else Path("/usr/share/nginx/html/style.css"),"text/css")
         if url.path=="/preview/preview.css":return self.file(ADMIN/"promo-preview.css","text/css")
         if url.path.startswith("/preview/") and url.path[9:] in {"index.html","app.js","config.js","metrics.js","theme.js","theme.css","theme-tokens.json","asset-library.json"}:return self.file(STATIC/url.path[9:])
-        if url.path in {"/appearance.js","/appearance.css","/shortcuts.js","/uploads.js","/storage.js","/settings.js"}:return self.file(ADMIN/url.path[1:])
+        if url.path in {"/appearance.js","/appearance.css","/shortcuts.js","/uploads.js","/storage.js","/settings.js","/tracking.js"}:return self.file(ADMIN/url.path[1:])
         files={"/":("index.html","text/html;charset=utf-8"),"/app.js":("app.js","application/javascript"),"/dates.js":("dates.js","application/javascript"),"/calendar.js":("calendar.js","application/javascript"),"/style.css":("style.css","text/css")}
         return self.file(ADMIN/files[url.path][0],files[url.path][1]) if url.path in files else self.send(404)
     def do_POST(self):
@@ -974,6 +1055,23 @@ class Handler(BaseHTTPRequestHandler):
             if path=="/api/quotes":return self.json(200,add_quotes(data))
             if path=="/api/restore":return self.json(200,restore_backup(data))
             if path=="/api/promotions/replace":return self.replace_promotion(data)
+            if path=="/api/tracking-sources":
+                with connection() as db:return self.json(201,tracked_links.add_source(db,data,now_iso()))
+            if path=="/api/tracked-links":
+                with connection() as db:return self.json(201,tracked_links.create_link(db,data,story_url_valid,now_iso()))
+            match=re.fullmatch(r"/api/tracked-links/([a-f0-9]{32})/token",path)
+            if match:
+                with connection() as db:
+                    db.execute('BEGIN IMMEDIATE')
+                    return self.json(200,tracked_links.token_link(db,match.group(1),data.get('source_id'),ORIGIN,now_iso()))
+            match=re.fullmatch(r"/api/tracked-links/([a-f0-9]{32})/(archive|restore|disable|enable)",path)
+            if match:
+                flag="archived" if match.group(2) in {"archive","restore"} else "enabled"
+                value=match.group(2) in {"archive","enable"}
+                with connection() as db:return self.json(200,tracked_links.set_link_flag(db,match.group(1),flag,value))
+            match=re.fullmatch(r"/api/tracking-sources/([a-f0-9]{32})/restore",path)
+            if match:
+                with connection() as db:return self.json(200,tracked_links.restore_source(db,match.group(1)))
             if path=="/api/content":return self.create_content(data)
             if path=="/api/promotions/check":
                 item=block_data(data);return self.json(200,promotion_check(item,data.get("id") or None))
@@ -1003,6 +1101,12 @@ class Handler(BaseHTTPRequestHandler):
                 if type(data.get("active")) is not bool:raise ValueError("active doit être un booléen")
                 with connection() as db:changed=db.execute("UPDATE footer_quotes SET active=? WHERE id=?",(int(data["active"]),match.group(1))).rowcount
                 return self.send(204) if changed else self.send(404)
+            match=re.fullmatch(r"/api/tracked-links/([a-f0-9]{32})",path)
+            if match:
+                with connection() as db:return self.json(200,tracked_links.update_link(db,match.group(1),data,story_url_valid,now_iso()))
+            match=re.fullmatch(r"/api/tracking-sources/([a-f0-9]{32})",path)
+            if match:
+                with connection() as db:return self.json(200,tracked_links.edit_source(db,match.group(1),data))
             match=re.fullmatch(r"/api/content/([\w-]+)",path)
             if match:return self.update_content(match.group(1),data)
             match=re.fullmatch(r"/api/buttons/([\w-]+)",path)
@@ -1013,6 +1117,11 @@ class Handler(BaseHTTPRequestHandler):
         if self.server.admin and not self.authorized(mutation=True):return
         if not self.server.admin:return self.send(404)
         path=urlsplit(self.path).path
+        match=re.fullmatch(r"/api/tracking-sources/([a-f0-9]{32})",path)
+        if match:
+            try:
+                with connection() as db:return self.json(200,tracked_links.remove_source(db,match.group(1)))
+            except ValueError as exc:return self.json(400,{"error":str(exc)})
         if path=="/api/quotes":
             with connection() as db:db.execute("DELETE FROM footer_quotes")
             return self.send(204)
@@ -1032,7 +1141,24 @@ class Handler(BaseHTTPRequestHandler):
         return self.send(204) if changed else self.send(404)
     def do_HEAD(self):
         path=urlsplit(self.path).path
-        return self.redirect_story(path.removeprefix('/go/'),count=False) if path.startswith('/go/') else self.send(404)
+        if not path.startswith('/go/'):return self.send(404)
+        token=path.removeprefix('/go/')
+        return self.redirect_tracked(token,count=False) if tracked_links.TOKEN.fullmatch(token) else self.redirect_story(token,count=False)
+    def redirect_tracked(self,token,count=True):
+        try:
+            with connection() as db:
+                db.execute('BEGIN IMMEDIATE')
+                row=tracked_links.find_destination(db,token)
+                if not row:return self.send(404)
+                if not row['enabled'] or not story_url_valid(row['url']):return self.send(410)
+                agent=self.headers.get('User-Agent','').lower()
+                if count and instance.get(db,"analytics.enabled")=="true" and not any(x in agent for x in ['bot','spider','crawler','headless','facebookexternalhit','meta-externalagent','preview']):
+                    now=datetime.now(PARIS)
+                    increment(db,'tracked','tracked:'+row['source_id'],'tracked:'+token+':'+now.strftime('%H'),now.date().isoformat())
+                    tracked_links.count_click(db,token)
+                target=story_destination(row['url'])
+            self.send_response(302);self.send_header('Location',target);self.send_header('Cache-Control','no-store');self.send_header('Referrer-Policy','no-referrer');self.send_header('Content-Length','0');self.end_headers()
+        except (sqlite3.Error,OSError):return self.send(503)
     def redirect_story(self,token,count=True):
         if not STORY_TOKEN.fullmatch(token):return self.send(404)
         try:
@@ -1047,8 +1173,12 @@ class Handler(BaseHTTPRequestHandler):
                 if count and instance.get(db,"analytics.enabled")=="true" and not any(x in agent for x in ['bot','spider','crawler','headless','facebookexternalhit','meta-externalagent','preview']):
                     now=datetime.now(PARIS)
                     source=parse_qs(urlsplit(self.path).query).get('utm_source',[''])[0].strip().lower()
-                    if source not in {'instagram','youtube','facebook','tiktok','discord','newsletter','site','mail','qr'}:source='shared-unknown'
+                    if re.fullmatch(r'src_[a-f0-9]{32}',source):
+                        ref=source[4:]
+                        source='tracked:'+ref if db.execute("SELECT 1 FROM tracking_sources WHERE id=?",(ref,)).fetchone() else 'shared-unknown'
+                    elif source not in {'instagram','youtube','facebook','tiktok','discord','newsletter','site','mail','qr'}:source='shared-unknown'
                     increment(db,'story',source,'story:'+token+':'+now.strftime('%H'),now.date().isoformat())
+                    tracked_links.count_campaign_source(db,source)
                 target=story_destination(item['url'])
             self.send_response(302);self.send_header('Location',target);self.send_header('Cache-Control','no-store');self.send_header('Referrer-Policy','no-referrer');self.send_header('Content-Length','0');self.end_headers()
         except (sqlite3.Error,OSError):return self.send(503)

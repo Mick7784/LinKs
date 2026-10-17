@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>LinKs by DomotiK · Administration</title><link rel="icon" href="/mark.svg">
-<script>try{const p=localStorage.getItem('links-admin-theme')||'dark';document.documentElement.dataset.theme=p==='light'||p==='dark'?p:matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'}catch{document.documentElement.dataset.theme='dark'}</script><link rel="stylesheet" href="/style.css"><script src="/dates.js" defer></script><script src="/preview/cards.js" defer></script><script src="/calendar.js" defer></script><script src="/preview/theme.js" defer></script><script src="/uploads.js" defer></script><script src="/app.js" defer></script><script src="/appearance.js" defer></script><script src="/shortcuts.js" defer></script><script src="/storage.js" defer></script><script src="/settings.js" defer></script><link rel="stylesheet" href="/appearance.css"></head>
+<script>try{const p=localStorage.getItem('links-admin-theme')||'dark';document.documentElement.dataset.theme=p==='light'||p==='dark'?p:matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'}catch{document.documentElement.dataset.theme='dark'}</script><link rel="stylesheet" href="/style.css"><script src="/dates.js" defer></script><script src="/preview/cards.js" defer></script><script src="/calendar.js" defer></script><script src="/preview/theme.js" defer></script><script src="/uploads.js" defer></script><script src="/app.js" defer></script><script src="/tracking.js" defer></script><script src="/appearance.js" defer></script><script src="/shortcuts.js" defer></script><script src="/storage.js" defer></script><script src="/settings.js" defer></script><link rel="stylesheet" href="/appearance.css"></head>
 <body class="admin-shell">
 <a class="skip-link" href="#main-content">Aller au contenu</a>
 <aside class="sidebar" aria-label="Links">
@@ -42,8 +42,13 @@
  <section class="panel planning-panel"><div class="panel-title"><h3>Planning des promotions</h3><div class="timeline-controls"><button type="button" id="agenda-month" aria-pressed="true">Mois</button><button type="button" id="agenda-week" aria-pressed="false">Semaine</button><button type="button" id="agenda-today">Aujourd’hui</button><button type="button" id="timeline-prev" aria-label="Période précédente">←</button><strong id="timeline-month"></strong><button type="button" id="timeline-next" aria-label="Période suivante">→</button><button type="button" data-open-content>Gérer</button></div></div><div id="promo-planning"></div></section>
 </section>
 <section class="view" id="content">
- <div class="section-head"><div><h2>Liens &amp; campagnes</h2><p>Organisez les sections dans l’administration et les éléments de chacune. Cet ordre ne change pas celui des sections publiques.</p></div><div class="profile-image-actions"><button class="primary" data-action="new-block">Ajouter un lien</button><button data-action="new-campaign">Créer une campagne</button></div></div>
+ <div class="section-head"><div><h2>Liens &amp; campagnes</h2><p>Organisez les sections dans l’administration et les éléments de chacune. Cet ordre ne change pas celui des sections publiques.</p></div><div class="profile-image-actions"><button class="primary" data-action="new-block">Ajouter un lien</button><button data-action="new-campaign">Créer une campagne</button><button type="button" data-action="new-tracked" class="tracked-add-button">Créer un lien suivi</button></div></div>
  <div id="content-list" class="sortable-list"></div>
+ <section class="content-section tracked-section" aria-labelledby="tracked-heading">
+  <header class="content-section-header"><div><h3 id="tracked-heading">Liens suivis · privés</h3><small>Liens partagés uniquement, jamais affichés sur la page publique</small></div>
+  <div class="tracked-toolbar"><button type="button" id="tracked-manage-sources">Gérer les sources</button><label class="tracked-archived-toggle"><input id="tracked-show-archived" type="checkbox"> Archivés</label></div></header>
+  <div class="section-items" id="tracked-list"><p class="empty">Aucun lien suivi.</p></div>
+ </section>
 </section>
 <section class="view" id="buttons">
  <div class="section-head"><div><h2>Réseaux &amp; raccourcis</h2><p>Réseaux, contact et ancres affichés sous le profil.</p></div><button class="primary" data-action="new-button">Ajouter un bouton</button></div>
@@ -86,6 +91,25 @@
 </div></div></section>
 <footer><span id="admin-timezone"></span> · Statistiques conservées 400 jours</footer>
 </main></div>
+<dialog id="tracked-dialog" class="tracked-dialog">
+ <form id="tracked-form" class="tracked-editor">
+ <header><h2 id="tracked-dialog-title">Créer un lien suivi</h2><button type="button" class="icon-button" data-close-tracked aria-label="Fermer">×</button></header>
+ <p class="field-help">Ce lien ne sera pas visible sur la page publique. Son URL de partage restera identique si vous changez sa destination.</p>
+ <label>Nom interne<input name="name" required maxlength="160" placeholder="Ex. UGREEN Nexode 200W"></label>
+ <label>URL de destination<input name="url" required type="url" maxlength="2000" placeholder="https://…"></label>
+ <label>Catégorie (facultatif)<input name="category" maxlength="80" placeholder="Produit, accessoire, offre…"></label>
+ <label>Notes (facultatif)<textarea name="notes" rows="2" maxlength="800"></textarea></label>
+ <div class="dialog-actions"><button type="button" data-close-tracked>Annuler</button><button type="submit" class="primary">Enregistrer</button></div>
+ </form>
+</dialog>
+<dialog id="tracked-sources-dialog" class="tracked-dialog">
+ <div class="tracked-editor"><header><h2>Sources de publication</h2><button type="button" class="icon-button" data-close-sources aria-label="Fermer">×</button></header>
+ <p class="field-help">Ajoutez ou renommez librement vos emplacements de publication. Retirer une source avec des clics l'archive sans invalider ses liens.</p>
+ <form id="tracked-source-form" class="tracked-new-source"><label>Nouvelle source<input name="name" required maxlength="100" placeholder="Ex. LinkedIn, newsletter…"></label><button type="submit" class="primary">Ajouter</button></form>
+ <div id="tracked-source-list" class="tracked-source-list"></div>
+ <div class="dialog-actions"><button type="button" data-close-sources>Fermer</button></div>
+ </div>
+</dialog>
 <dialog id="block-dialog"><form method="dialog" id="block-form"><header><div><p class="eyebrow">ÉDITION</p><h2 id="block-title">Nouveau bloc</h2></div><button class="icon-button" value="cancel" formnovalidate aria-label="Fermer">×</button></header>
  <p id="block-feedback" data-dialog-feedback class="editor-feedback" role="alert" hidden></p>
  <div class="editor"><div class="editor-fields">

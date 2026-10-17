@@ -37,6 +37,98 @@ class AnalyticsTests(unittest.TestCase):
         except HTTPError as exc:response=exc
         with response:return response.code,dict(response.headers)
 
+    def test_private_tracked_links_sources_permanent_tokens_and_history(self):
+        admin=self.server(True);public=self.server()
+        status,body=self.request(admin+'/api/tracked-links',{'name':'Chargeur UGREEN','url':'https://shop.example/first','category':'Produit'})
+        self.assertEqual(status,201,body);link_id=json.loads(body)['id']
+        self.assertNotIn(link_id,json.dumps(self.a.public_config()))
+        sources=json.loads(self.request(admin+'/api/tracking-sources')[1])['items']
+        self.assertTrue(any(x['name']=='Instagram Story' for x in sources))
+        status,body=self.request(admin+'/api/tracking-sources',{'name':'YouTube Post perso'})
+        self.assertEqual(status,201,body);source_id=json.loads(body)['id']
+        endpoint=admin+'/api/tracked-links/'+link_id+'/token'
+        status,body=self.request(endpoint,{'source_id':source_id});self.assertEqual(status,200,body)
+        url=json.loads(body)['url'];token=url.rsplit('/',1)[-1]
+        self.assertRegex(token,r'^tk_[A-Za-z0-9_-]{16}$')
+        self.assertEqual(json.loads(self.request(endpoint,{'source_id':source_id})[1])['url'],url)
+        self.assertEqual(self.redirect(public+'/go/'+token)[0],302)
+        self.assertEqual(self.redirect(public+'/go/'+token,method='HEAD')[0],302)
+        self.assertEqual(self.redirect(public+'/go/'+token,agent='Googlebot')[0],302)
+        rows=json.loads(self.request(admin+'/api/tracked-links')[1])['items']
+        item=next(x for x in rows if x['id']==link_id)
+        self.assertEqual(item['clicks'],1)
+        self.assertEqual(item['sources'][0]['name'],'YouTube Post perso')
+        day=self.a.datetime.now(self.a.PARIS).date().isoformat()
+        report=self.a.report(day,day)
+        self.assertEqual(sum(x['total'] for x in report['tracked']),1)
+        self.assertEqual(len(report['stories']),0)
+        self.assertEqual(sum(x['total'] for x in report['rows']),0)
+        status,_=self.request(admin+'/api/tracked-links/'+link_id,{'name':'Chargeur UGREEN','url':'https://shop.example/second'},method='PUT')
+        self.assertEqual(status,200)
+        self.assertEqual(self.redirect(public+'/go/'+token)[1]['Location'],'https://shop.example/second')
+        self.assertEqual(json.loads(self.request(endpoint,{'source_id':source_id})[1])['url'],url)
+        source_endpoint=admin+'/api/tracking-sources/'+source_id
+        self.assertEqual(self.request(source_endpoint,method='DELETE')[0],200)
+        archived=next(x for x in json.loads(self.request(admin+'/api/tracking-sources')[1])['items'] if x['id']==source_id)
+        self.assertFalse(archived['active'])
+        self.assertEqual(archived['clicks'],2)
+        self.assertEqual(self.redirect(public+'/go/'+token)[0],302)
+        self.assertEqual(self.request(source_endpoint+'/restore',{},method='POST')[0],200)
+        self.assertEqual(self.request(source_endpoint,{'name':'YouTube communautaire'},method='PUT')[0],200)
+        self.assertEqual(self.redirect(public+'/go/'+token)[0],302)
+        self.assertEqual(self.request(admin+'/api/tracked-links/'+link_id+'/archive',{})[0],200)
+        self.assertEqual(self.redirect(public+'/go/'+token)[0],302)
+        self.assertEqual(self.request(admin+'/api/tracked-links/'+link_id+'/disable',{})[0],200)
+        self.assertEqual(self.redirect(public+'/go/'+token)[0],410)
+        self.assertEqual(self.request(admin+'/api/tracked-links/'+link_id+'/enable',{})[0],200)
+        self.assertEqual(self.request(admin+'/api/tracked-links/'+link_id+'/restore',{})[0],200)
+        self.assertEqual(self.redirect(public+'/go/'+token)[0],302)
+        backup=json.loads(self.a.export_backup())
+        self.a.restore_backup(backup)
+        self.assertEqual(self.redirect(public+'/go/'+token)[0],302)
+        old=dict(backup);old['tables']=dict(backup['tables'])
+        for table in self.a.TRACKING_BACKUP_TABLES:old['tables'].pop(table)
+        old['tables']['counts']=[row for row in backup['tables']['counts'] if row['kind']!='tracked']
+        self.a.restore_backup(old)
+        self.assertEqual(self.redirect(public+'/go/'+token)[0],302)
+        self.assertGreaterEqual(next(x for x in json.loads(self.request(admin+'/api/tracked-links')[1])['items'] if x['id']==link_id)['clicks'],4)
+        self.a.init()
+        self.assertEqual(self.redirect(public+'/go/'+token)[0],302)
+
+    def test_custom_sources_on_campaigns_are_retained_after_clicks(self):
+        admin=self.server(True);public=self.server();campaign_id=self.promo()
+        source=json.loads(self.request(admin+'/api/tracking-sources',{'name':'Blog partenaire'})[1])
+        link=json.loads(self.request(admin+'/api/content/'+campaign_id+'/story-link',{})[1])['url']
+        local_link=public+'/go/'+link.rsplit('/go/',1)[-1]
+        status,headers=self.redirect(local_link+'?utm_source=src_'+source['id'])
+        self.assertEqual(status,302)
+        sources=json.loads(self.request(admin+'/api/tracking-sources')[1])['items']
+        selected=next(row for row in sources if row['id']==source['id'])
+        self.assertEqual(selected['clicks'],1)
+        day=self.a.datetime.now(self.a.PARIS).date().isoformat()
+        report=self.a.report(day,day)
+        self.assertEqual(len(report['stories']),1)
+        self.assertEqual(report['stories'][0]['source'],'tracked:'+source['id'])
+        self.assertEqual(report['source_names']['tracked:'+source['id']],'Blog partenaire')
+        result=json.loads(self.request(admin+'/api/tracking-sources/'+source['id'],method='DELETE')[1])
+        self.assertEqual(result['action'],'archived')
+        self.assertEqual(self.redirect(local_link+'?utm_source=src_'+source['id'])[0],302)
+        backup=json.loads(self.a.export_backup());self.a.restore_backup(backup)
+        selected=next(row for row in json.loads(self.request(admin+'/api/tracking-sources')[1])['items'] if row['id']==source['id'])
+        self.assertEqual(selected['clicks'],2)
+
+    def test_zero_click_source_is_permanently_removed(self):
+        admin=self.server(True);public=self.server()
+        link=json.loads(self.request(admin+'/api/tracked-links',{'name':'Sans clic','url':'https://shop.example/item'})[1])
+        source=json.loads(self.request(admin+'/api/tracking-sources',{'name':'Essai zéro clic'})[1])
+        token=json.loads(self.request(admin+'/api/tracked-links/'+link['id']+'/token',{'source_id':source['id']})[1])['token']
+        result=json.loads(self.request(admin+'/api/tracking-sources/'+source['id'],method='DELETE')[1])
+        self.assertEqual(result['action'],'deleted')
+        self.assertEqual(self.redirect(public+'/go/'+token)[0],404)
+        self.a.init()
+        sources=json.loads(self.request(admin+'/api/tracking-sources')[1])['items']
+        self.assertFalse(any(x['id']==source['id'] for x in sources))
+
     def test_story_complete_journey_and_preserved_page_metrics(self):
         admin=self.server(True);public=self.server();item_id=self.promo()
         endpoint=admin+'/api/content/'+item_id+'/story-link'

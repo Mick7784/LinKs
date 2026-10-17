@@ -63,5 +63,22 @@ await page.locator('.chart-bucket').last().click();assert(await page.locator('.c
 fixture.rows=Array.from({length:12},(_,i)=>({day:today,source:'source-'+i,kind:'view',link:'',total:i+1}));fixture.stories.push({promotion_id:'two',label:'Autre Story',total:2,source:'instagram-story',day:today});fixture.promo_code_copies.push({id:'two',name:'Autre offre',code:'AUTRE',source:'source-1',total:2,day:today});
 await refresh();await page.waitForFunction(()=>document.querySelectorAll('.source-row').length===13);assert.equal(await page.locator('.engagement-row').count(),4);await overflow();
 await page.emulateMedia({reducedMotion:'reduce'});assert.equal(await page.locator('.animated-bar').first().evaluate(e=>getComputedStyle(e).animationName),'none');
-if(process.env.UI_SCREENSHOTS){await nav('content');await page.locator('[data-section]').first().waitFor();await page.screenshot({path:join(process.env.UI_SCREENSHOTS,'links-blocks-mobile.png'),fullPage:true});}assert.deepEqual(await fetch('http://127.0.0.1:3003/api/public-config').then(r=>r.json()),publicBefore,'UI changed public configuration');assert.deepEqual(errors,[]);console.log('PASS UI: desktop dark/light, system/persistence, five KPI, campaign metrics, periods/source filters, navigation at 768/390/320, public config unchanged');
+if(process.env.UI_SCREENSHOTS){await nav('content');await page.locator('[data-section]').first().waitFor();await page.screenshot({path:join(process.env.UI_SCREENSHOTS,'links-blocks-mobile.png'),fullPage:true});}assert.deepEqual(await fetch('http://127.0.0.1:3003/api/public-config').then(r=>r.json()),publicBefore,'UI changed public configuration');// Private tracked links live only in admin, with expandable source donuts.
+await nav('content');
+await page.locator('[data-action="new-tracked"]').click();
+await page.locator('#tracked-form [name="name"]').fill('Produit temporaire suivi');
+await page.locator('#tracked-form [name="url"]').fill('https://example.com/tracked-product');
+await page.locator('#tracked-form button[type="submit"]').click();
+await page.locator('.tracked-item').filter({hasText:'Produit temporaire suivi'}).waitFor();
+const trackedRow=page.locator('.tracked-item').filter({hasText:'Produit temporaire suivi'});
+await trackedRow.locator('[data-tracked-action="toggle"]').click();
+assert(await trackedRow.locator('.tracked-donut svg').isVisible(),'tracked detail donut must expand');
+await page.locator('#tracked-manage-sources').click();
+await page.locator('#tracked-source-form [name="name"]').fill('Canal navigateur');
+await page.locator('#tracked-source-form button[type="submit"]').click();
+await page.locator('#tracked-source-list input[value="Canal navigateur"]').waitFor();
+await page.locator('[data-close-sources]').first().click();
+assert(await trackedRow.locator('select option').filter({hasText:'Canal navigateur'}).count());
+await overflow();
+assert.deepEqual(errors,[]);console.log('PASS UI: desktop dark/light, system/persistence, five KPI, campaign metrics, periods/source filters, navigation at 768/390/320, public config unchanged');
 }finally{if(browser)await browser.close();server.kill();await new Promise(r=>server.once('exit',r));rmSync(temp,{recursive:true,force:true})}})().catch(e=>{console.error(e);process.exitCode=1});
