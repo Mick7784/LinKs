@@ -43,13 +43,14 @@ const { join, resolve } = require('node:path');
     await copy.click();
     await page.waitForFunction(() => document.getElementById('notice').textContent.startsWith('Lien partagé copié'));
     const link = await page.evaluate(() => navigator.clipboard.readText());
-    assert.match(link, /\/go\/st_[A-Za-z0-9_-]{16}\?utm_source=instagram$/);
+    assert.match(link, /^https?:\/\/[^/]+\/[A-Za-z0-9_-]{9}$/);
     await copy.click();
     await page.waitForFunction(() => !document.querySelector('[data-action="copy-story"]').disabled);
     assert.equal(await page.evaluate(() => navigator.clipboard.readText()), link);
     await page.goto(link);
     assert.equal(page.url(), promo.url);
-    const token = new URL(link).pathname.split('/').at(-1);
+    const legacy = await api('/api/content/'+id+'/story-link', {});
+    const token = new URL(legacy.url).pathname.split('/').at(-1);
     execFileSync('python3', ['-c', "import sqlite3,sys;from datetime import datetime,timedelta;from zoneinfo import ZoneInfo;db=sqlite3.connect(sys.argv[1]);day=(datetime.now(ZoneInfo('Europe/Paris'))-timedelta(days=20)).date().isoformat();db.execute('INSERT INTO counts VALUES(?,?,?,?,1)',(day,'instagram-story','story','story:'+sys.argv[2]+':09'));db.commit()", database, token]);
     execFileSync('python3', ['-c', "import sqlite3,sys;from datetime import datetime;from zoneinfo import ZoneInfo;db=sqlite3.connect(sys.argv[1]);day=datetime.now(ZoneInfo('Europe/Paris')).date().isoformat();db.executemany('INSERT INTO counts VALUES(?,?,?,?,?)',[(day,'youtube','view','',2),(day,'youtube','click','Amazon',1)]);db.commit()", database]);
     const stats = async expected => {
