@@ -76,7 +76,7 @@ assert(await trackedRow.locator('.tracked-donut svg').isVisible(),'tracked detai
 await page.locator('#tracked-manage-sources').click();
 await page.locator('#tracked-source-form [name="name"]').fill('Canal navigateur');
 await page.locator('#tracked-source-form button[type="submit"]').click();
-await page.locator('#tracked-source-list').filter({hasText:'Canal navigateur'}).waitFor();
+await page.locator('#tracked-source-list input[value="Canal navigateur"]').waitFor();
 await page.locator('[data-close-sources]').first().click();
 assert(await trackedRow.locator('select option').filter({hasText:'Canal navigateur'}).count());
 await overflow();
