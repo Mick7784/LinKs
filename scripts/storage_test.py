@@ -61,7 +61,7 @@ class StorageTests(unittest.TestCase):
         with self.a.connection() as db:before=[dict(r) for r in db.execute('SELECT * FROM counts')]
         self.assertEqual(self.request('/api/content/'+key+'/archive',{})[0],204)
         row=next(x for x in self.a.content_list(True) if x['id']==key)
-        self.assertEqual(row['image'],'');self.assertEqual(row['promo_code'],'SAVE10');self.assertEqual(row['clicks'],1)
+        self.assertEqual(row['image'],ref);self.assertEqual(row['promo_code'],'SAVE10');self.assertEqual(row['clicks'],1)
         self.assertEqual(self.a.story_link(key),story)
         with self.a.connection() as db:self.assertEqual(before,[dict(r) for r in db.execute('SELECT * FROM counts')])
         self.scan(action='empty');self.assertTrue((self.a.UPLOADS/ref[9:]).exists())

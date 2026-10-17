@@ -1,5 +1,5 @@
 """Small SQLite content manager and aggregate analytics service."""
-import base64, binascii, json, mimetypes, os, re, secrets, sqlite3, threading, uuid, sys, time, shutil
+import base64, binascii, copy, json, mimetypes, os, re, secrets, sqlite3, threading, uuid, sys, time, shutil
 from contextlib import contextmanager, closing
 from datetime import date, datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -53,12 +53,6 @@ def instant(value):
         result=datetime.fromisoformat(value.strip().replace("Z","+00:00"))
         return (result if result.tzinfo else result.replace(tzinfo=PARIS)).astimezone(timezone.utc)
     except ValueError as exc: raise ValueError("Date invalide") from exc
-def legacy_expiry(value):
-    if value is None:return None
-    if isinstance(value,(int,float)):return datetime.fromtimestamp(value/1000,timezone.utc).isoformat().replace("+00:00","Z")
-    try:return instant(value).isoformat().replace("+00:00","Z")
-    except ValueError:return None
-
 def init():
     global ORIGIN,PARIS
     Path(DB).parent.mkdir(parents=True,exist_ok=True); UPLOADS.mkdir(parents=True,exist_ok=True)
@@ -91,6 +85,9 @@ def init():
           active INTEGER NOT NULL DEFAULT 1,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)""")
         if "custom_icon" not in {row[1] for row in db.execute("PRAGMA table_info(top_buttons)")}:
             db.execute("ALTER TABLE top_buttons ADD COLUMN custom_icon TEXT NOT NULL DEFAULT ''")
+        for table in ('content_blocks','top_buttons'):
+            if 'retired' not in {row[1] for row in db.execute('PRAGMA table_info('+table+')')}:
+                db.execute('ALTER TABLE '+table+' ADD COLUMN retired INTEGER NOT NULL DEFAULT 0 CHECK(retired IN (0,1))')
         db.execute("CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL)")
         db.execute("""CREATE TABLE IF NOT EXISTS story_links(
           token TEXT PRIMARY KEY,promotion_id TEXT NOT NULL UNIQUE,name TEXT NOT NULL,
@@ -101,8 +98,7 @@ def init():
         instance.initialize(db,legacy,CONFIG,[DATA_DIR/"assets",STATIC/"assets"],DATA_DIR)
         themes.initialize(db)
         storage.initialize(db)
-        # Archived campaigns retain all metadata/statistics, but release their image reference.
-        db.execute("UPDATE content_blocks SET image='' WHERE archived=1 AND type IN ('promo','featured') AND image!=''")
+        # Archives and retired rows continue owning their images and metric identity.
         init_version(db)
         ORIGIN=instance.site_url(instance.get(db,"site.url"),allow_empty=True)
         PARIS=ZoneInfo(instance.get(db,"app.timezone","UTC"))
@@ -288,17 +284,18 @@ def totals(db):
 def content_list(archived=False):
     with connection() as db:
         clicks=totals(db); timed=json.loads(instance.get(db,"admin.calendar_timed") or "[]"); return [{**serialize(r,clicks),"calendar_timed":r["id"] in timed} for r in db.execute("SELECT * FROM content_blocks WHERE archived=? ORDER BY CASE WHEN type IN ('promo','featured') THEN 0 ELSE 1 END,position,created_at",(1 if archived else 0,))]
-def button_list():
+def button_list(archived=False):
     with connection() as db:
         clicks=totals(db); result=[]
-        for row in db.execute("SELECT * FROM top_buttons ORDER BY position,created_at"):
+        for row in db.execute("SELECT * FROM top_buttons WHERE retired=? ORDER BY position,created_at",(int(archived),)):
             item=dict(row);item["active"]=bool(item["active"]);item["clicks"]=clicks.get(("click","button:"+item["id"]),0);result.append(item)
         return result
 def public_config(snapshot=False):
     with connection() as db:
-        blocks=[serialize(r) for r in db.execute("SELECT * FROM content_blocks WHERE archived=0 ORDER BY CASE WHEN type IN ('promo','featured') THEN 0 ELSE 1 END,CASE WHEN priority='high' THEN 0 ELSE 1 END,position,created_at") if status_of(r)=="Actif"]
+        blocks=[serialize(r) for r in db.execute("SELECT * FROM content_blocks WHERE retired=0 AND archived=0 ORDER BY CASE WHEN type IN ('promo','featured') THEN 0 ELSE 1 END,CASE WHEN priority='high' THEN 0 ELSE 1 END,position,created_at") if snapshot or status_of(r)=="Actif"]
+        if snapshot:blocks=[x for x in blocks if x['active'] and not x['draft']]
         quote=db.execute("SELECT text FROM footer_quotes WHERE active=1 ORDER BY " + ("created_at,id" if snapshot else "RANDOM()") + " LIMIT 1").fetchone()
-        buttons=[dict(r) for r in db.execute("SELECT * FROM top_buttons WHERE active=1 ORDER BY position,created_at")]
+        buttons=[dict(r) for r in db.execute("SELECT * FROM top_buttons WHERE active=1 AND retired=0 ORDER BY position,created_at")]
         result={"profile":profile(db),"socials":[{"id":x["id"],"platform":x["icon"],"custom_icon":x["custom_icon"],"label":x["label"],"url":x["url"],"metricKey":"button:"+x["id"]} for x in buttons],
                 "links":[{"id":x["id"],"type":x["type"],"title":x["title"],"description":x["description"],"url":x["url"],"icon":x["icon"],"image":x["image"],"badge":x["badge"],"cta":x["cta"],"priority":x["priority"],"start_at":x["start_at"],"end_at":x["end_at"],"promo_code":x["promo_code"],"metricKey":"block:"+x["id"]} for x in blocks]}
         result["appearance"]=themes.public(db)
@@ -478,9 +475,22 @@ def save_content(db,item,item_id=None):
 LEGACY_BACKUP_TABLES=('content_blocks','top_buttons','settings','counts','story_links','footer_quotes')
 TRACKING_BACKUP_TABLES=('tracking_sources','tracked_links','tracked_tokens')
 SHORT_BACKUP_TABLES=('short_aliases',)
-BACKUP_TABLES=LEGACY_BACKUP_TABLES+TRACKING_BACKUP_TABLES+SHORT_BACKUP_TABLES
+SOURCE_BACKUP_TABLES=('tracking_source_keys',)
+BACKUP_TABLES=LEGACY_BACKUP_TABLES+TRACKING_BACKUP_TABLES+SHORT_BACKUP_TABLES+SOURCE_BACKUP_TABLES
 BACKUP_LIMIT=64*1024*1024
 UPLOAD_NAME=re.compile(r'[a-f0-9-]{36}\.(jpg|png|webp|gif)')
+
+def restore_safety(db):
+    """A coherent pre-restore SQLite backup plus every currently owned local file."""
+    target=DATA_DIR/'restore-safety'/str(uuid.uuid4());target.mkdir(parents=True)
+    with closing(sqlite3.connect(DB)) as source,closing(sqlite3.connect(target/'analytics.db')) as saved:
+        source.backup(saved)
+    for key in storage.references(db):
+        origin=DATA_DIR/key if key.startswith('assets/') else UPLOADS/key
+        if origin.is_file() and not origin.is_symlink():
+            destination=target/key if key.startswith('assets/') else target/'uploads'/key
+            destination.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(origin,destination)
+    return target
 
 def export_backup():
     with DATA_LOCK,connection() as db:
@@ -508,6 +518,8 @@ def export_backup():
         return encoded
 
 def restore_backup(data):
+    # Validation and merging must never mutate a caller's reusable backup object.
+    data=copy.deepcopy(data)
     if data.get('format') not in {'links-backup','domotik-links-backup'} or data.get('version') not in {1,2,3}:raise ValueError('Ce fichier n’est pas une sauvegarde Links compatible')
     tables=data.get('tables');images=data.get('images')
     if not isinstance(tables,dict) or not isinstance(images,dict):raise ValueError('Sauvegarde incomplète')
@@ -530,6 +542,8 @@ def restore_backup(data):
                 if (row['day'],row['source'],row['kind'],row['link']) not in old_keys:tables['counts'].append(dict(row))
     if 'short_aliases' not in tables:
         with connection() as db:tables['short_aliases']=[dict(r) for r in db.execute('SELECT * FROM short_aliases')]
+    if 'tracking_source_keys' not in tables:
+        tables['tracking_source_keys']=[]
     if set(tables)!=set(BACKUP_TABLES):raise ValueError('Sauvegarde incomplète')
     assets=data.get('assets',{})
     if not isinstance(assets,dict):raise ValueError('Assets invalides')
@@ -555,6 +569,7 @@ def restore_backup(data):
     try:
         with DATA_LOCK,connection() as db:
             db.execute('BEGIN IMMEDIATE')
+            retained_rows=set()
             for table in BACKUP_TABLES:
                 rows=tables[table]
                 if not isinstance(rows,list) or len(rows)>500000:raise ValueError('Table invalide : '+table)
@@ -565,6 +580,7 @@ def restore_backup(data):
                 for row in rows:
                     if table=='content_blocks' and isinstance(row,dict) and 'promo_code' not in row:row['promo_code']=''
                     if table=='top_buttons' and isinstance(row,dict) and 'custom_icon' not in row:row['custom_icon']=''
+                    if table in {'content_blocks','top_buttons'} and isinstance(row,dict):row.setdefault('retired',0)
                     if not isinstance(row,dict) or set(row)!=set(columns):raise ValueError('Structure incompatible : '+table)
                     for column in schema:
                         value=row[column['name']]
@@ -575,9 +591,10 @@ def restore_backup(data):
                         elif not isinstance(value,str) or len(value)>16384:raise ValueError('Texte invalide')
                     if table=='content_blocks':
                         block_data(row,allow_legacy_image=True)
-                        if any(row[k] not in (0,1) for k in ['active','draft','archived']):raise ValueError('État invalide')
+                        if any(row[k] not in (0,1) for k in ['active','draft','archived','retired']):raise ValueError('État invalide')
                     elif table=='top_buttons':
                         button_data({**row,'icon':'mail' if row['icon']=='email' else row['icon']})
+                        if row['retired'] not in (0,1):raise ValueError('État invalide')
                     elif table=='counts':
                         date.fromisoformat(row['day'])
                         if row['kind'] not in {'view','click','impression','story','tracked','promo_code_copy'} or row['total']<1:raise ValueError('Statistique invalide')
@@ -592,6 +609,8 @@ def restore_backup(data):
                         instant(row['created_at'])
                     elif table=='tracking_sources':
                         if not tracked_links.IDENT.fullmatch(row['id']) or not row['name'].strip() or len(row['name'])>100 or row['active'] not in (0,1):raise ValueError('Source suivie invalide')
+                    elif table=='tracking_source_keys':
+                        if row['key'] not in tracked_links.LEGACY_SOURCES or row['source_id'] is not None and not tracked_links.IDENT.fullmatch(row['source_id']):raise ValueError('Identité de source invalide')
                     elif table=='tracked_links':
                         if not tracked_links.IDENT.fullmatch(row['id']) or not row['name'].strip() or len(row['name'])>160 or not story_url_valid(row['url']) or row['archived'] not in (0,1) or row['enabled'] not in (0,1):raise ValueError('Lien suivi invalide')
                     elif table=='tracked_tokens':
@@ -617,14 +636,34 @@ def restore_backup(data):
                 if row["key"] in {"auth.mode","app.setup_completed","app.config_schema_version"}:
                     tables["settings"]=[r for r in tables["settings"] if r["key"]!=row["key"]];tables["settings"].append(dict(row));continue
                 if row["key"] not in setting_keys:tables["settings"].append(dict(row))
+            # Preserve every content identity, including objects published after backup.
+            published={r[0] for r in db.execute('SELECT promotion_id FROM story_links')}
+            for table,media in [('content_blocks','image'),('top_buttons','custom_icon')]:
+                incoming_rows={r['id']:r for r in tables[table]}
+                for old in db.execute('SELECT * FROM '+table):
+                    row=incoming_rows.get(old['id'])
+                    if row is None:
+                        row=dict(old)
+                        if table=='content_blocks':row['archived']=1
+                        else:row['active']=0;row['retired']=1
+                        tables[table].append(row)
+                        retained_rows.add((table,row['id']))
+                    else:
+                        row['retired']=max(row['retired'],old['retired'])
+                        if row['retired']:
+                            if table=='content_blocks':row['archived']=1
+                            else:row['active']=0
+                        if table=='content_blocks' and old['id'] in published:
+                            row['url']=old['url']
             # Codes are never reassigned, even when restoring a different backup.
             incoming={r['token']:r for r in tables['story_links']}
             restored_ids={r['id'] for r in tables['content_blocks']}
             for old in db.execute('SELECT * FROM story_links'):
                 if old['token'] in incoming:
                     if incoming[old['token']]['promotion_id']!=old['promotion_id']:raise ValueError('Un identifiant Story ne peut pas changer de promotion')
+                    incoming[old['token']]['deleted']=max(incoming[old['token']]['deleted'],old['deleted'])
                 elif any(r['promotion_id']==old['promotion_id'] for r in incoming.values()):raise ValueError('Identifiants Story incompatibles avec les liens existants')
-                else:tables['story_links'].append({**dict(old),'deleted':int(old['promotion_id'] not in restored_ids)})
+                else:tables['story_links'].append(dict(old))
             # Preserve all previously published tracked tokens through restores.
             existing_links={r['id']:r for r in tables['tracked_links']}
             existing_sources={r['id']:r for r in tables['tracking_sources']}
@@ -633,6 +672,9 @@ def restore_backup(data):
             for old in db.execute('SELECT * FROM tracked_links'):
                 if old['id'] not in existing_links:
                     row=dict(old);tables['tracked_links'].append(row);existing_links[old['id']]=row
+                else:
+                    # A backup must not silently roll back a published destination or suspension.
+                    for key in ('url','enabled','archived'):existing_links[old['id']][key]=old[key]
             for old in db.execute('SELECT * FROM tracking_sources'):
                 if old['id'] not in existing_sources:
                     row=dict(old)
@@ -642,7 +684,6 @@ def restore_backup(data):
                         historic=db.execute("SELECT 1 FROM counts WHERE source=? AND kind IN ('tracked','story') LIMIT 1",('tracked:'+old['id'],)).fetchone()
                         # Two fresh installations have independent seeded defaults.
                         # Only one unused copy of a source label is needed.
-                        if not used and not historic and not row['story_click_total']:continue
                         original=row['name'][:76]
                         row['name']=original+' (historique '+row['id'][:8]+')'
                         if row['name'].casefold() in taken:raise ValueError('Collision de sources de publication')
@@ -683,9 +724,19 @@ def restore_backup(data):
                     entry['revoked']=max(entry['revoked'],old['revoked'])
                 else:
                     entry=dict(old);tables['short_aliases'].append(entry);aliases[old['code']]=entry
-            # Preserve current redirect clicks if an older backup is restored.
+            source_keys={r['key']:r for r in tables['tracking_source_keys']}
+            for old in db.execute('SELECT * FROM tracking_source_keys'):
+                if old['key'] in source_keys:
+                    if source_keys[old['key']]['source_id']!=old['source_id'] and old['source_id'] is not None:
+                        used=db.execute('SELECT 1 FROM short_aliases WHERE source IN (?,?) LIMIT 1',(old['key'],'tracked:'+old['source_id'])).fetchone()
+                        clicks=db.execute('SELECT story_click_total FROM tracking_sources WHERE id=?',(old['source_id'],)).fetchone()
+                        if used or clicks and clicks[0]:raise ValueError('Une source historique ne peut pas être réattribuée')
+                elif old['source_id'] is None or old['source_id'] in existing_sources:
+                    tables['tracking_source_keys'].append(dict(old))
+            if any(r['source_id'] is not None and r['source_id'] not in existing_sources for r in tables['tracking_source_keys']):raise ValueError('Source historique manquante')
+            # Aggregate snapshots overlap: keep maxima, never add them a second time.
             indexed={(r['day'],r['source'],r['kind'],r['link']):r for r in tables['counts']}
-            for old in db.execute("SELECT * FROM counts WHERE kind IN ('story','tracked')"):
+            for old in db.execute("SELECT * FROM counts"):
                 key=(old['day'],old['source'],old['kind'],old['link'])
                 if key in indexed:indexed[key]['total']=max(indexed[key]['total'],old['total'])
                 else:
@@ -695,10 +746,14 @@ def restore_backup(data):
             # Every uploaded image used by the restored content must exist in this backup.
             for row in tables['content_blocks']:
                 if row['image'].startswith('/uploads/'):
+                    if ('content_blocks',row['id']) in retained_rows:
+                        storage.require_file(UPLOADS,row['image'],db);continue
                     if row['image'] not in mapping:raise ValueError('Image manquante dans la sauvegarde')
                     row['image']=mapping[row['image']]
             for row in tables['top_buttons']:
                 if row['custom_icon']:
+                    if ('top_buttons',row['id']) in retained_rows:
+                        storage.require_file(UPLOADS,row['custom_icon'],db);continue
                     if row['custom_icon'] not in mapping:raise ValueError('Icône personnelle manquante')
                     row['custom_icon']=mapping[row['custom_icon']]
             for row in tables['settings']:
@@ -715,7 +770,9 @@ def restore_backup(data):
             refs=[r['image'] for r in tables['content_blocks']]+[r['value'] for r in tables['settings'] if r['key'] in {'profile.logo','profile.avatar'}]
             for ref in refs:
                 if ref.startswith('/assets/') and not (STATIC/ref[1:]).is_file() and not (DATA_DIR/ref[1:]).is_file() and ref[8:] not in asset_bytes:raise ValueError('Asset référencé manquant')
-            for table in SHORT_BACKUP_TABLES:
+            # Backup the current SQLite state only after validation, before replacing rows.
+            restore_safety(db)
+            for table in SOURCE_BACKUP_TABLES+SHORT_BACKUP_TABLES:
                 db.execute('DELETE FROM '+table)
             for table in reversed(TRACKING_BACKUP_TABLES):
                 db.execute('DELETE FROM '+table)
@@ -723,7 +780,7 @@ def restore_backup(data):
                 db.execute('DELETE FROM '+table)
                 columns=[c['name'] for c in db.execute('PRAGMA table_info('+table+')')]
                 db.executemany('INSERT INTO '+table+' ('+','.join(columns)+') VALUES ('+','.join('?' for _ in columns)+')',[[row[c] for c in columns] for row in tables[table]])
-            for table in TRACKING_BACKUP_TABLES+SHORT_BACKUP_TABLES:
+            for table in TRACKING_BACKUP_TABLES+SHORT_BACKUP_TABLES+SOURCE_BACKUP_TABLES:
                 columns=[c['name'] for c in db.execute('PRAGMA table_info('+table+')')]
                 db.executemany('INSERT INTO '+table+' ('+','.join(columns)+') VALUES ('+','.join('?' for _ in columns)+')',[[row[c] for c in columns] for row in tables[table]])
             db.execute("INSERT OR REPLACE INTO settings VALUES('content.initialized','1')")
@@ -737,7 +794,6 @@ def restore_backup(data):
                 target=DATA_DIR/'assets'/name
                 if not target.exists():written.append(target);storage.write(target,raw)
             init_version(db)
-            db.execute("UPDATE content_blocks SET image='' WHERE archived=1 AND type IN ('promo','featured')")
             storage.scan(db,UPLOADS,assets=DATA_DIR/'assets',system_assets=STATIC/'assets')
             db.execute('DELETE FROM admin_sessions')
         with connection() as db:sync_configuration(db)
@@ -1039,7 +1095,7 @@ class Handler(BaseHTTPRequestHandler):
             if url.path=="/api/stats":
                 q=parse_qs(url.query);today=datetime.now(PARIS).date();return self.json(200,report(q.get("start",[(today-timedelta(days=29)).isoformat()])[0],q.get("end",[today.isoformat()])[0],q.get("source",[""])[0]))
             if url.path=="/api/content":return self.json(200,{"items":content_list(parse_qs(url.query).get("archived",["0"])[0]=="1")})
-            if url.path=="/api/buttons":return self.json(200,{"items":button_list()})
+            if url.path=="/api/buttons":return self.json(200,{"items":button_list(parse_qs(url.query).get('archived',['0'])[0]=='1')})
             if url.path=="/api/settings/overview":
                 with connection() as db:
                     sizes=storage.summary(db,UPLOADS,DATA_DIR/'assets')
@@ -1169,10 +1225,8 @@ class Handler(BaseHTTPRequestHandler):
         if not match:return self.send(404)
         with connection() as db:
             prefix="block:" if table=="content_blocks" else "button:"
-            if table=='content_blocks':
-                db.execute('UPDATE story_links SET name=COALESCE((SELECT internal_name FROM content_blocks WHERE id=?),name),deleted=1 WHERE promotion_id=?',(match.group(1),match.group(1)))
-            changed=db.execute(f"DELETE FROM {table} WHERE id=?",(match.group(1),)).rowcount
-            if changed:db.execute("DELETE FROM counts WHERE kind IN ('click','impression') AND link=?",(prefix+match.group(1),))
+            state='archived=1' if table=='content_blocks' else 'active=0'
+            changed=db.execute(f"UPDATE {table} SET retired=1,{state},updated_at=? WHERE id=?",(now_iso(),match.group(1))).rowcount
         return self.send(204) if changed else self.send(404)
     def do_HEAD(self):
         path=urlsplit(self.path).path
@@ -1268,8 +1322,7 @@ class Handler(BaseHTTPRequestHandler):
                 if item_id in timed:instance.put(db,'admin.calendar_timed',json.dumps(timed+[new_id]))
                 return self.json(201,{"id":new_id})
             if action=="restore":ensure_promotion_capacity(dict(row),item_id,db)
-            db.execute("UPDATE content_blocks SET archived=?,updated_at=? WHERE id=?",(1 if action=="archive" else 0,now_iso(),item_id))
-            if action=="archive" and row["type"] in {"promo","featured"}:db.execute("UPDATE content_blocks SET image='' WHERE id=?",(item_id,))
+            db.execute("UPDATE content_blocks SET archived=?,retired=0,updated_at=? WHERE id=?",(1 if action=="archive" else 0,now_iso(),item_id))
         return self.send(204)
     def reorder(self,table,data):
         ids=data.get("ids")

@@ -46,6 +46,7 @@ jobs:
           python3 scripts/storage_test.py
           python3 scripts/images_test.py
           python3 scripts/analytics_test.py
+          python3 scripts/conservation_test.py
           python3 scripts/instance_test.py
           python3 scripts/release_version_test.py
           python3 scripts/youtube_test.py
