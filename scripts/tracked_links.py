@@ -21,6 +21,7 @@ LEGACY_SOURCES = {"instagram":"Instagram Story","youtube":"YouTube Post",
 
 def initialize(db):
     first_install=not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='tracking_sources'").fetchone()
+    first_keys=not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='tracking_source_keys'").fetchone()
     db.execute("""CREATE TABLE IF NOT EXISTS tracking_sources (
         id TEXT PRIMARY KEY, name TEXT NOT NULL COLLATE NOCASE UNIQUE,
         active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),
@@ -39,6 +40,7 @@ def initialize(db):
         source_id TEXT NOT NULL REFERENCES tracking_sources(id),
         click_total INTEGER NOT NULL DEFAULT 0 CHECK(click_total >= 0),
         created_at TEXT NOT NULL, UNIQUE(link_id,source_id))""")
+    db.execute('CREATE TABLE IF NOT EXISTS tracking_source_keys(key TEXT PRIMARY KEY,source_id TEXT REFERENCES tracking_sources(id))')
     if first_install:
         for name in DEFAULT_SOURCES:
             codes=[key for key,label in LEGACY_SOURCES.items() if label==name]
@@ -47,6 +49,12 @@ def initialize(db):
                 slots=','.join('?' for _ in codes)
                 clicks=db.execute("SELECT COALESCE(SUM(total),0) FROM counts WHERE kind='story' AND source IN ("+slots+")",codes).fetchone()[0]
             db.execute("INSERT INTO tracking_sources VALUES(?,?,1,?,datetime('now'))",(uuid.uuid4().hex,name,clicks))
+    if first_keys:
+        # Capture legacy labels once; a rename or a new namesake never changes identity.
+        # Missing/ambiguous pre-upgrade identities remain unassigned, never guessed.
+        for key,name in LEGACY_SOURCES.items():
+            row=db.execute('SELECT id FROM tracking_sources WHERE name=?',(name,)).fetchone()
+            db.execute('INSERT INTO tracking_source_keys VALUES(?,?)',(key,row['id'] if row else None))
 
 def text_field(data,key,limit,required=False):
     value=data.get(key,"")
@@ -79,11 +87,12 @@ def remove_source(db,ident):
     if not item:raise ValueError("Source introuvable")
     clicks=db.execute("SELECT COALESCE(SUM(click_total),0) FROM tracked_tokens WHERE source_id=?",(ident,)).fetchone()[0]
     clicks+=db.execute("SELECT story_click_total FROM tracking_sources WHERE id=?",(ident,)).fetchone()[0]
-    if clicks:
+    published=db.execute('SELECT 1 FROM tracked_tokens WHERE source_id=? LIMIT 1',(ident,)).fetchone()
+    published=published or db.execute('SELECT 1 FROM tracking_source_keys WHERE source_id=? LIMIT 1',(ident,)).fetchone()
+    published=published or db.execute('SELECT 1 FROM short_aliases WHERE source=? LIMIT 1',('tracked:'+ident,)).fetchone()
+    if clicks or published:
         db.execute("UPDATE tracking_sources SET active=0 WHERE id=?",(ident,))
         return {"action":"archived","clicks":clicks}
-    short_urls.revoke_source(db,ident,db.execute("SELECT name FROM tracking_sources WHERE id=?",(ident,)).fetchone()[0])
-    db.execute("DELETE FROM tracked_tokens WHERE source_id=?",(ident,))
     db.execute("DELETE FROM tracking_sources WHERE id=?",(ident,))
     return {"action":"deleted","clicks":0}
 
@@ -149,7 +158,7 @@ def count_campaign_source(db,source):
     if source.startswith("tracked:"):
         db.execute("UPDATE tracking_sources SET story_click_total=story_click_total+1 WHERE id=?",(source[8:],))
     elif source in LEGACY_SOURCES:
-        db.execute("UPDATE tracking_sources SET story_click_total=story_click_total+1 WHERE name=?",(LEGACY_SOURCES[source],))
+        db.execute("UPDATE tracking_sources SET story_click_total=story_click_total+1 WHERE id=(SELECT source_id FROM tracking_source_keys WHERE key=?)",(source,))
 
 def count_click(db,token):
     db.execute("UPDATE tracked_tokens SET click_total=click_total+1 WHERE token=?",(token,))

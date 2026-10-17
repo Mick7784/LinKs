@@ -100,7 +100,7 @@ La migration ajoute les réglages d’apparence à SQLite et active LinKs Origin
 
 Les statistiques sont facultatives et agrégées. Elles comptabilisent des actions, pas des personnes uniques. La collecte ne crée ni cookie analytics ni identifiant visiteur ; aucune adresse IP n’est stockée dans la base de statistiques. Do Not Track et Global Privacy Control sont respectés.
 
-Une copie de code est une action, sans indication d’achat. Les compteurs sont conservés pendant 400 jours. Les sessions administrateur utilisent un cookie distinct, réservé à la connexion.
+Une copie de code est une action, sans indication d’achat. Les compteurs historiques sont conservés sans purge automatique ; chaque requête de rapport porte sur un maximum de 400 jours. Les sessions administrateur utilisent un cookie distinct, réservé à la connexion.
 
 ## Version actuelle
 
@@ -131,7 +131,7 @@ Ces changements concernent principalement l’administration. Ils n’imposent p
 
 ### Fichiers personnels et corbeille (V1.302)
 
-Paramètres → Stockage affiche les uploads, leurs tailles et toutes leurs utilisations. Les fichiers inutilisés sont mis en corbeille pour sept jours, puis supprimés automatiquement (vérification au démarrage et chaque heure). Les actions Nettoyer et Vider la corbeille revérifient toutes les références ; la seconde permet une suppression immédiate des fichiers inutilisés après confirmation. Les contenus inactifs, liens archivés, profils, raccourcis et thèmes non actifs protègent leurs fichiers. Les campagnes archivées détachent leur image en conservant leurs autres données et statistiques. Les assets système et historiques dans `/assets/` ne sont jamais nettoyés.
+Paramètres → Stockage affiche les uploads, leurs tailles et toutes leurs utilisations. Les fichiers inutilisés sont mis en corbeille pour sept jours, puis supprimés automatiquement (vérification au démarrage et chaque heure). Les actions Nettoyer et Vider la corbeille revérifient toutes les références ; la seconde permet une suppression immédiate des fichiers inutilisés après confirmation. Les contenus inactifs, liens archivés, profils, raccourcis et thèmes non actifs protègent leurs fichiers. Les campagnes archivées ou retirées conservent désormais leur image, leurs données, leurs statistiques et leurs redirections publiées. Les assets système et historiques dans `/assets/` ne sont jamais nettoyés.
 
 La migration ajoute uniquement la table de suivi `upload_trash` et libère les images des campagnes déjà archivées. Un fichier ancien nouvellement identifié comme orphelin bénéficie du délai complet. Une réutilisation annule la suppression. La sauvegarde JSON contient les images référencées ; sauvegardez aussi le volume `/data` pour conserver la corbeille. Les images importées doivent être décodables et non corrompues : PNG/JPEG/WebP/GIF, 4 Mo maximum (1 Mo pour les nouvelles icônes), 8192 px et 16 millions de pixels maximum. Le runtime Python utilise Pillow, inclus dans Docker.
 

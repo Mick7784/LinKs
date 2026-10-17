@@ -29,11 +29,11 @@ class AnalyticsTests(unittest.TestCase):
     def promo(self,name='Domadoo - Aquara days',url='https://partner.example/offer?aff=117'):
         with self.a.connection() as db:
             return self.a.save_content(db,self.a.block_data({'type':'promo','internal_name':name,'title':'Offre publique','url':url}))
-    def redirect(self,url,method=None,agent='Mozilla/5.0'):
+    def redirect(self,url,method=None,agent='Mozilla/5.0',headers=None):
         class NoRedirect(HTTPRedirectHandler):
             def redirect_request(self,*args):return None
         try:
-            response=build_opener(NoRedirect).open(Request(url,headers={'User-Agent':agent},method=method))
+            response=build_opener(NoRedirect).open(Request(url,headers={'User-Agent':agent,**(headers or {})},method=method))
         except HTTPError as exc:response=exc
         with response:return response.code,dict(response.headers)
 
@@ -136,17 +136,17 @@ class AnalyticsTests(unittest.TestCase):
         self.assertEqual(self.redirect(public+'/go/'+legacy+'?utm_source=youtube')[0],302)
         self.assertGreaterEqual(sum(r['total'] for r in self.a.report(today,today)['stories']),4)
 
-    def test_deleted_zero_click_short_alias_is_reserved_and_revoked(self):
+    def test_zero_click_published_short_alias_remains_reserved_and_active(self):
         admin=self.server(True);public=self.server()
         link=json.loads(self.request(admin+'/api/tracked-links',{'name':'Sans clic','url':'https://shop.example/item'})[1])
         source=json.loads(self.request(admin+'/api/tracking-sources',{'name':'Source éphémère'})[1])
         payload=json.loads(self.request(admin+'/api/tracked-links/'+link['id']+'/token',{'source_id':source['id']})[1])
         code=payload['code'];self.assertEqual(self.redirect(public+'/'+code,method='HEAD')[0],302)
         self.assertEqual(self.request(admin+'/api/tracking-sources/'+source['id'],method='DELETE')[0],200)
-        self.assertEqual(self.redirect(public+'/'+code)[0],410)
-        with self.a.connection() as db:self.assertEqual(db.execute("SELECT revoked FROM short_aliases WHERE code=?",(code,)).fetchone()[0],1)
+        self.assertEqual(self.redirect(public+'/'+code)[0],302)
+        with self.a.connection() as db:self.assertEqual(db.execute("SELECT revoked FROM short_aliases WHERE code=?",(code,)).fetchone()[0],0)
         self.a.restore_backup(json.loads(self.a.export_backup()))
-        self.assertEqual(self.redirect(public+'/'+code)[0],410)
+        self.assertEqual(self.redirect(public+'/'+code)[0],302)
 
     def test_custom_sources_on_campaigns_are_retained_after_clicks(self):
         admin=self.server(True);public=self.server();campaign_id=self.promo()
@@ -170,17 +170,17 @@ class AnalyticsTests(unittest.TestCase):
         selected=next(row for row in json.loads(self.request(admin+'/api/tracking-sources')[1])['items'] if row['id']==source['id'])
         self.assertEqual(selected['clicks'],2)
 
-    def test_zero_click_source_is_permanently_removed(self):
+    def test_zero_click_source_with_published_token_is_archived(self):
         admin=self.server(True);public=self.server()
         link=json.loads(self.request(admin+'/api/tracked-links',{'name':'Sans clic','url':'https://shop.example/item'})[1])
         source=json.loads(self.request(admin+'/api/tracking-sources',{'name':'Essai zéro clic'})[1])
         token=json.loads(self.request(admin+'/api/tracked-links/'+link['id']+'/token',{'source_id':source['id']})[1])['token']
         result=json.loads(self.request(admin+'/api/tracking-sources/'+source['id'],method='DELETE')[1])
-        self.assertEqual(result['action'],'deleted')
-        self.assertEqual(self.redirect(public+'/go/'+token)[0],404)
+        self.assertEqual(result['action'],'archived')
+        self.assertEqual(self.redirect(public+'/go/'+token)[0],302)
         self.a.init()
         sources=json.loads(self.request(admin+'/api/tracking-sources')[1])['items']
-        self.assertFalse(any(x['id']==source['id'] for x in sources))
+        self.assertTrue(any(x['id']==source['id'] and not x['active'] for x in sources))
 
     def test_story_complete_journey_and_preserved_page_metrics(self):
         admin=self.server(True);public=self.server();item_id=self.promo()
@@ -210,7 +210,7 @@ class AnalyticsTests(unittest.TestCase):
         self.assertEqual(self.redirect(public+'/go/'+token)[0],302)
         self.assertEqual(sum(x['total'] for x in self.a.report(day,day)['stories']),3)
         self.assertEqual(self.request(admin+'/api/content/'+item_id,method='DELETE')[0],204)
-        self.assertEqual(self.redirect(public+'/go/'+token)[0],410)
+        self.assertEqual(self.redirect(public+'/go/'+token,method='HEAD')[0],302)
         self.assertEqual(self.a.report(day,day)['stories'][0]['label'],'Promotion renommée')
         self.assertEqual(sum(x['total'] for x in self.a.report(day,day)['stories']),3)
 
@@ -374,7 +374,7 @@ class AnalyticsTests(unittest.TestCase):
         self.assertEqual(self.request(admin+'/api/content/'+item_id+'/archive',{}, {'Content-Type':'application/json'})[0],204)
         self.assertNotIn(item_id,[x['id'] for x in self.a.public_config()['links']])
         self.assertEqual(self.request(admin+'/api/content/'+item_id,headers={},method='DELETE')[0],204)
-        with self.a.connection() as db:self.assertEqual(db.execute("SELECT COUNT(*) FROM counts WHERE link=?",('block:'+item_id,)).fetchone()[0],0)
+        with self.a.connection() as db:self.assertEqual(db.execute("SELECT COUNT(*) FROM counts WHERE link=?",('block:'+item_id,)).fetchone()[0],1)
 
     def test_image_upload_is_persistent_and_publicly_readable(self):
         admin=self.server(True)

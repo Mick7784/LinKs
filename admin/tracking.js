@@ -20,7 +20,7 @@ function summaryDonut(row){
   arc=`<circle cx="72" cy="72" r="${radius}" fill="none" stroke="${stroke}" stroke-width="19" stroke-dasharray="${(portion*around).toFixed(3)} ${around.toFixed(3)}" stroke-dashoffset="${(-offset).toFixed(3)}" transform="rotate(-90 72 72)"><title>${safe(s.name)} : ${fmt.format(count)} clics (${(portion*100).toFixed(1)} %)</title></circle>`;
   offset+=portion*around;return arc}).join("");
  const donut=`<svg viewBox="0 0 144 144" role="img" aria-label="Répartition des clics par source"><circle cx="72" cy="72" r="52" fill="none" stroke="currentColor" stroke-opacity=".1" stroke-width="19"/>${arcs}<text x="72" y="72" dy="1" fill="currentColor" font-weight="700" font-size="24" text-anchor="middle">${fmt.format(total)}</text><text x="72" y="91" fill="currentColor" fill-opacity=".6" font-size="11" text-anchor="middle">clics</text></svg>`;
- const list=segments.length?segments.map((s,i)=>{const n=state.period==="all"?s.total:s.period;return `<div class="tracked-stat-source"><span class="tracked-source-color" style="background:${colors[i%colors.length]}"></span><span>${safe(s.name)}</span><strong>${fmt.format(n)}</strong><small>${(n/total*100).toLocaleString("fr-FR",{maximumFractionDigits:1})} %</small></div>`}).join(""):'<p class="empty">Aucun clic sur cette période.</p>';
+ const list=segments.length?segments.map((s,i)=>{const n=state.period==="all"?s.total:s.period;return `<div class="tracked-stat-source"><span class="tracked-source-color" data-color-index="${i%colors.length}"></span><span>${safe(s.name)}</span><strong>${fmt.format(n)}</strong><small>${(n/total*100).toLocaleString("fr-FR",{maximumFractionDigits:1})} %</small></div>`}).join(""):'<p class="empty">Aucun clic sur cette période.</p>';
  return `<div class="tracked-details"><div class="tracked-donut">${donut}</div><div class="tracked-detail-copy"><p>Origine des clics · ${state.period==="all"?"Toutes périodes":state.period+" derniers jours"}</p>${list}<p class="tracked-historic">Total historique conservé : <strong>${fmt.format(row.clicks)}</strong> clic(s).</p><p class="tracked-historic">Le canal correspond à la source choisie au partage, même si le lien a ensuite été repartagé ailleurs.</p></div></div>`;
 }
 function rowHTML(item){
@@ -106,7 +106,7 @@ get("tracked-source-list").addEventListener("click",async event=>{
  const holder=button.closest("[data-source-id]"),row=state.sources.find(s=>s.id===holder?.dataset.sourceId);if(!row)return;
  const action=button.dataset.sourceAction;
  if(action==="remove"){
-  const text=row.clicks?"Cette source possède "+row.clicks+" clic(s). Elle sera archivée, ses liens resteront actifs.":"Cette source n'a aucun clic historique. Elle sera supprimée définitivement et ses liens de partage existants ne fonctionneront plus.";
+  const text=row.clicks?"Cette source possède "+row.clicks+" clic(s). Elle sera archivée, ses liens resteront actifs.":"Une source déjà utilisée pour un partage sera archivée, même sans clic. Seule une source jamais publiée peut être supprimée.";
   if(!confirm(text+" Continuer ?"))return;
  }
  try{
@@ -118,24 +118,19 @@ get("tracked-source-list").addEventListener("click",async event=>{
  }catch(error){say(error.message,true)}finally{button.disabled=false}
 });
 get("tracked-show-archived").addEventListener("change",render);
+get("tracked-period").addEventListener("change",event=>{state.period=event.target.value;load()});
 document.querySelector('[data-action="new-tracked"]').addEventListener("click",()=>openEditor());
 get("tracked-manage-sources").addEventListener("click",()=>{renderSources();get("tracked-sources-dialog").showModal()});
 document.querySelectorAll("[data-close-tracked]").forEach(button=>button.addEventListener("click",()=>close("tracked-dialog")));
 document.querySelectorAll("[data-close-sources]").forEach(button=>button.addEventListener("click",()=>close("tracked-sources-dialog")));
-function sourceOptions(){
- const legacy=new Set(["Instagram Story","YouTube Post","Facebook","TikTok"]);
- const available=state.sources.filter(s=>s.active&&!legacy.has(s.name));
- return available.length?'<optgroup label="Autres sources">'+available.map(s=>`<option value="src_${safe(s.id)}">${safe(s.name)}</option>`).join("")+'</optgroup>':"";
-}
 function campaignOptions(){
  if(!state.sources.length)return null;
- const codes={"Instagram Story":"instagram","YouTube Post":"youtube","Facebook":"facebook","TikTok":"tiktok"};
  const preferred=["Instagram Story","YouTube Post","Facebook","TikTok"];
  const available=state.sources.filter(source=>source.active).sort((a,b)=>{
    const ai=preferred.indexOf(a.name),bi=preferred.indexOf(b.name);
    return (ai===-1?100:ai)-(bi===-1?100:bi)||a.name.localeCompare(b.name,"fr");
  });
- return available.map(source=>`<option value="${codes[source.name]||"src_"+source.id}">${safe(source.name)}</option>`).join("")+'<option value="">Autre / sans source identifiée</option>';
+ return available.map(source=>`<option value="${"src_"+source.id}">${safe(source.name)}</option>`).join("")+'<option value="">Autre / sans source identifiée</option>';
 }
-window.LinksTracking={load,sourceOptions,campaignOptions};
+window.LinksTracking={load,campaignOptions};
 })();

@@ -106,7 +106,9 @@ class InstanceTests(unittest.TestCase):
         self.assertEqual(self.request(admin+'/api/auth/login',{'username':'receiver','password':'A-long-test-password'})[0],200)
         restored=json.loads(self.a.export_backup())
         for table in ['top_buttons','counts','story_links','footer_quotes']:self.assertEqual(restored['tables'][table],before['tables'][table])
-        self.assertEqual(len(restored['tables']['content_blocks']),2);item=self.a.content_list(True)[0];self.assertEqual(item['promo_code'],'NEW');self.assertEqual(item['image'],'')  # Archived campaigns release only their image reference.
+        self.assertEqual(len(restored['tables']['content_blocks']),3)  # Receiver's original link is retained as history.
+        item=next(x for x in self.a.content_list(True) if x['id']==promo)
+        self.assertEqual(item['promo_code'],'NEW');self.assertTrue(item['image'].startswith('/uploads/'))
         with self.a.connection() as db:
             copy=db.execute("SELECT link FROM counts WHERE kind='promo_code_copy'").fetchone();self.assertEqual(json.loads(copy[0])['code'],'OLD');self.assertEqual(self.a.instance.get(db,'profile.name'),'Example Creator');self.assertEqual(self.a.instance.get(db,'auth.mode'),'local');self.assertEqual(db.execute('SELECT username FROM admin_accounts').fetchone()[0],'receiver')
         legacy=json.loads(json.dumps(restored));legacy['format']='domotik-links-backup';legacy['version']=1;del legacy['tables']['footer_quotes'];del legacy['tables']['story_links'];legacy['tables']['counts']=[];legacy['tables']['settings']=[r for r in legacy['tables']['settings'] if r['key'].startswith('profile.')]

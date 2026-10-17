@@ -10,7 +10,7 @@ La collecte est activable depuis les paramètres. Sa désactivation ne coupe ni 
 - `story` : ouverture directe via un lien de campagne partagé (`/go/st_…`), distincte du clic depuis la page publique.
 - `promo_code_copy` : copie réussie, séparée du clic d’offre.
 
-Les liens /go/ existants conservent leur jeton et leur destination. Copier un lien pour Instagram ou YouTube ajoute simplement `?utm_source=instagram` ou `?utm_source=youtube` ; cette information est utilisée pour attribuer les nouvelles ouvertures. Les anciens événements `instagram-story` restent conservés sans réécriture : leur véritable origine ne peut pas être reconstruite. Les liens sans paramètre d'origine sont suivis sous `shared-unknown`.
+Les liens /go/ existants conservent leur jeton et leur destination. Les nouveaux liens courts capturent la source de publication par identifiant stable ; renommer son libellé ne change pas cette identité. Les anciens `/go/` et leurs paramètres UTM restent acceptés et leurs événements ne sont pas réécrits. Les anciens événements `instagram-story` restent conservés sans réécriture : leur véritable origine ne peut pas être reconstruite. Les liens sans paramètre d'origine sont suivis sous `shared-unknown`.
 
 Les ouvertures de liens partagés sont rattachées à la campagne associée lors du rapport sans dupliquer un événement `click`. Le dashboard distingue les clics de la page (pour le CTR page), les ouvertures de liens partagés et leur total par campagne. Les impressions correspondent uniquement à la page publique. Aucune modification rétroactive des comptes ni des URLs n'est nécessaire.
 
@@ -24,7 +24,7 @@ Les journées utilisent le fuseau configuré. Changer de fuseau ne recalcule pas
 
 ## Confidentialité
 
-SQLite contient des compteurs agrégés, sans IP, cookie analytics, identifiant visiteur ou notion de personne unique. La provenance complète n’est pas conservée. Do Not Track et Global Privacy Control sont respectés. La rétention glissante est de 400 jours, appliquée lors de la collecte.
+SQLite contient des compteurs agrégés, sans IP, cookie analytics, identifiant visiteur ou notion de personne unique. La provenance complète n’est pas conservée. Do Not Track et Global Privacy Control sont respectés. La collecte ne purge plus les anciens compteurs. Un rapport reste limité à une période de 400 jours par requête ; le détail des liens privés dispose aussi d’un historique complet. DNT/GPC sont contrôlés côté serveur pour les redirections et les métriques, ainsi que côté navigateur pour la page.
 
 Les sessions administrateur sont distinctes des statistiques. Ces garanties ne décrivent pas les journaux HTTP de votre hébergement.
 

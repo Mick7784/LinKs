@@ -50,7 +50,7 @@ L’export applicatif ne remplace pas une sauvegarde du volume. La restauration 
 
 ## Vidéo facultative
 
-Activer la section dans les paramètres et configurer la source côté installation. L’intégration existante utilise Creator Studio. `CREATOR_STUDIO_URL` et `CREATOR_STUDIO_API_KEY` restent dans la configuration sécurisée ; ne jamais committer la clé.
+Activer la section dans les paramètres et configurer la source côté installation. YouTube Data API v3 se configure dans Paramètres → YouTube (chaîne, clé, test). Le fournisseur Creator Studio historique reste compatible : `CREATOR_STUDIO_URL` et `CREATOR_STUDIO_API_KEY` restent dans la configuration sécurisée ; ne jamais committer la clé.
 
 Seuls titre, URL, miniature et date quittent le relais. Sans source disponible, la carte est masquée.
 
