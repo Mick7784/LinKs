@@ -1167,7 +1167,7 @@ class Handler(BaseHTTPRequestHandler):
                         source='tracked:'+ref if db.execute("SELECT 1 FROM tracking_sources WHERE id=?",(ref,)).fetchone() else 'shared-unknown'
                     elif source not in {'instagram','youtube','facebook','tiktok','discord','newsletter','site','mail','qr'}:source='shared-unknown'
                     increment(db,'story',source,'story:'+token+':'+now.strftime('%H'),now.date().isoformat())
-                    if source.startswith('tracked:'):db.execute('UPDATE tracking_sources SET story_click_total=story_click_total+1 WHERE id=?',(source[8:],))
+                    tracked_links.count_campaign_source(db,source)
                 target=story_destination(item['url'])
             self.send_response(302);self.send_header('Location',target);self.send_header('Cache-Control','no-store');self.send_header('Referrer-Policy','no-referrer');self.send_header('Content-Length','0');self.end_headers()
         except (sqlite3.Error,OSError):return self.send(503)
