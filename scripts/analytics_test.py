@@ -95,6 +95,27 @@ class AnalyticsTests(unittest.TestCase):
         self.a.init()
         self.assertEqual(self.redirect(public+'/go/'+token)[0],302)
 
+    def test_custom_sources_on_campaigns_are_retained_after_clicks(self):
+        admin=self.server(True);public=self.server();campaign_id=self.promo()
+        source=json.loads(self.request(admin+'/api/tracking-sources',{'name':'Blog partenaire'})[1])
+        link=json.loads(self.request(admin+'/api/content/'+campaign_id+'/story-link',{})[1])['url']
+        status,headers=self.redirect(link+'?utm_source=src_'+source['id'])
+        self.assertEqual(status,302)
+        sources=json.loads(self.request(admin+'/api/tracking-sources')[1])['items']
+        selected=next(row for row in sources if row['id']==source['id'])
+        self.assertEqual(selected['clicks'],1)
+        day=self.a.datetime.now(self.a.PARIS).date().isoformat()
+        report=self.a.report(day,day)
+        self.assertEqual(len(report['stories']),1)
+        self.assertEqual(report['stories'][0]['source'],'tracked:'+source['id'])
+        self.assertEqual(report['source_names']['tracked:'+source['id']],'Blog partenaire')
+        result=json.loads(self.request(admin+'/api/tracking-sources/'+source['id'],method='DELETE')[1])
+        self.assertEqual(result['action'],'archived')
+        self.assertEqual(self.redirect(link+'?utm_source=src_'+source['id'])[0],302)
+        backup=json.loads(self.a.export_backup());self.a.restore_backup(backup)
+        selected=next(row for row in json.loads(self.request(admin+'/api/tracking-sources')[1])['items'] if row['id']==source['id'])
+        self.assertEqual(selected['clicks'],2)
+
     def test_zero_click_source_is_permanently_removed(self):
         admin=self.server(True);public=self.server()
         link=json.loads(self.request(admin+'/api/tracked-links',{'name':'Sans clic','url':'https://shop.example/item'})[1])
