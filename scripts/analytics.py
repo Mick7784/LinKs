@@ -193,7 +193,7 @@ def report(start,end,source=""):
             if row["kind"]=="click":row["link"]=aliases.get(row["link"],row["link"])
             row["label"]=labels.get(row["link"], "Ancien lien" if row["link"].startswith(("block:","button:")) else row["link"])
         story_where="c.day BETWEEN ? AND ? AND c.kind='story'";story_params=[start,end]
-        if source and source not in {'instagram','instagram-story'}:story_where+=" AND 0"
+        if source:story_where+=" AND c.source=?";story_params.append(source)
         stories=[dict(r) for r in db.execute("""SELECT c.day,c.total,c.source,c.link,
           s.promotion_id,s.token,COALESCE(b.internal_name,s.name) label
           FROM counts c JOIN story_links s ON substr(c.link,7,length(s.token))=s.token
@@ -1046,7 +1046,9 @@ class Handler(BaseHTTPRequestHandler):
                 agent=self.headers.get('User-Agent','').lower()
                 if count and instance.get(db,"analytics.enabled")=="true" and not any(x in agent for x in ['bot','spider','crawler','headless','facebookexternalhit','meta-externalagent','preview']):
                     now=datetime.now(PARIS)
-                    increment(db,'story','instagram-story','story:'+token+':'+now.strftime('%H'),now.date().isoformat())
+                    source=parse_qs(urlsplit(self.path).query).get('utm_source',[''])[0].strip().lower()
+                    if source not in {'instagram','youtube','facebook','tiktok','discord','newsletter','site','mail','qr'}:source='shared-unknown'
+                    increment(db,'story',source,'story:'+token+':'+now.strftime('%H'),now.date().isoformat())
                 target=story_destination(item['url'])
             self.send_response(302);self.send_header('Location',target);self.send_header('Cache-Control','no-store');self.send_header('Referrer-Policy','no-referrer');self.send_header('Content-Length','0');self.end_headers()
         except (sqlite3.Error,OSError):return self.send(503)
