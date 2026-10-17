@@ -668,6 +668,9 @@ def restore_backup(data):
                 db.execute('DELETE FROM '+table)
                 columns=[c['name'] for c in db.execute('PRAGMA table_info('+table+')')]
                 db.executemany('INSERT INTO '+table+' ('+','.join(columns)+') VALUES ('+','.join('?' for _ in columns)+')',[[row[c] for c in columns] for row in tables[table]])
+            for table in TRACKING_BACKUP_TABLES:
+                columns=[c['name'] for c in db.execute('PRAGMA table_info('+table+')')]
+                db.executemany('INSERT INTO '+table+' ('+','.join(columns)+') VALUES ('+','.join('?' for _ in columns)+')',[[row[c] for c in columns] for row in tables[table]])
             db.execute("INSERT OR REPLACE INTO settings VALUES('content.initialized','1')")
             for row in db.execute("SELECT * FROM content_blocks WHERE archived=0 AND active=1 AND draft=0 AND type IN ('promo','featured')"):
                 ensure_promotion_capacity(dict(row),row['id'],db)
