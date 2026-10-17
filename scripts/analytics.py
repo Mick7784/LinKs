@@ -621,7 +621,18 @@ def restore_backup(data):
                     row=dict(old);tables['tracked_links'].append(row);existing_links[old['id']]=row
             for old in db.execute('SELECT * FROM tracking_sources'):
                 if old['id'] not in existing_sources:
-                    row=dict(old);tables['tracking_sources'].append(row);existing_sources[old['id']]=row
+                    row=dict(old)
+                    taken={source['name'].casefold() for source in existing_sources.values()}
+                    if row['name'].casefold() in taken:
+                        used=db.execute('SELECT 1 FROM tracked_tokens WHERE source_id=? LIMIT 1',(old['id'],)).fetchone()
+                        historic=db.execute("SELECT 1 FROM counts WHERE source=? AND kind IN ('tracked','story') LIMIT 1",('tracked:'+old['id'],)).fetchone()
+                        # Two fresh installations have independent seeded defaults.
+                        # Only one unused copy of a source label is needed.
+                        if not used and not historic and not row['story_click_total']:continue
+                        original=row['name'][:76]
+                        row['name']=original+' (historique '+row['id'][:8]+')'
+                        if row['name'].casefold() in taken:raise ValueError('Collision de sources de publication')
+                    tables['tracking_sources'].append(row);existing_sources[old['id']]=row
                 else:
                     row=existing_sources[old['id']]
                     row['story_click_total']=max(row['story_click_total'],old['story_click_total'])
