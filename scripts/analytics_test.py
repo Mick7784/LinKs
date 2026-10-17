@@ -99,7 +99,8 @@ class AnalyticsTests(unittest.TestCase):
         admin=self.server(True);public=self.server();campaign_id=self.promo()
         source=json.loads(self.request(admin+'/api/tracking-sources',{'name':'Blog partenaire'})[1])
         link=json.loads(self.request(admin+'/api/content/'+campaign_id+'/story-link',{})[1])['url']
-        status,headers=self.redirect(link+'?utm_source=src_'+source['id'])
+        local_link=public+'/go/'+link.rsplit('/go/',1)[-1]
+        status,headers=self.redirect(local_link+'?utm_source=src_'+source['id'])
         self.assertEqual(status,302)
         sources=json.loads(self.request(admin+'/api/tracking-sources')[1])['items']
         selected=next(row for row in sources if row['id']==source['id'])
@@ -111,7 +112,7 @@ class AnalyticsTests(unittest.TestCase):
         self.assertEqual(report['source_names']['tracked:'+source['id']],'Blog partenaire')
         result=json.loads(self.request(admin+'/api/tracking-sources/'+source['id'],method='DELETE')[1])
         self.assertEqual(result['action'],'archived')
-        self.assertEqual(self.redirect(link+'?utm_source=src_'+source['id'])[0],302)
+        self.assertEqual(self.redirect(local_link+'?utm_source=src_'+source['id'])[0],302)
         backup=json.loads(self.a.export_backup());self.a.restore_backup(backup)
         selected=next(row for row in json.loads(self.request(admin+'/api/tracking-sources')[1])['items'] if row['id']==source['id'])
         self.assertEqual(selected['clicks'],2)
