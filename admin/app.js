@@ -44,13 +44,11 @@ function chart(days){
  const magnitude=10**Math.floor(Math.log10(peak/4)),step=Math.max(1,Math.ceil(peak/4/magnitude)*magnitude),max=step*4;
  chartRenderedWidth=root.clientWidth;
  const short=d=>d.slice(8,10)+"/"+d.slice(5,7),description=b=>`${short(b.start)} : ${fmt.format(b.views)} visites · ${fmt.format(b.clicks)} clics`,stride=Math.max(1,Math.ceil(buckets.length/Math.max(2,Math.floor((right-left)/58))));
- const groups=buckets.map((b,i)=>{const center=left+slot*(i+.5),series=[{value:b.views,cls:"visits-bar"},{value:b.clicks,cls:"clicks-bar"}].sort((a,b)=>b.value-a.value);
- const bars=series.map(s=>{const h=s.value*height/max;return `<rect class="${s.cls} animated-bar" style="animation-delay:${Math.min(i*8,120)}ms" x="${center-barWidth/2}" y="${bottom-h}" width="${barWidth}" height="${h}" rx="${Math.min(4,barWidth/3)}"/>`}).join("");
- const visitY=bottom-b.views*height/max-9,clickHeight=b.clicks*height/max;
- let clickY=clickHeight>=32?bottom-clickHeight+18:bottom-clickHeight-9;
- if(Math.abs(clickY-visitY)<19)clickY=visitY-20;
- const marker=(value,y,cls)=>`<g class="chart-value ${cls}"><rect x="${center-Math.max(12,String(value).length*3.6+5)}" y="${y-12}" width="${Math.max(24,String(value).length*7.2+10)}" height="17" rx="3"/><text text-anchor="middle" x="${center}" y="${y}">${fmt.format(value)}</text></g>`;
- const markers=b.views||b.clicks?marker(b.views,visitY,"visits-bar-value")+marker(b.clicks,clickY,"clicks-bar-value"):"";
+ const groups=buckets.map((b,i)=>{const center=left+slot*(i+.5),halfWidth=Math.max(2,(barWidth-4)/2),offset=halfWidth/2+2;
+ const series=[{value:b.views,cls:"visits-bar",x:center-offset},{value:b.clicks,cls:"clicks-bar",x:center+offset}];
+ const bars=series.map(s=>{const h=s.value*height/max;return `<rect class="${s.cls} animated-bar" style="animation-delay:${Math.min(i*8,120)}ms" x="${s.x-halfWidth/2}" y="${bottom-h}" width="${halfWidth}" height="${h}" rx="${Math.min(4,halfWidth/3)}"/>`}).join("");
+ const marker=(value,y,cls,x)=>`<g class="chart-value ${cls}"><rect x="${x-Math.max(12,String(value).length*3.6+5)}" y="${y-12}" width="${Math.max(24,String(value).length*7.2+10)}" height="17" rx="3"/><text text-anchor="middle" x="${x}" y="${y}">${fmt.format(value)}</text></g>`;
+ const markers=slot>=58?series.filter(x=>x.value).map(x=>marker(x.value,bottom-x.value*height/max-9,x.cls+"-value",x.x)).join(""):"";
  const label=i%stride===0?`<text text-anchor="middle" x="${center}" y="${bottom+23}">${short(b.start)}</text>`:"";
  return `<g class="chart-bucket" role="button" tabindex="0" data-bucket="${i}" aria-label="${esc(description(b))}"><title>${esc(description(b))}</title><rect class="chart-hit" x="${left+i*slot}" y="0" width="${slot}" height="${bottom}"/>${bars}<g class="chart-values${slot>=Math.max(36,String(peak).length*8+12)?" always":""}">${markers}</g>${label}</g>`}).join("");
  const grid=Array.from({length:5},(_,i)=>{const y=bottom-i*height/4;return `<line class="chart-grid" x1="${left}" x2="${right}" y1="${y}" y2="${y}"/><text x="2" y="${y+4}">${fmt.format(i*step)}</text>`}).join("");
