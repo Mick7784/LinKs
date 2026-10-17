@@ -143,3 +143,21 @@ h2 {
 input[type="file"] {
   max-width: 100%;
 }
+
+/* Same restrained DomotiK identity as the main administration. */
+:root{background:#0A1221;color:#EAF2FF}
+body{
+  background:radial-gradient(ellipse at 8% 4%,rgba(0,102,255,.13),transparent 44%),
+             radial-gradient(ellipse at 95% 94%,rgba(168,85,247,.09),transparent 44%),#0A1221;
+}
+main{background:#111B2B;border:1px solid #2A3952;position:relative;overflow:hidden}
+main::before{
+  content:"";position:absolute;top:0;left:0;right:0;height:3px;pointer-events:none;
+  background:linear-gradient(90deg,#00E5FF,#0066FF 52%,#A855F7);
+}
+p,dt{color:#AFBED8}
+h1{color:#00E5FF}
+input{background:#0A1221;border-color:#344460}
+input:focus-visible,button:focus-visible{outline-color:#00E5FF}
+button{background:#0066FF;color:#fff}
+button:hover{background:#165CDA}

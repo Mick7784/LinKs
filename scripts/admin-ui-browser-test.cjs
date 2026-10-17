@@ -20,6 +20,14 @@ browser=await chromium.launch({headless:true,executablePath:process.env.CHROMIUM
 const installedVersion=(await api('/api/settings')).app_version;assert.match(installedVersion,/^V\d+\.\d+$/);await page.waitForFunction(version=>document.getElementById('admin-version')?.textContent===`LinKs · ${version}`,installedVersion);assert(await page.locator('#admin-version').isVisible());
 assert.equal(await page.locator('.chart-bucket').count(),14);
 assert.equal(await page.locator('.brand').getAttribute('href'),'https://github.com/Mick7784/links');assert.equal(await page.locator('.brand').getAttribute('target'),'_blank');assert.equal(await page.locator('.brand').getAttribute('rel'),'noopener noreferrer');
+assert.equal(await page.locator('.product-brand').getAttribute('alt'),'LinKs by DomotiK Studio');
+assert(await page.locator('.studio-eyebrow').isVisible(),'DomotiK Studio identity should be visible in desktop sidebar');
+assert.match(await page.locator('.studio-eyebrow').textContent(),/DOMOTIK STUDIO/);
+assert.equal(await page.locator('.topbar .breadcrumb-brand').count(),1);
+assert(await page.locator('.sidebar').evaluate(e=>getComputedStyle(e,'::before').backgroundImage.includes('linear-gradient')),'sidebar color signature absent');
+assert(await page.locator('.tabs button.active').evaluate(e=>getComputedStyle(e).boxShadow.includes('inset')),'selected navigation identity absent');
+assert.equal(await page.locator('#dashboard .analytics-kpis article').first().evaluate(e=>getComputedStyle(e,'::before').height),'2px');
+
 assert.equal(await page.locator('#sources .donut-segment').count(),4);assert.equal(await page.locator('#sources .source-row').count(),4);
 assert.equal(await page.locator('#story-total').textContent(),'42');assert.equal(await page.locator('#promo-copy-total').textContent(),'12');assert.equal(await page.locator('.engagement-row').count(),2);
 await page.locator('.chart-bucket').last().hover();assert(await page.locator('.chart-tooltip').isVisible());assert.match(await page.locator('.chart-tooltip').textContent(),/Visites.*Clics/);
