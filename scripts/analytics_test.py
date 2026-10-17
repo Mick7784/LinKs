@@ -54,7 +54,8 @@ class AnalyticsTests(unittest.TestCase):
         self.assertEqual(sum(x['total'] for x in report['rows']),2)
         self.assertEqual(sum(x['total'] for x in report['stories']),1)
         row=report['stories'][0];self.assertEqual(row['label'],'Domadoo - Aquara days');self.assertEqual(row['promotion_id'],item_id);self.assertRegex(row['hour'],r'^\d{2}$')
-        self.assertEqual(len(self.a.report(day,day,'instagram')['stories']),1)
+        self.assertEqual(len(self.a.report(day,day,'shared-unknown')['stories']),1)
+        self.assertEqual(self.a.report(day,day,'instagram')['stories'],[])
         self.assertEqual(self.a.report(day,day,'youtube')['stories'],[])
         self.assertEqual(self.a.report('2000-01-01','2000-01-01')['stories'],[])
         with self.a.connection() as db:db.execute('UPDATE content_blocks SET url=?,internal_name=? WHERE id=?',('https://partner.example/new?aff=117','Promotion renommée',item_id))
@@ -67,6 +68,21 @@ class AnalyticsTests(unittest.TestCase):
         self.assertEqual(self.redirect(public+'/go/'+token)[0],410)
         self.assertEqual(self.a.report(day,day)['stories'][0]['label'],'Promotion renommée')
         self.assertEqual(sum(x['total'] for x in self.a.report(day,day)['stories']),3)
+
+    def test_shared_links_keep_stable_tokens_and_attribute_platforms(self):
+        item_id=self.promo();base=self.a.story_link(item_id)['url'];token=base.rsplit('/',1)[-1]
+        public=self.server();day=self.a.datetime.now(self.a.PARIS).date().isoformat()
+        for platform in ('instagram','youtube','facebook'):
+            self.assertEqual(self.redirect(public+'/go/'+token+'?utm_source='+platform)[0],302)
+            self.assertEqual(self.a.report(day,day,platform)['stories'][0]['source'],platform)
+        self.assertEqual(self.redirect(public+'/go/'+token+'?utm_source=unknown')[0],302)
+        self.assertEqual(self.a.report(day,day,'shared-unknown')['stories'][0]['total'],1)
+        self.assertEqual(self.a.story_link(item_id)['url'],base)
+        with self.a.connection() as db:
+            db.execute("INSERT INTO counts VALUES(?,?,?,?,?)",(day,'instagram-story','story','story:'+token+':01',13))
+        legacy=self.a.report(day,day,'instagram-story')['stories']
+        self.assertEqual(sum(row['total'] for row in legacy),13)
+        self.assertEqual(sum(row['total'] for row in self.a.report(day,day)['stories']),17)
 
     def test_story_concurrency_unique_codes_and_no_bot_counts(self):
         admin=self.server(True);item_id=self.promo();results=[]
