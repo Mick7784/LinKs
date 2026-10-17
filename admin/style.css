@@ -1962,6 +1962,7 @@ dialog h2 {
 .tabs button.active{background:var(--raised);color:var(--text);box-shadow:inset 2px 0 var(--accent)}
 .tabs button.active .nav-icon{color:var(--accent)}
 .sidebar-bottom{gap:10px;padding-inline:12px;font-size:.75rem}
+.sidebar-bottom #admin-version{margin-top:-7px;color:var(--muted);opacity:.78;font-size:.62rem;letter-spacing:.025em;font-variant-numeric:tabular-nums}
 .topbar{height:52px;padding:0 28px;border-bottom:1px solid var(--line)}
 .theme-control select{min-height:30px;font-size:.75rem;padding:4px 8px}
 main{max-width:1400px;padding:24px 28px 32px}
