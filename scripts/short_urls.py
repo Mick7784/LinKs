@@ -54,14 +54,3 @@ def get_or_create(db,target_token,source,origin,now):
 def lookup(db,code):
     if not CODE.fullmatch(code):return None
     return db.execute("SELECT * FROM short_aliases WHERE code=?",(code,)).fetchone()
-
-def revoke_source(db,ident,name):
-    # A zero-click source can be deleted permanently, but its published
-    # aliases must remain reserved and return 410, never be reassigned.
-    choices=["tracked:"+ident]
-    for legacy,display in (("instagram","Instagram Story"),("youtube","YouTube Post"),
-                           ("facebook","Facebook"),("tiktok","TikTok"),("discord","Discord"),
-                           ("instagram-story","Autre / Direct"),("shared-unknown","Autre / Direct")):
-        if display==name:choices.append(legacy)
-    marks=",".join("?" for _ in choices)
-    db.execute("UPDATE short_aliases SET revoked=1 WHERE source IN ("+marks+")",choices)

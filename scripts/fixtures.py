@@ -1,5 +1,6 @@
 """Generic disposable fixtures. Never imported by application startup."""
 import json, sqlite3, sys
+from contextlib import closing
 from pathlib import Path
 
 def prepare(database,origin='https://links.example'):
@@ -9,7 +10,7 @@ def prepare(database,origin='https://links.example'):
       'profile.logo':'/assets/link-shopping.webp','profile.avatar':'/assets/link-shopping.webp','footer.owner':'Test Creator',
       'app.timezone':'Europe/Paris','site.url':origin,'analytics.enabled':'true','video.enabled':'true',
       'analytics.source_rules':'[]','analytics.metric_aliases':json.dumps({'Amazon':'block:legacy-link-2','Domadoo':'block:legacy-link-3','Réseau · Me contacter par e-mail':'button:legacy-button-2'})}
-    with sqlite3.connect(database) as db:
+    with closing(sqlite3.connect(database)) as db,db:
         db.execute('CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL)')
         db.executemany('INSERT OR REPLACE INTO settings VALUES(?,?)',values.items())
 

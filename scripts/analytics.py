@@ -60,6 +60,10 @@ def init():
     if existed:
         with closing(sqlite3.connect(DB)) as before:
             tables={r[0] for r in before.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            if 'content_blocks' in tables and 'retired' not in {r[1] for r in before.execute('PRAGMA table_info(content_blocks)')}:
+                target=DATA_DIR/'pre-v1310-database.db'
+                if not target.exists():
+                    with closing(sqlite3.connect(target)) as backup:before.backup(backup)
             legacy="settings" in tables and not before.execute("SELECT 1 FROM settings WHERE key='app.config_schema_version'").fetchone()
             if legacy:
                 target=DATA_DIR/"pre-v11-database.db"
@@ -96,6 +100,7 @@ def init():
         tracked_links.initialize(db)
         short_urls.initialize(db)
         instance.initialize(db,legacy,CONFIG,[DATA_DIR/"assets",STATIC/"assets"],DATA_DIR)
+        db.execute("INSERT OR IGNORE INTO settings VALUES('app.instance_id',?)",(uuid.uuid4().hex,))
         themes.initialize(db)
         storage.initialize(db)
         # Archives and retired rows continue owning their images and metric identity.
@@ -153,7 +158,12 @@ def record(kind,source,link,day=None):
         increment(db,kind,source,link,day)
 def increment(db,kind,source,link,day):
     db.execute("INSERT INTO counts VALUES(?,?,?,?,1) ON CONFLICT(day,source,kind,link) DO UPDATE SET total=total+1",(day,source,kind,link))
-    db.execute("DELETE FROM counts WHERE day < ?",((date.fromisoformat(day)-timedelta(days=400)).isoformat(),))
+    # The report window is bounded; recording a new action never purges history.
+
+def collection_allowed(headers):
+    if headers.get('DNT')=='1' or headers.get('Sec-GPC')=='1':return False
+    agent=headers.get('User-Agent','').lower()
+    return not any(x in agent for x in ['bot','spider','crawler','headless','facebookexternalhit','meta-externalagent','preview'])
 def source_of(data):
     source=data.get("source","")
     if not isinstance(source,str):raise ValueError()
@@ -512,12 +522,12 @@ def export_backup():
         assets={}
         for path in (DATA_DIR/'assets').glob('*'):
             if path.is_file():assets[path.name]=base64.b64encode(path.read_bytes()).decode('ascii')
-        result={'format':'links-backup','version':3,'created_at':now_iso(),'software_version':software_version(),'tables':tables,'images':images,'assets':assets}
+        result={'format':'links-backup','version':3,'created_at':now_iso(),'software_version':software_version(),'instance_id':instance.get(db,'app.instance_id'),'tables':tables,'images':images,'assets':assets}
         encoded=json.dumps(result,ensure_ascii=False).encode()
         if len(encoded)>BACKUP_LIMIT:raise ValueError('Sauvegarde supérieure à 64 Mo : sauvegarder le volume serveur')
         return encoded
 
-def restore_backup(data):
+def restore_backup(data,preview=False):
     # Validation and merging must never mutate a caller's reusable backup object.
     data=copy.deepcopy(data)
     if data.get('format') not in {'links-backup','domotik-links-backup'} or data.get('version') not in {1,2,3}:raise ValueError('Ce fichier n’est pas une sauvegarde Links compatible')
@@ -549,9 +559,9 @@ def restore_backup(data):
     if not isinstance(assets,dict):raise ValueError('Assets invalides')
     asset_bytes={}
     for name,encoded in assets.items():
-        if not isinstance(name,str) or not re.fullmatch(r'[A-Za-z0-9._-]+\.(webp|jpg|jpeg|png|gif)',name) or not isinstance(encoded,str):raise ValueError('Asset invalide')
+        if not isinstance(name,str) or not re.fullmatch(r'[A-Za-z0-9._-]+\.(webp|jpg|jpeg|png|gif|svg)',name) or not isinstance(encoded,str):raise ValueError('Asset invalide')
         raw=base64.b64decode(encoded,validate=True)
-        user_images.validate(raw,Path(name).suffix)
+        user_images.validate_legacy_asset(raw,Path(name).suffix)
         old=DATA_DIR/'assets'/name
         if old.exists() and old.read_bytes()!=raw:raise ValueError('Asset historique différent : restauration refusée pour conserver son URL')
         asset_bytes[name]=raw
@@ -570,6 +580,10 @@ def restore_backup(data):
         with DATA_LOCK,connection() as db:
             db.execute('BEGIN IMMEDIATE')
             retained_rows=set()
+            incoming_instance=data.get('instance_id')
+            if incoming_instance and incoming_instance!=instance.get(db,'app.instance_id'):
+                if db.execute('SELECT 1 FROM counts LIMIT 1').fetchone() or db.execute('SELECT 1 FROM story_links LIMIT 1').fetchone() or db.execute('SELECT 1 FROM tracked_tokens LIMIT 1').fetchone():
+                    raise ValueError('Sauvegarde d’une autre instance : fusion des historiques refusée. Utiliser une installation vide pour le transfert.')
             for table in BACKUP_TABLES:
                 rows=tables[table]
                 if not isinstance(rows,list) or len(rows)>500000:raise ValueError('Table invalide : '+table)
@@ -635,6 +649,16 @@ def restore_backup(data):
             for row in db.execute("SELECT * FROM settings"):
                 if row["key"] in {"auth.mode","app.setup_completed","app.config_schema_version"}:
                     tables["settings"]=[r for r in tables["settings"] if r["key"]!=row["key"]];tables["settings"].append(dict(row));continue
+                if row['key']=='analytics.metric_aliases':
+                    aliases={**json.loads(incoming_settings.get(row['key'],'{}')),**json.loads(row['value'])}
+                    for incoming_row in tables['settings']:
+                        if incoming_row['key']==row['key']:incoming_row['value']=json.dumps(aliases,ensure_ascii=False)
+                if row['key']=='analytics.source_rules':
+                    rules={r['key']:r for r in json.loads(incoming_settings.get(row['key'],'[]'))}
+                    rules.update({r['key']:r for r in json.loads(row['value'])})
+                    merged=instance.source_rules(list(rules.values()))
+                    for incoming_row in tables['settings']:
+                        if incoming_row['key']==row['key']:incoming_row['value']=merged
                 if row["key"] not in setting_keys:tables["settings"].append(dict(row))
             # Preserve every content identity, including objects published after backup.
             published={r[0] for r in db.execute('SELECT promotion_id FROM story_links')}
@@ -657,7 +681,6 @@ def restore_backup(data):
                             row['url']=old['url']
             # Codes are never reassigned, even when restoring a different backup.
             incoming={r['token']:r for r in tables['story_links']}
-            restored_ids={r['id'] for r in tables['content_blocks']}
             for old in db.execute('SELECT * FROM story_links'):
                 if old['token'] in incoming:
                     if incoming[old['token']]['promotion_id']!=old['promotion_id']:raise ValueError('Un identifiant Story ne peut pas changer de promotion')
@@ -680,10 +703,7 @@ def restore_backup(data):
                     row=dict(old)
                     taken={source['name'].casefold() for source in existing_sources.values()}
                     if row['name'].casefold() in taken:
-                        used=db.execute('SELECT 1 FROM tracked_tokens WHERE source_id=? LIMIT 1',(old['id'],)).fetchone()
-                        historic=db.execute("SELECT 1 FROM counts WHERE source=? AND kind IN ('tracked','story') LIMIT 1",('tracked:'+old['id'],)).fetchone()
-                        # Two fresh installations have independent seeded defaults.
-                        # Only one unused copy of a source label is needed.
+                        # Independent source IDs remain distinct, even with the same label.
                         original=row['name'][:76]
                         row['name']=original+' (historique '+row['id'][:8]+')'
                         if row['name'].casefold() in taken:raise ValueError('Collision de sources de publication')
@@ -770,6 +790,18 @@ def restore_backup(data):
             refs=[r['image'] for r in tables['content_blocks']]+[r['value'] for r in tables['settings'] if r['key'] in {'profile.logo','profile.avatar'}]
             for ref in refs:
                 if ref.startswith('/assets/') and not (STATIC/ref[1:]).is_file() and not (DATA_DIR/ref[1:]).is_file() and ref[8:] not in asset_bytes:raise ValueError('Asset référencé manquant')
+            summary={'blocks':len(tables['content_blocks']),'buttons':len(tables['top_buttons']),'images':len(images),
+                     'retained_content':len(retained_rows),'published_redirects':len(tables['story_links'])+len(tables['tracked_tokens']),
+                     'counter_total':sum(row['total'] for row in tables['counts'])}
+            live=[r for r in tables['content_blocks'] if r['type'] in {'promo','featured'} and r['active'] and not r['draft'] and not r['archived'] and not r['retired']]
+            for row in live:
+                start,end=promotion_interval(row,datetime.now(timezone.utc))
+                if concurrency([x for x in live if x['id']!=row['id']],start,end)[0]>3:raise ValueError('Limite de 3 promotions simultanées dépassée')
+            canonical={r['token'] for r in tables['story_links']}|{r['token'] for r in tables['tracked_tokens']}
+            if any(not r['revoked'] and r['target_token'] not in canonical for r in tables['short_aliases']):raise ValueError('Cible de lien court manquante')
+            if preview:
+                db.rollback()
+                return summary
             # Backup the current SQLite state only after validation, before replacing rows.
             restore_safety(db)
             for table in SOURCE_BACKUP_TABLES+SHORT_BACKUP_TABLES:
@@ -797,13 +829,14 @@ def restore_backup(data):
             storage.scan(db,UPLOADS,assets=DATA_DIR/'assets',system_assets=STATIC/'assets')
             db.execute('DELETE FROM admin_sessions')
         with connection() as db:sync_configuration(db)
-        return {'blocks':len(tables['content_blocks']),'buttons':len(tables['top_buttons']),'images':len(images)}
+        return summary
     except Exception:
         for path in written:path.unlink(missing_ok=True)
         raise
 
 
 def validate_settings(values):
+    if 'app.instance_id' in values and not re.fullmatch(r'[a-f0-9]{32}',values['app.instance_id']):raise ValueError('Identité d’instance invalide')
     if 'admin.calendar_timed' in values:
         ids=json.loads(values['admin.calendar_timed'])
         if not isinstance(ids,list) or any(not isinstance(x,str) or not re.fullmatch(r'[a-f0-9-]{36}',x) for x in ids):raise ValueError('Modes horaires invalides')
@@ -881,9 +914,10 @@ def latest_video():
     raise ValueError('Source vidéo non configurée.')
 
 def public_mutation(path):
-    return (path.startswith(('/api/content','/api/buttons','/api/settings','/api/restore','/api/auth/setup','/api/promotions/replace'))
+    return (path.startswith(('/api/content','/api/buttons','/api/settings','/api/restore','/api/setup','/api/promotions/replace'))
+            and path not in {'/api/setup/check','/api/restore/preview'}
             or path=='/api/youtube' or (path.startswith('/api/quotes') and path!='/api/quotes/analyze')
-            or (path.startswith('/api/appearance') and path not in {'/api/appearance/css','/api/appearance/export'}))
+            or (path.startswith('/api/appearance') and path not in {'/api/appearance/css','/api/appearance/css-export','/api/appearance/export'}))
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -892,7 +926,7 @@ class Handler(BaseHTTPRequestHandler):
         super().handle_one_request()
         if self.server.admin and getattr(self,'command','') in {'POST','PUT','DELETE'} and 200<=self.response_status<300:
             path=urlsplit(self.path).path
-            if path.startswith(('/api/content','/api/buttons','/api/appearance','/api/settings','/api/restore','/api/auth/setup','/api/promotions/replace')):
+            if public_mutation(path):
                 try:storage_state()
                 except (OSError,sqlite3.Error,ValueError):print('Links : suivi des fichiers temporairement indisponible.',flush=True)
             if public_mutation(path):
@@ -1113,7 +1147,7 @@ class Handler(BaseHTTPRequestHandler):
         if url.path=="/preview/style.css":return self.file(ROOT/"site"/"style.css" if (ROOT/"site"/"style.css").exists() else Path("/usr/share/nginx/html/style.css"),"text/css")
         if url.path=="/preview/preview.css":return self.file(ADMIN/"promo-preview.css","text/css")
         if url.path.startswith("/preview/") and url.path[9:] in {"index.html","app.js","config.js","metrics.js","theme.js","theme.css","theme-tokens.json","asset-library.json"}:return self.file(STATIC/url.path[9:])
-        if url.path in {"/appearance.js","/appearance.css","/shortcuts.js","/uploads.js","/storage.js","/settings.js","/tracking.js"}:return self.file(ADMIN/url.path[1:])
+        if url.path in {"/appearance.js","/appearance.css","/shortcuts.js","/uploads.js","/storage.js","/settings.js","/tracking.js","/theme-init.js"}:return self.file(ADMIN/url.path[1:])
         files={"/":("index.html","text/html;charset=utf-8"),"/app.js":("app.js","application/javascript"),"/dates.js":("dates.js","application/javascript"),"/calendar.js":("calendar.js","application/javascript"),"/style.css":("style.css","text/css")}
         return self.file(ADMIN/files[url.path][0],files[url.path][1]) if url.path in files else self.send(404)
     def do_POST(self):
@@ -1123,7 +1157,7 @@ class Handler(BaseHTTPRequestHandler):
             if path!="/metrics":return self.send(404)
             if not analytics_enabled():return self.send(204)
             if self.headers.get("Origin")!=ORIGIN:return self.send(403)
-            if any(x in self.headers.get("User-Agent","").lower() for x in ["bot","spider","crawler","headless"]):return self.send(204)
+            if not collection_allowed(self.headers):return self.send(204)
             try:
                 data=self.body(2048);kind,key=data.get("kind"),data.get("link","")
                 if kind=="promo_code_copy":record_promo_copy(data);return self.send(204)
@@ -1132,8 +1166,9 @@ class Handler(BaseHTTPRequestHandler):
             except (ValueError,TypeError,json.JSONDecodeError):return self.send(400)
             except (sqlite3.Error,OSError):return self.send(503)
         try:
-            data=self.body(BACKUP_LIMIT if path=="/api/restore" else themes.MAX_BYTES if path=="/api/appearance/import" else 8*1024*1024)
+            data=self.body(BACKUP_LIMIT if path in {'/api/restore','/api/restore/preview'} else themes.MAX_BYTES if path=="/api/appearance/import" else 8*1024*1024)
             if path=="/api/appearance/css":return self.json(200,themes.css_import(data.get("css")))
+            if path=="/api/appearance/css-export":return self.json(200,{'css':themes.css_export(themes.record(data.get('theme')))})
             if path=="/api/appearance":
                 with connection() as db:result=themes.save(db,data,UPLOADS)
                 return self.json(200,result)
@@ -1145,6 +1180,7 @@ class Handler(BaseHTTPRequestHandler):
             if path=="/api/quotes/analyze":return self.json(200,add_quotes(data,preview=True))
             if path=="/api/quotes":return self.json(200,add_quotes(data))
             if path=="/api/restore":return self.json(200,restore_backup(data))
+            if path=="/api/restore/preview":return self.json(200,restore_backup(data,preview=True))
             if path=="/api/promotions/replace":return self.replace_promotion(data)
             if path=="/api/tracking-sources":
                 with connection() as db:return self.json(201,tracked_links.add_source(db,data,now_iso()))
@@ -1172,6 +1208,11 @@ class Handler(BaseHTTPRequestHandler):
             match=re.fullmatch(r"/api/content/([\w-]+)/(duplicate|archive|restore)",path)
             if match:return self.content_action(match.group(1),match.group(2))
             if path=="/api/buttons":return self.create_button(data)
+            match=re.fullmatch(r'/api/buttons/([\w-]+)/restore',path)
+            if match:
+                with connection() as db:
+                    changed=db.execute('UPDATE top_buttons SET retired=0,active=1,updated_at=? WHERE id=?',(now_iso(),match.group(1))).rowcount
+                return self.send(204) if changed else self.send(404)
             if path=="/api/buttons/reorder":return self.reorder("top_buttons",data)
             if path=="/api/upload":return self.upload(data)
             if path=="/api/storage":
@@ -1224,7 +1265,6 @@ class Handler(BaseHTTPRequestHandler):
         if not match:match=re.fullmatch(r"/api/buttons/([\w-]+)",path);table="top_buttons"
         if not match:return self.send(404)
         with connection() as db:
-            prefix="block:" if table=="content_blocks" else "button:"
             state='archived=1' if table=='content_blocks' else 'active=0'
             changed=db.execute(f"UPDATE {table} SET retired=1,{state},updated_at=? WHERE id=?",(now_iso(),match.group(1))).rowcount
         return self.send(204) if changed else self.send(404)
@@ -1251,8 +1291,7 @@ class Handler(BaseHTTPRequestHandler):
                 row=tracked_links.find_destination(db,token)
                 if not row:return self.send(404)
                 if not row['enabled'] or not story_url_valid(row['url']):return self.send(410)
-                agent=self.headers.get('User-Agent','').lower()
-                if count and instance.get(db,"analytics.enabled")=="true" and not any(x in agent for x in ['bot','spider','crawler','headless','facebookexternalhit','meta-externalagent','preview']):
+                if count and instance.get(db,"analytics.enabled")=="true" and collection_allowed(self.headers):
                     now=datetime.now(PARIS)
                     increment(db,'tracked','tracked:'+row['source_id'],'tracked:'+token+':'+now.strftime('%H'),now.date().isoformat())
                     tracked_links.count_click(db,token)
@@ -1269,8 +1308,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not item:return self.send(404)
                 if item['deleted'] or not item['url']:return self.send(410)
                 if not story_url_valid(item['url']):return self.send(410)
-                agent=self.headers.get('User-Agent','').lower()
-                if count and instance.get(db,"analytics.enabled")=="true" and not any(x in agent for x in ['bot','spider','crawler','headless','facebookexternalhit','meta-externalagent','preview']):
+                if count and instance.get(db,"analytics.enabled")=="true" and collection_allowed(self.headers):
                     now=datetime.now(PARIS)
                     source=source_override if source_override is not None else parse_qs(urlsplit(self.path).query).get('utm_source',[''])[0].strip().lower()
                     if source_override is not None:pass

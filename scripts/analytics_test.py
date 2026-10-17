@@ -29,11 +29,11 @@ class AnalyticsTests(unittest.TestCase):
     def promo(self,name='Domadoo - Aquara days',url='https://partner.example/offer?aff=117'):
         with self.a.connection() as db:
             return self.a.save_content(db,self.a.block_data({'type':'promo','internal_name':name,'title':'Offre publique','url':url}))
-    def redirect(self,url,method=None,agent='Mozilla/5.0'):
+    def redirect(self,url,method=None,agent='Mozilla/5.0',headers=None):
         class NoRedirect(HTTPRedirectHandler):
             def redirect_request(self,*args):return None
         try:
-            response=build_opener(NoRedirect).open(Request(url,headers={'User-Agent':agent},method=method))
+            response=build_opener(NoRedirect).open(Request(url,headers={'User-Agent':agent,**(headers or {})},method=method))
         except HTTPError as exc:response=exc
         with response:return response.code,dict(response.headers)
 

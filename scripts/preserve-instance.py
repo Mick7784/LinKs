@@ -1,5 +1,6 @@
 """Run with Python inside the OLD image before upgrading. No network or secrets."""
 import argparse, ast, json, os, shutil, sqlite3
+from contextlib import closing
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -45,7 +46,7 @@ def preserve(root,data_dir):
     backup=data/'pre-v11-volume';backup.mkdir(exist_ok=True)
     database=Path(os.environ.get('ANALYTICS_DB',str(data/'analytics.db')))
     if database.exists():
-        with sqlite3.connect(database) as db,sqlite3.connect(backup/'analytics.db') as copy:db.backup(copy)
+        with closing(sqlite3.connect(database)) as db,closing(sqlite3.connect(backup/'analytics.db')) as copy:db.backup(copy)
     uploads=Path(os.environ.get('UPLOAD_DIR',str(data/'uploads')))
     if uploads.exists():shutil.copytree(uploads,backup/'uploads',dirs_exist_ok=True)
     shutil.copytree(target,backup/'assets',dirs_exist_ok=True)
