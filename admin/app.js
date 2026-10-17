@@ -163,6 +163,7 @@ let settingsLoading=0;
 async function loadSettings(){profileUploads.forEach(g=>g.invalidate());settingsLoading++;const fields=[...$("settings-form").querySelectorAll('[name],button[type="submit"],button.primary'),...document.querySelectorAll('button[form="settings-form"]')];fields.forEach(x=>x.disabled=true);try{
  state.settings=await api("/api/settings");adminTimezone=state.settings.timezone||"UTC";publicSiteUrl=state.settings.site_url||"";
  $("software-version").value=state.settings.app_version||"";
+ const sidebarVersion=$("admin-version");sidebarVersion.textContent=state.settings.app_version?"LinKs · "+state.settings.app_version:"";sidebarVersion.hidden=!state.settings.app_version;
  for(const key of ["name","tagline","description","logo","avatar","footer_owner","site_url","timezone"])$("settings-form").elements[key].value=state.settings[key]||"";
  refreshProfileImages();
  for(const key of ["analytics_enabled"])$("settings-form").elements[key].checked=!!state.settings[key];
