@@ -1,5 +1,36 @@
 # Changelog
 
+## V1.310
+
+### 🛡️ Conservation des données et des liens
+
+- Retirer un contenu ou un raccourci conserve son identité, ses statistiques et ses médias. Les éléments restent restaurables depuis les archives ; les campagnes publiées continuent de rediriger.
+- Une restauration préserve les compteurs actuels, les contenus ajoutés depuis la sauvegarde, les jetons et codes courts ainsi que les destinations publiées. Les agrégats communs sont conservés au maximum, sans double addition à chaque import.
+- Prévisualisation des effets avant confirmation et copie de sécurité SQLite avec les fichiers référencés avant restauration.
+- Migration additive : sauvegarde pré-migration, indicateurs de retrait et correspondances stables des anciennes sources, sans recréer les identifiants ni réécrire l’historique.
+- La collecte ne purge plus automatiquement les anciens compteurs. Les rapports restent bornés par période.
+
+### 🐛 Fiabilité et confidentialité
+
+- Renommer une source prédéfinie ne change plus son identité de comptage. Une source déjà publiée est archivée même sans clic.
+- DNT et Global Privacy Control sont respectés côté serveur sur les liens longs, courts et les métriques.
+- Les sauvegardes prennent en charge les SVG historiques passifs, sans autoriser l’upload de SVG ni le contenu exécutable.
+- Le secours public inclut les campagnes programmées non privées et est actualisé après l’assistant initial.
+- Correction des miniatures de bibliothèque du dashboard, des styles et scripts bloqués par CSP, et de la reprise du carrousel pendant le focus ou le survol. Une commande pause/reprise est disponible.
+
+### 🎨 Administration
+
+- En-tête de barre latérale limité au logo LinKs by DomotiK Studio.
+- Cartes KPI uniformes au repos avec un accent discret au survol.
+- Sélecteur clair/sombre/système aligné, avec icônes soleil/lune/écran.
+- Périodes des liens privés raccordées, raccourcis retirés restaurables, export CSS Expert partagé et contrôles hérités sans effet signalés.
+
+### ✅ Validation et déploiement
+
+- Tests de conservation, migration répétée sur copie d’un volume synthétique, restauration, attribution, confidentialité, médias, CSP et interactions.
+- Validation CI des images AMD64 et ARM64 sur données temporaires ; vérification des manifests version/latest.
+- Aucun accès au VPS ni utilisation des données de production. La validation sur une copie du volume réel reste à effectuer avant un déploiement en production. Publier l’image ne redémarre pas l’instance.
+
 ## V1.309
 
 ### Administration : identité DomotiK Studio désormais visible
