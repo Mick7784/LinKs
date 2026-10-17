@@ -661,7 +661,9 @@ def restore_backup(data):
             refs=[r['image'] for r in tables['content_blocks']]+[r['value'] for r in tables['settings'] if r['key'] in {'profile.logo','profile.avatar'}]
             for ref in refs:
                 if ref.startswith('/assets/') and not (STATIC/ref[1:]).is_file() and not (DATA_DIR/ref[1:]).is_file() and ref[8:] not in asset_bytes:raise ValueError('Asset référencé manquant')
-            for table in reversed(BACKUP_TABLES):
+            for table in reversed(TRACKING_BACKUP_TABLES):
+                db.execute('DELETE FROM '+table)
+            for table in LEGACY_BACKUP_TABLES:
                 db.execute('DELETE FROM '+table)
                 columns=[c['name'] for c in db.execute('PRAGMA table_info('+table+')')]
                 db.executemany('INSERT INTO '+table+' ('+','.join(columns)+') VALUES ('+','.join('?' for _ in columns)+')',[[row[c] for c in columns] for row in tables[table]])
