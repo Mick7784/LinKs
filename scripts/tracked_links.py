@@ -13,6 +13,10 @@ IDENT = re.compile(r"[a-f0-9]{32}")
 DEFAULT_SOURCES = ("Instagram Story", "Instagram Bio", "YouTube Post",
                    "YouTube Description", "Facebook", "TikTok", "Discord",
                    "Autre / Direct")
+LEGACY_SOURCES = {"instagram":"Instagram Story","youtube":"YouTube Post",
+                  "facebook":"Facebook","tiktok":"TikTok","discord":"Discord",
+                  "instagram-story":"Autre / Direct","shared-unknown":"Autre / Direct"}
+
 
 def initialize(db):
     first_install=not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='tracking_sources'").fetchone()
@@ -36,7 +40,12 @@ def initialize(db):
         created_at TEXT NOT NULL, UNIQUE(link_id,source_id))""")
     if first_install:
         for name in DEFAULT_SOURCES:
-            db.execute("INSERT INTO tracking_sources VALUES(?,?,1,0,datetime('now'))",(uuid.uuid4().hex,name))
+            codes=[key for key,label in LEGACY_SOURCES.items() if label==name]
+            clicks=0
+            if codes:
+                slots=','.join('?' for _ in codes)
+                clicks=db.execute("SELECT COALESCE(SUM(total),0) FROM counts WHERE kind='story' AND source IN ("+slots+")",codes).fetchone()[0]
+            db.execute("INSERT INTO tracking_sources VALUES(?,?,1,?,datetime('now'))",(uuid.uuid4().hex,name,clicks))
 
 def text_field(data,key,limit,required=False):
     value=data.get(key,"")
@@ -132,6 +141,12 @@ def find_destination(db,token):
     if not TOKEN.fullmatch(token):return None
     return db.execute("""SELECT l.url,l.enabled,t.link_id,t.source_id FROM tracked_tokens t
          JOIN tracked_links l ON l.id=t.link_id WHERE t.token=?""",(token,)).fetchone()
+
+def count_campaign_source(db,source):
+    if source.startswith("tracked:"):
+        db.execute("UPDATE tracking_sources SET story_click_total=story_click_total+1 WHERE id=?",(source[8:],))
+    elif source in LEGACY_SOURCES:
+        db.execute("UPDATE tracking_sources SET story_click_total=story_click_total+1 WHERE name=?",(LEGACY_SOURCES[source],))
 
 def count_click(db,token):
     db.execute("UPDATE tracked_tokens SET click_total=click_total+1 WHERE token=?",(token,))
