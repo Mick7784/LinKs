@@ -614,6 +614,17 @@ def restore_backup(data):
             # Preserve all previously published tracked tokens through restores.
             existing_links={r['id']:r for r in tables['tracked_links']}
             existing_sources={r['id']:r for r in tables['tracking_sources']}
+            # A restore must not discard currently configured private links
+            # or source lifetime counters that were added after the backup.
+            for old in db.execute('SELECT * FROM tracked_links'):
+                if old['id'] not in existing_links:
+                    row=dict(old);tables['tracked_links'].append(row);existing_links[old['id']]=row
+            for old in db.execute('SELECT * FROM tracking_sources'):
+                if old['id'] not in existing_sources:
+                    row=dict(old);tables['tracking_sources'].append(row);existing_sources[old['id']]=row
+                else:
+                    row=existing_sources[old['id']]
+                    row['story_click_total']=max(row['story_click_total'],old['story_click_total'])
             incoming_tokens={r['token']:r for r in tables['tracked_tokens']}
             existing_pairs={(r['link_id'],r['source_id']):r['token'] for r in incoming_tokens.values()}
             for old in db.execute('SELECT * FROM tracked_tokens'):
