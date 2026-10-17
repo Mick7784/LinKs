@@ -122,5 +122,10 @@ document.querySelector('[data-action="new-tracked"]').addEventListener("click",(
 get("tracked-manage-sources").addEventListener("click",()=>{renderSources();get("tracked-sources-dialog").showModal()});
 document.querySelectorAll("[data-close-tracked]").forEach(button=>button.addEventListener("click",()=>close("tracked-dialog")));
 document.querySelectorAll("[data-close-sources]").forEach(button=>button.addEventListener("click",()=>close("tracked-sources-dialog")));
-window.LinksTracking={load};
+function sourceOptions(){
+ const legacy=new Set(["Instagram Story","YouTube Post","Facebook","TikTok"]);
+ const available=state.sources.filter(s=>s.active&&!legacy.has(s.name));
+ return available.length?'<optgroup label="Autres sources">'+available.map(s=>`<option value="src_${safe(s.id)}">${safe(s.name)}</option>`).join("")+'</optgroup>':"";
+}
+window.LinksTracking={load,sourceOptions};
 })();
