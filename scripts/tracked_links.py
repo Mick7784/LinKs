@@ -19,7 +19,10 @@ def initialize(db):
     db.execute("""CREATE TABLE IF NOT EXISTS tracking_sources (
         id TEXT PRIMARY KEY, name TEXT NOT NULL COLLATE NOCASE UNIQUE,
         active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),
+        story_click_total INTEGER NOT NULL DEFAULT 0 CHECK(story_click_total >= 0),
         created_at TEXT NOT NULL)""")
+    if "story_click_total" not in {row[1] for row in db.execute("PRAGMA table_info(tracking_sources)")}:
+        db.execute("ALTER TABLE tracking_sources ADD COLUMN story_click_total INTEGER NOT NULL DEFAULT 0")
     db.execute("""CREATE TABLE IF NOT EXISTS tracked_links (
         id TEXT PRIMARY KEY, name TEXT NOT NULL, url TEXT NOT NULL,
         category TEXT NOT NULL DEFAULT '', notes TEXT NOT NULL DEFAULT '',
@@ -33,7 +36,7 @@ def initialize(db):
         created_at TEXT NOT NULL, UNIQUE(link_id,source_id))""")
     if first_install:
         for name in DEFAULT_SOURCES:
-            db.execute("INSERT INTO tracking_sources VALUES(?,?,1,datetime('now'))",(uuid.uuid4().hex,name))
+            db.execute("INSERT INTO tracking_sources VALUES(?,?,1,0,datetime('now'))",(uuid.uuid4().hex,name))
 
 def text_field(data,key,limit,required=False):
     value=data.get(key,"")
@@ -43,7 +46,7 @@ def text_field(data,key,limit,required=False):
     return value
 
 def source_rows(db):
-    rows=[dict(r) for r in db.execute("""SELECT s.*, COALESCE(SUM(t.click_total),0) AS clicks,
+    rows=[dict(r) for r in db.execute("""SELECT s.*, (COALESCE(SUM(t.click_total),0)+s.story_click_total) AS clicks,
         COUNT(t.token) AS links FROM tracking_sources s LEFT JOIN tracked_tokens t ON t.source_id=s.id
         GROUP BY s.id ORDER BY s.created_at,s.name""")]
     return rows
@@ -51,7 +54,7 @@ def source_rows(db):
 def add_source(db,data,now):
     name=text_field(data,"name",100,True)
     ident=uuid.uuid4().hex
-    db.execute("INSERT INTO tracking_sources VALUES(?,?,1,?)",(ident,name,now))
+    db.execute("INSERT INTO tracking_sources VALUES(?,?,1,0,?)",(ident,name,now))
     return {"id":ident,"name":name,"active":True}
 
 def edit_source(db,ident,data):
@@ -65,6 +68,7 @@ def remove_source(db,ident):
     item=db.execute("SELECT id FROM tracking_sources WHERE id=?",(ident,)).fetchone()
     if not item:raise ValueError("Source introuvable")
     clicks=db.execute("SELECT COALESCE(SUM(click_total),0) FROM tracked_tokens WHERE source_id=?",(ident,)).fetchone()[0]
+    clicks+=db.execute("SELECT story_click_total FROM tracking_sources WHERE id=?",(ident,)).fetchone()[0]
     if clicks:
         db.execute("UPDATE tracking_sources SET active=0 WHERE id=?",(ident,))
         return {"action":"archived","clicks":clicks}
