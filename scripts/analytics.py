@@ -12,6 +12,7 @@ import youtube
 import themes
 import images as user_images
 import storage
+import tracked_links
 from urllib.request import urlopen
 
 ROOT=Path(__file__).resolve().parent
@@ -94,6 +95,7 @@ def init():
           token TEXT PRIMARY KEY,promotion_id TEXT NOT NULL UNIQUE,name TEXT NOT NULL,
           created_at TEXT NOT NULL,deleted INTEGER NOT NULL DEFAULT 0)""")
         db.execute("CREATE TABLE IF NOT EXISTS footer_quotes(id TEXT PRIMARY KEY,text TEXT NOT NULL UNIQUE,active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),created_at TEXT NOT NULL)")
+        tracked_links.initialize(db)
         instance.initialize(db,legacy,CONFIG,[DATA_DIR/"assets",STATIC/"assets"],DATA_DIR)
         themes.initialize(db)
         storage.initialize(db)
@@ -209,7 +211,8 @@ def report(start,end,source=""):
                 copies.append({"day":metric["day"],"source":metric["source"],"total":metric["total"],**snapshot})
             elif metric["link"].startswith("block:"):
                 campaign_metrics.append({"day":metric["day"],"source":metric["source"],"id":metric["link"][6:],"kind":metric["kind"],"total":metric["total"]})
-    return {"rows":rows,"stories":stories,"promo_code_copies":copies,"campaign_metrics":campaign_metrics,"timezone":str(PARIS)}
+        tracked=tracked_links.tracked_events(db,start,end,source)
+    return {"rows":rows,"stories":stories,"tracked":tracked,"promo_code_copies":copies,"campaign_metrics":campaign_metrics,"timezone":str(PARIS)}
 
 STORY_TOKEN=re.compile(r'st_[A-Za-z0-9_-]{16}')
 def story_url_valid(url):
@@ -466,7 +469,9 @@ def save_content(db,item,item_id=None):
         instance.put(db,"admin.calendar_timed",json.dumps(sorted(ids)))
     return item_id
 
-BACKUP_TABLES=('content_blocks','top_buttons','settings','counts','story_links','footer_quotes')
+LEGACY_BACKUP_TABLES=('content_blocks','top_buttons','settings','counts','story_links','footer_quotes')
+TRACKING_BACKUP_TABLES=('tracking_sources','tracked_links','tracked_tokens')
+BACKUP_TABLES=LEGACY_BACKUP_TABLES+TRACKING_BACKUP_TABLES
 BACKUP_LIMIT=64*1024*1024
 UPLOAD_NAME=re.compile(r'[a-f0-9-]{36}\.(jpg|png|webp|gif)')
 
@@ -508,6 +513,14 @@ def restore_backup(data):
             existing={(r['day'],r['source'],r['kind'],r['link']) for r in tables['counts']}
             for r in db.execute("SELECT * FROM counts WHERE kind IN ('story','promo_code_copy')"):
                 if (r['day'],r['source'],r['kind'],r['link']) not in existing:tables['counts'].append(dict(r))
+    missing=set(TRACKING_BACKUP_TABLES)-set(tables)
+    if missing:
+        if missing!=set(TRACKING_BACKUP_TABLES):raise ValueError('Sauvegarde de liens suivis incomplète')
+        with connection() as db:
+            for table in TRACKING_BACKUP_TABLES:tables[table]=[dict(r) for r in db.execute('SELECT * FROM '+table)]
+            old_keys={(r['day'],r['source'],r['kind'],r['link']) for r in tables['counts']}
+            for row in db.execute("SELECT * FROM counts WHERE kind='tracked'"):
+                if (row['day'],row['source'],row['kind'],row['link']) not in old_keys:tables['counts'].append(dict(row))
     if set(tables)!=set(BACKUP_TABLES):raise ValueError('Sauvegarde incomplète')
     assets=data.get('assets',{})
     if not isinstance(assets,dict):raise ValueError('Assets invalides')
@@ -558,15 +571,22 @@ def restore_backup(data):
                         button_data({**row,'icon':'mail' if row['icon']=='email' else row['icon']})
                     elif table=='counts':
                         date.fromisoformat(row['day'])
-                        if row['kind'] not in {'view','click','impression','story','promo_code_copy'} or row['total']<1:raise ValueError('Statistique invalide')
+                        if row['kind'] not in {'view','click','impression','story','tracked','promo_code_copy'} or row['total']<1:raise ValueError('Statistique invalide')
                         if row['kind']=='promo_code_copy':
                             snapshot=json.loads(row['link'])
                             if not isinstance(snapshot,dict) or set(snapshot)!={'id','name','code','timestamp'} or any(not isinstance(v,str) for v in snapshot.values()) or not snapshot['code'] or len(snapshot['code'])>80:raise ValueError('Copie de code invalide')
                             instant(snapshot['timestamp'])
+                        if row['kind']=='tracked' and (not re.fullmatch(r'tracked:tk_[A-Za-z0-9_-]{16}:\d{2}',row['link']) or int(row['link'][-2:])>23 or not re.fullmatch(r'tracked:[a-f0-9]{32}',row['source'])):raise ValueError('Statistique de lien suivi invalide')
                         if row['kind']=='story' and (row['source'] not in {'instagram-story','shared-unknown','instagram','youtube','facebook','tiktok','discord','newsletter','site','mail','qr'} or not re.fullmatch(r'story:st_[A-Za-z0-9_-]{16}:\d{2}',row['link']) or int(row['link'][-2:])>23):raise ValueError('Statistique Story invalide')
                     elif table=='story_links':
                         if not STORY_TOKEN.fullmatch(row['token']) or row['deleted'] not in (0,1) or not row['name'] or not row['promotion_id']:raise ValueError('Lien Story invalide')
                         instant(row['created_at'])
+                    elif table=='tracking_sources':
+                        if not tracked_links.IDENT.fullmatch(row['id']) or not row['name'].strip() or len(row['name'])>100 or row['active'] not in (0,1):raise ValueError('Source suivie invalide')
+                    elif table=='tracked_links':
+                        if not tracked_links.IDENT.fullmatch(row['id']) or not row['name'].strip() or len(row['name'])>160 or not story_url_valid(row['url']) or row['archived'] not in (0,1) or row['enabled'] not in (0,1):raise ValueError('Lien suivi invalide')
+                    elif table=='tracked_tokens':
+                        if not tracked_links.TOKEN.fullmatch(row['token']) or not tracked_links.IDENT.fullmatch(row['link_id']) or not tracked_links.IDENT.fullmatch(row['source_id']):raise ValueError('Jeton suivi invalide')
                     elif table=='footer_quotes':
                         if not row['text'].strip() or len(row['text'])>1000 or row['active'] not in (0,1):raise ValueError('Citation invalide')
                         instant(row['created_at'])
@@ -590,6 +610,32 @@ def restore_backup(data):
                     if incoming[old['token']]['promotion_id']!=old['promotion_id']:raise ValueError('Un identifiant Story ne peut pas changer de promotion')
                 elif any(r['promotion_id']==old['promotion_id'] for r in incoming.values()):raise ValueError('Identifiants Story incompatibles avec les liens existants')
                 else:tables['story_links'].append({**dict(old),'deleted':int(old['promotion_id'] not in restored_ids)})
+            # Preserve all previously published tracked tokens through restores.
+            existing_links={r['id']:r for r in tables['tracked_links']}
+            existing_sources={r['id']:r for r in tables['tracking_sources']}
+            incoming_tokens={r['token']:r for r in tables['tracked_tokens']}
+            existing_pairs={(r['link_id'],r['source_id']):r['token'] for r in incoming_tokens.values()}
+            for old in db.execute('SELECT * FROM tracked_tokens'):
+                if old['token'] in incoming_tokens:
+                    row=incoming_tokens[old['token']]
+                    if row['link_id']!=old['link_id'] or row['source_id']!=old['source_id']:raise ValueError('Un lien suivi ne peut pas être réattribué')
+                    row['click_total']=max(row['click_total'],old['click_total'])
+                else:
+                    key=(old['link_id'],old['source_id'])
+                    if key in existing_pairs:raise ValueError('Jetons suivis incompatibles')
+                    incoming_tokens[old['token']]=dict(old)
+                    tables['tracked_tokens'].append(dict(old))
+                if old['link_id'] not in existing_links:
+                    row=dict(db.execute('SELECT * FROM tracked_links WHERE id=?',(old['link_id'],)).fetchone())
+                    tables['tracked_links'].append(row);existing_links[old['link_id']]=row
+                if old['source_id'] not in existing_sources:
+                    row=dict(db.execute('SELECT * FROM tracking_sources WHERE id=?',(old['source_id'],)).fetchone())
+                    tables['tracking_sources'].append(row);existing_sources[old['source_id']]=row
+            old_keys={(r['day'],r['source'],r['kind'],r['link']) for r in tables['counts']}
+            for old in db.execute("SELECT * FROM counts WHERE kind='tracked'"):
+                if (old['day'],old['source'],old['kind'],old['link']) not in old_keys:tables['counts'].append(dict(old))
+            tracked_tokens={r['token'] for r in tables['tracked_tokens']}
+            if any(r['kind']=='tracked' and r['link'].split(':')[1] not in tracked_tokens for r in tables['counts']):raise ValueError('Lien suivi manquant')
             tokens={r['token'] for r in tables['story_links']}
             if any(r['kind']=='story' and r['link'].split(':')[1] not in tokens for r in tables['counts']):raise ValueError('Référent Story manquant')
             # Every uploaded image used by the restored content must exist in this backup.
@@ -615,7 +661,7 @@ def restore_backup(data):
             refs=[r['image'] for r in tables['content_blocks']]+[r['value'] for r in tables['settings'] if r['key'] in {'profile.logo','profile.avatar'}]
             for ref in refs:
                 if ref.startswith('/assets/') and not (STATIC/ref[1:]).is_file() and not (DATA_DIR/ref[1:]).is_file() and ref[8:] not in asset_bytes:raise ValueError('Asset référencé manquant')
-            for table in BACKUP_TABLES:
+            for table in reversed(BACKUP_TABLES):
                 db.execute('DELETE FROM '+table)
                 columns=[c['name'] for c in db.execute('PRAGMA table_info('+table+')')]
                 db.executemany('INSERT INTO '+table+' ('+','.join(columns)+') VALUES ('+','.join('?' for _ in columns)+')',[[row[c] for c in columns] for row in tables[table]])
