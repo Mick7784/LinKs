@@ -2240,3 +2240,95 @@ a.brand:focus-visible{outline:2px solid var(--focus);outline-offset:4px}
  .tracked-editor{padding:12px;gap:12px}
  .tracked-new-source{flex-wrap:wrap}
 }
+
+/* LinKs / DomotiK Studio — visible product identity with restrained professional
+   accents. No dashboard structure, interaction, or editor is modified. */
+:root{
+  --studio-cyan:#00C5DB;
+  --studio-blue:#0066FF;
+  --studio-violet:#9955D9;
+  --studio-header-glow:rgba(0,102,255,.065);
+  --studio-nav-glow:rgba(0,197,219,.085);
+  --studio-rule:rgba(0,102,255,.20);
+}
+:root[data-theme="dark"]{
+  --studio-cyan:#00E5FF;
+  --studio-blue:#3D82FF;
+  --studio-violet:#B078F1;
+  --studio-header-glow:rgba(0,102,255,.11);
+  --studio-nav-glow:rgba(0,229,255,.075);
+  --studio-rule:rgba(0,229,255,.24);
+}
+/* The brand is legible even at the bottom of long dashboard pages. */
+.sidebar{isolation:isolate;overflow:visible}
+.sidebar::before{
+  content:"";position:absolute;top:0;left:0;right:0;height:3px;
+  background:linear-gradient(90deg,var(--studio-cyan) 0%,var(--studio-blue) 52%,var(--studio-violet) 100%);
+  pointer-events:none;
+}
+.sidebar .studio-eyebrow{
+  display:flex;align-items:center;gap:8px;padding:0 12px;margin:4px 0 12px;
+  color:var(--muted);font-size:.59rem;line-height:1.35;letter-spacing:.115em;
+  font-weight:700;white-space:nowrap;
+}
+.sidebar .studio-eyebrow-dot{
+  display:block;width:6px;height:6px;flex:0 0 6px;border-radius:50%;
+  background:var(--studio-cyan);box-shadow:0 0 0 3px var(--studio-nav-glow);
+}
+.sidebar .brand{
+  position:relative;align-self:stretch;margin:0 0 9px;padding:13px 12px 11px;
+  border-radius:10px;border:1px solid var(--studio-rule);
+  background:linear-gradient(145deg,var(--studio-header-glow),transparent 75%);
+  transition:border-color .18s ease,background-color .18s ease;
+}
+.sidebar .brand:hover{opacity:1;border-color:var(--studio-cyan)}
+.sidebar .product-brand{width:143px;max-width:100%;height:auto}
+.sidebar .instance-context{margin:0 0 21px;padding:9px 12px 14px;border-bottom:1px solid var(--line)}
+/* The active entry carries the DomotiK color signature, but no broad neon. */
+.sidebar .tabs button.active{
+  background:linear-gradient(92deg,var(--studio-nav-glow),var(--raised));
+  box-shadow:inset 3px 0 var(--studio-cyan);
+  color:var(--text);font-weight:650;
+}
+.sidebar .tabs button.active .nav-icon{color:var(--studio-cyan)}
+.sidebar .tabs button:hover:not(.active){background:var(--raised)}
+.sidebar .sidebar-bottom{position:relative}
+.sidebar .sidebar-bottom::before{
+  content:"";position:absolute;top:12px;left:12px;right:12px;height:1px;
+  background:linear-gradient(90deg,var(--studio-cyan),var(--studio-blue),var(--studio-violet));
+  opacity:.33;
+}
+/* Topbar identifies the same product without competing with content. */
+.workspace .topbar{position:relative;background:var(--surface)}
+.workspace .topbar::after{
+  content:"";position:absolute;bottom:0;left:0;right:0;height:1px;pointer-events:none;
+  background:linear-gradient(90deg,var(--studio-cyan),var(--studio-blue) 32%,var(--studio-violet) 65%,transparent 94%);
+  opacity:.48;
+}
+.topbar .breadcrumb-brand{
+  width:8px;height:8px;display:inline-block;flex:0 0 8px;border-radius:2px;
+  background:linear-gradient(135deg,var(--studio-cyan),var(--studio-blue) 60%,var(--studio-violet));
+  transform:rotate(-10deg);
+}
+/* Fine branded strokes make indicators recognizable without colored panels. */
+#dashboard .analytics-kpis article{--indicator-accent:var(--studio-cyan)}
+#dashboard .analytics-kpis article:nth-child(2){--indicator-accent:var(--studio-violet)}
+#dashboard .analytics-kpis article:nth-child(3){--indicator-accent:var(--studio-blue)}
+#dashboard .analytics-kpis article:nth-child(4){--indicator-accent:var(--studio-cyan)}
+#dashboard .analytics-kpis article:nth-child(5){--indicator-accent:var(--studio-violet)}
+#dashboard .analytics-kpis article::before{
+  content:"";position:absolute;top:0;left:16px;right:16px;height:2px;
+  background:var(--indicator-accent);opacity:.78;pointer-events:none;
+}
+button.primary{background:#0066FF;border-color:#0066FF;color:#fff}
+button.primary:hover{background:#165CDA;border-color:#165CDA;color:#fff}
+@media(max-width:760px){
+  .sidebar .studio-eyebrow{display:none}
+  .sidebar .brand{padding:3px 8px 3px 0;margin:0;border:0;background:none}
+  .sidebar .product-brand{width:108px}
+  .sidebar .instance-context{margin:4px 0 11px;padding:0;border:0}
+  .sidebar .sidebar-bottom::before{display:none}
+}
+@media(prefers-reduced-motion:reduce){
+  .sidebar .brand{transition:none}
+}
