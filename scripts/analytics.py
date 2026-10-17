@@ -931,7 +931,8 @@ class Handler(BaseHTTPRequestHandler):
         url=urlsplit(self.path)
         if self.server.admin and url.path in {"/brand.svg","/brand-light.svg","/mark.svg"}:return self.file(ADMIN/url.path[1:],"image/svg+xml")
         if url.path.startswith('/go/'):
-            return self.redirect_story(url.path.removeprefix('/go/'))
+            token=url.path.removeprefix('/go/')
+            return self.redirect_tracked(token) if tracked_links.TOKEN.fullmatch(token) else self.redirect_story(token)
         if url.path=="/latest-video.json":
             try:return self.json(200,latest_video())
             except (OSError,ValueError):return self.json(502,{"error":"Vidéo momentanément indisponible"})
@@ -964,6 +965,12 @@ class Handler(BaseHTTPRequestHandler):
                     return self.json(200,themes.export(theme,UPLOADS))
             if url.path=="/api/youtube":return self.json(200,youtube_status())
             if url.path=="/api/quotes":return self.json(200,{"items":quote_list()})
+            if url.path=="/api/tracking-sources":
+                with connection() as db:return self.json(200,{"items":tracked_links.source_rows(db)})
+            if url.path=="/api/tracked-links":
+                with connection() as db:
+                    q=parse_qs(url.query)
+                    return self.json(200,{"items":tracked_links.list_links(db,q.get("start",[None])[0],q.get("end",[None])[0])})
             if url.path=="/api/backup":return self.send(200,export_backup())
             if url.path=="/api/storage":return self.json(200,storage_state())
             if url.path=="/api/stats":
@@ -1020,6 +1027,23 @@ class Handler(BaseHTTPRequestHandler):
             if path=="/api/quotes":return self.json(200,add_quotes(data))
             if path=="/api/restore":return self.json(200,restore_backup(data))
             if path=="/api/promotions/replace":return self.replace_promotion(data)
+            if path=="/api/tracking-sources":
+                with connection() as db:return self.json(201,tracked_links.add_source(db,data,now_iso()))
+            if path=="/api/tracked-links":
+                with connection() as db:return self.json(201,tracked_links.create_link(db,data,story_url_valid,now_iso()))
+            match=re.fullmatch(r"/api/tracked-links/([a-f0-9]{32})/token",path)
+            if match:
+                with connection() as db:
+                    db.execute('BEGIN IMMEDIATE')
+                    return self.json(200,tracked_links.token_link(db,match.group(1),data.get('source_id'),ORIGIN,now_iso()))
+            match=re.fullmatch(r"/api/tracked-links/([a-f0-9]{32})/(archive|restore|disable|enable)",path)
+            if match:
+                flag="archived" if match.group(2) in {"archive","restore"} else "enabled"
+                value=match.group(2) in {"archive","enable"}
+                with connection() as db:return self.json(200,tracked_links.set_link_flag(db,match.group(1),flag,value))
+            match=re.fullmatch(r"/api/tracking-sources/([a-f0-9]{32})/restore",path)
+            if match:
+                with connection() as db:return self.json(200,tracked_links.restore_source(db,match.group(1)))
             if path=="/api/content":return self.create_content(data)
             if path=="/api/promotions/check":
                 item=block_data(data);return self.json(200,promotion_check(item,data.get("id") or None))
@@ -1049,6 +1073,12 @@ class Handler(BaseHTTPRequestHandler):
                 if type(data.get("active")) is not bool:raise ValueError("active doit être un booléen")
                 with connection() as db:changed=db.execute("UPDATE footer_quotes SET active=? WHERE id=?",(int(data["active"]),match.group(1))).rowcount
                 return self.send(204) if changed else self.send(404)
+            match=re.fullmatch(r"/api/tracked-links/([a-f0-9]{32})",path)
+            if match:
+                with connection() as db:return self.json(200,tracked_links.update_link(db,match.group(1),data,story_url_valid,now_iso()))
+            match=re.fullmatch(r"/api/tracking-sources/([a-f0-9]{32})",path)
+            if match:
+                with connection() as db:return self.json(200,tracked_links.edit_source(db,match.group(1),data))
             match=re.fullmatch(r"/api/content/([\w-]+)",path)
             if match:return self.update_content(match.group(1),data)
             match=re.fullmatch(r"/api/buttons/([\w-]+)",path)
@@ -1059,6 +1089,11 @@ class Handler(BaseHTTPRequestHandler):
         if self.server.admin and not self.authorized(mutation=True):return
         if not self.server.admin:return self.send(404)
         path=urlsplit(self.path).path
+        match=re.fullmatch(r"/api/tracking-sources/([a-f0-9]{32})",path)
+        if match:
+            try:
+                with connection() as db:return self.json(200,tracked_links.remove_source(db,match.group(1)))
+            except ValueError as exc:return self.json(400,{"error":str(exc)})
         if path=="/api/quotes":
             with connection() as db:db.execute("DELETE FROM footer_quotes")
             return self.send(204)
@@ -1078,7 +1113,24 @@ class Handler(BaseHTTPRequestHandler):
         return self.send(204) if changed else self.send(404)
     def do_HEAD(self):
         path=urlsplit(self.path).path
-        return self.redirect_story(path.removeprefix('/go/'),count=False) if path.startswith('/go/') else self.send(404)
+        if not path.startswith('/go/'):return self.send(404)
+        token=path.removeprefix('/go/')
+        return self.redirect_tracked(token,count=False) if tracked_links.TOKEN.fullmatch(token) else self.redirect_story(token,count=False)
+    def redirect_tracked(self,token,count=True):
+        try:
+            with connection() as db:
+                db.execute('BEGIN IMMEDIATE')
+                row=tracked_links.find_destination(db,token)
+                if not row:return self.send(404)
+                if not row['enabled'] or not story_url_valid(row['url']):return self.send(410)
+                agent=self.headers.get('User-Agent','').lower()
+                if count and instance.get(db,"analytics.enabled")=="true" and not any(x in agent for x in ['bot','spider','crawler','headless','facebookexternalhit','meta-externalagent','preview']):
+                    now=datetime.now(PARIS)
+                    increment(db,'tracked','tracked:'+row['source_id'],'tracked:'+token+':'+now.strftime('%H'),now.date().isoformat())
+                    tracked_links.count_click(db,token)
+                target=story_destination(row['url'])
+            self.send_response(302);self.send_header('Location',target);self.send_header('Cache-Control','no-store');self.send_header('Referrer-Policy','no-referrer');self.send_header('Content-Length','0');self.end_headers()
+        except (sqlite3.Error,OSError):return self.send(503)
     def redirect_story(self,token,count=True):
         if not STORY_TOKEN.fullmatch(token):return self.send(404)
         try:
