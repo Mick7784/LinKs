@@ -7,8 +7,12 @@ La collecte est activable depuis les paramètres. Sa désactivation ne coupe ni 
 - `view` : affichage de la page.
 - `click` : activation d’un lien public.
 - `impression` : présentation d’une campagne.
-- `story` : redirection directe via un lien Story.
+- `story` : ouverture directe via un lien de campagne partagé (`/go/st_…`), distincte du clic depuis la page publique.
 - `promo_code_copy` : copie réussie, séparée du clic d’offre.
+
+Les liens /go/ existants conservent leur jeton et leur destination. Copier un lien pour Instagram ou YouTube ajoute simplement `?utm_source=instagram` ou `?utm_source=youtube` ; cette information est utilisée pour attribuer les nouvelles ouvertures. Les anciens événements `instagram-story` restent conservés sans réécriture : leur véritable origine ne peut pas être reconstruite. Les liens sans paramètre d'origine sont suivis sous `shared-unknown`.
+
+Les ouvertures de liens partagés sont rattachées à la campagne associée lors du rapport sans dupliquer un événement `click`. Le dashboard distingue les clics de la page (pour le CTR page), les ouvertures de liens partagés et leur total par campagne. Les impressions correspondent uniquement à la page publique. Aucune modification rétroactive des comptes ni des URLs n'est nécessaire.
 
 Les copies conservent le code réellement copié, l’identifiant, le nom de campagne et une tranche horaire UTC. L’historique ne dépend pas du code actuel. Le graphique principal conserve deux séries : visites et clics ; les copies sont présentées séparément.
 
