@@ -15,6 +15,7 @@ DEFAULT_SOURCES = ("Instagram Story", "Instagram Bio", "YouTube Post",
                    "Autre / Direct")
 
 def initialize(db):
+    first_install=not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='tracking_sources'").fetchone()
     db.execute("""CREATE TABLE IF NOT EXISTS tracking_sources (
         id TEXT PRIMARY KEY, name TEXT NOT NULL COLLATE NOCASE UNIQUE,
         active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),
@@ -30,7 +31,7 @@ def initialize(db):
         source_id TEXT NOT NULL REFERENCES tracking_sources(id),
         click_total INTEGER NOT NULL DEFAULT 0 CHECK(click_total >= 0),
         created_at TEXT NOT NULL, UNIQUE(link_id,source_id))""")
-    if not db.execute("SELECT 1 FROM tracking_sources LIMIT 1").fetchone():
+    if first_install:
         for name in DEFAULT_SOURCES:
             db.execute("INSERT INTO tracking_sources VALUES(?,?,1,datetime('now'))",(uuid.uuid4().hex,name))
 
