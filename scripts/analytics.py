@@ -563,7 +563,7 @@ def restore_backup(data):
                             snapshot=json.loads(row['link'])
                             if not isinstance(snapshot,dict) or set(snapshot)!={'id','name','code','timestamp'} or any(not isinstance(v,str) for v in snapshot.values()) or not snapshot['code'] or len(snapshot['code'])>80:raise ValueError('Copie de code invalide')
                             instant(snapshot['timestamp'])
-                        if row['kind']=='story' and (row['source']!='instagram-story' or not re.fullmatch(r'story:st_[A-Za-z0-9_-]{16}:\d{2}',row['link']) or int(row['link'][-2:])>23):raise ValueError('Statistique Story invalide')
+                        if row['kind']=='story' and (row['source'] not in {'instagram-story','shared-unknown','instagram','youtube','facebook','tiktok','discord','newsletter','site','mail','qr'} or not re.fullmatch(r'story:st_[A-Za-z0-9_-]{16}:\d{2}',row['link']) or int(row['link'][-2:])>23):raise ValueError('Statistique Story invalide')
                     elif table=='story_links':
                         if not STORY_TOKEN.fullmatch(row['token']) or row['deleted'] not in (0,1) or not row['name'] or not row['promotion_id']:raise ValueError('Lien Story invalide')
                         instant(row['created_at'])
