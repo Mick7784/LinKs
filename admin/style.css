@@ -1938,16 +1938,16 @@ dialog h2 {
 
 /* Studio layout: neutral work surfaces, compact analytics and official LinKs accents. */
 :root {
- --bg:#FBFAFC;--surface:#FFFFFF;--sidebar:#FFFFFF;--raised:#F1F5F9;
- --line:#E2E8F0;--text:#0F172A;--muted:#64748B;--accent:#3B82F6;
- --accent-soft:#EFF6FF;--purple:#8B5CF6;--focus:#3B82F6;
+ --bg:#F7F9FC;--surface:#FFFFFF;--sidebar:#FFFFFF;--raised:#EDF2F8;
+ --line:#DDE6F0;--text:#14223A;--muted:#63748D;--accent:#176F9C;
+ --accent-soft:#E6F5FA;--purple:#8254BA;--focus:#176F9C;
  --visits-start:#22D3EE;--visits-end:#22D3EE;--clicks-start:#8B5CF6;--clicks-end:#8B5CF6;
  --shadow:none;--radius:10px;
 }
 :root[data-theme="dark"] {
- --bg:#0B0F14;--surface:#121821;--sidebar:#121821;--raised:#1A2230;
- --line:#2A3342;--text:#E5E7EB;--muted:#8B95A7;--accent:#22D3EE;
- --accent-soft:#1A2230;--purple:#8B5CF6;--focus:#22D3EE;
+ --bg:#0A1221;--surface:#111B2B;--sidebar:#0D1727;--raised:#1A2840;
+ --line:#2A3952;--text:#EAF2FF;--muted:#9FACBF;--accent:#5ACEE5;
+ --accent-soft:#19334A;--purple:#AC8DE9;--focus:#5ACEE5;
  --visits-start:#22D3EE;--visits-end:#22D3EE;--clicks-start:#8B5CF6;--clicks-end:#8B5CF6;
  --shadow:none;
 }

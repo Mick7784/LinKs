@@ -6,37 +6,37 @@
       "group": "Identité",
       "label": "Principale",
       "type": "color",
-      "default": "#7acfe5"
+      "default": "#00E5FF"
     },
     "--links-secondary": {
       "group": "Identité",
       "label": "Secondaire",
       "type": "color",
-      "default": "#b19bdc"
+      "default": "#A855F7"
     },
     "--links-accent": {
       "group": "Identité",
       "label": "Accent",
       "type": "color",
-      "default": "#0057f5"
+      "default": "#0066FF"
     },
     "--links-page-background": {
       "group": "Page",
       "label": "Fond de page",
       "type": "color",
-      "default": "#0a111e"
+      "default": "#060E24"
     },
     "--links-text-primary": {
       "group": "Page",
       "label": "Texte principal",
       "type": "color",
-      "default": "#f1f4fa"
+      "default": "#EAF2FF"
     },
     "--links-text-secondary": {
       "group": "Page",
       "label": "Texte secondaire",
       "type": "color",
-      "default": "#b0bdd0"
+      "default": "#AFBED8"
     },
     "--links-page-image": {
       "group": "Page",
@@ -48,13 +48,13 @@
       "group": "Page",
       "label": "Dégradé : début",
       "type": "color",
-      "default": "#0a111e"
+      "default": "#060E24"
     },
     "--links-gradient-end": {
       "group": "Page",
       "label": "Dégradé : fin",
       "type": "color",
-      "default": "#131e2e"
+      "default": "#111D39"
     },
     "--links-gradient-angle": {
       "group": "Page",
@@ -84,7 +84,7 @@
       "group": "Page",
       "label": "Couleur de superposition",
       "type": "color",
-      "default": "#0a111e"
+      "default": "#060E24"
     },
     "--links-page-overlay-opacity": {
       "group": "Page",
@@ -238,7 +238,7 @@
       "group": "Profil",
       "label": "Bordure de l’avatar",
       "type": "color",
-      "default": "#43b7df"
+      "default": "#00E5FF"
     },
     "--links-avatar-shadow": {
       "group": "Profil",
@@ -272,13 +272,13 @@
       "group": "Cartes",
       "label": "Fond des cartes",
       "type": "color",
-      "default": "#101b29"
+      "default": "#101B33"
     },
     "--links-panel-background": {
       "group": "Cartes",
       "label": "Fond des médias",
       "type": "color",
-      "default": "#131e2e"
+      "default": "#101B33"
     },
     "--links-card-opacity": {
       "group": "Cartes",
@@ -308,7 +308,7 @@
       "group": "Cartes",
       "label": "Bordure",
       "type": "color",
-      "default": "#9cb1cc38"
+      "default": "#6084B34D"
     },
     "--links-border-width": {
       "group": "Cartes",
@@ -362,7 +362,7 @@
       "group": "Cartes",
       "label": "Superposition des liens",
       "type": "color",
-      "default": "#0b1522"
+      "default": "#08152D"
     },
     "--links-card-overlay-opacity": {
       "group": "Cartes",
@@ -382,7 +382,7 @@
       "group": "Cartes",
       "label": "Bordure au survol",
       "type": "color",
-      "default": "#8db5ce70"
+      "default": "#00E5FF99"
     },
     "--links-icon-size": {
       "group": "Icônes",
@@ -426,7 +426,7 @@
       "group": "Icônes",
       "label": "Couleur",
       "type": "color",
-      "default": "#59bde7"
+      "default": "#00E5FF"
     },
     "--links-icon-opacity": {
       "group": "Icônes",
@@ -601,13 +601,13 @@
       "group": "Éléments secondaires",
       "label": "Labels",
       "type": "color",
-      "default": "#d4e7f4"
+      "default": "#EAF2FF"
     },
     "--links-label-background": {
       "group": "Éléments secondaires",
       "label": "Fond des labels",
       "type": "color",
-      "default": "#253b4cd9"
+      "default": "#16304ACF"
     },
     "--links-label-radius": {
       "group": "Éléments secondaires",
@@ -621,7 +621,7 @@
       "group": "Éléments secondaires",
       "label": "Flèches",
       "type": "color",
-      "default": "#eef2f8"
+      "default": "#EAF2FF"
     },
     "--links-arrow-background": {
       "group": "Éléments secondaires",
@@ -633,7 +633,7 @@
       "group": "Éléments secondaires",
       "label": "Indicateur actif",
       "type": "color",
-      "default": "#f1f4fa"
+      "default": "#00E5FF"
     },
     "--links-dot-inactive-color": {
       "group": "Éléments secondaires",
@@ -645,7 +645,7 @@
       "group": "Éléments secondaires",
       "label": "Pied de page",
       "type": "color",
-      "default": "#9aabc2"
+      "default": "#AFC2DD"
     },
     "--links-footer-size": {
       "group": "Éléments secondaires",
@@ -659,7 +659,7 @@
       "group": "Éléments secondaires",
       "label": "Boutons des offres",
       "type": "color",
-      "default": "#0057f5"
+      "default": "#0066FF"
     },
     "--links-button-color": {
       "group": "Éléments secondaires",
@@ -671,7 +671,7 @@
       "group": "Éléments secondaires",
       "label": "Boutons au survol",
       "type": "color",
-      "default": "#1268ff"
+      "default": "#165CDA"
     },
     "--links-separator-color": {
       "group": "Éléments secondaires",

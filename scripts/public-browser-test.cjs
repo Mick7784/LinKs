@@ -25,7 +25,7 @@ const {tmpdir}=require('node:os');
    const r=await fetch('http://127.0.0.1:3003'+req.url,{method:req.method,headers:{'Content-Type':req.headers['content-type']||'application/json',Origin:req.headers.origin||origin,'User-Agent':req.headers['user-agent']||'Mozilla/5.0'},body:body.length?body:undefined,redirect:'manual'});
    res.statusCode=r.status;for(const name of ['content-type','location'])if(r.headers.has(name))res.setHeader(name,r.headers.get(name));return res.end(Buffer.from(await r.arrayBuffer()))
   }
-  const themeFiles={'/theme.js':['theme.js','application/javascript'],'/theme.css':['theme.css','text/css'],'/theme-tokens.json':['theme-tokens.json','application/json'],'/asset-library.json':['asset-library.json','application/json']};const files={...themeFiles,'/':['index.html','text/html'],'/style.css':['style.css','text/css'],'/icons.css':['icons.css','text/css'],'/cards.js':['cards.js','application/javascript'],'/app.js':['app.js','application/javascript'],'/config.js':['config.js','application/javascript'],'/metrics.js':['metrics.js','application/javascript'],'/assets/studio-links.webp':['assets/studio-links.webp','image/webp'],'/assets/link-shopping.webp':['assets/link-shopping.webp','image/webp'],'/assets/link-shopping.webp':['assets/link-shopping.webp','image/webp']};for(const name of ['community','instagram','shopping','smarthome','collaboration'])files['/assets/link-'+name+'.webp']=['assets/link-'+name+'.webp','image/webp'];const file=files[url.pathname];if(!file){res.writeHead(404);return res.end()}
+  const themeFiles={'/theme.js':['theme.js','application/javascript'],'/theme.css':['theme.css','text/css'],'/theme-tokens.json':['theme-tokens.json','application/json'],'/asset-library.json':['asset-library.json','application/json']};const files={...themeFiles,'/':['index.html','text/html'],'/style.css':['style.css','text/css'],'/icons.css':['icons.css','text/css'],'/cards.js':['cards.js','application/javascript'],'/app.js':['app.js','application/javascript'],'/config.js':['config.js','application/javascript'],'/metrics.js':['metrics.js','application/javascript'],'/assets/links-footer.svg':['assets/links-footer.svg','image/svg+xml'],'/assets/studio-links.webp':['assets/studio-links.webp','image/webp'],'/assets/link-shopping.webp':['assets/link-shopping.webp','image/webp'],'/assets/link-shopping.webp':['assets/link-shopping.webp','image/webp']};for(const name of ['community','instagram','shopping','smarthome','collaboration'])files['/assets/link-'+name+'.webp']=['assets/link-'+name+'.webp','image/webp'];const file=files[url.pathname];if(!file){res.writeHead(404);return res.end()}
   res.setHeader('Content-Type',file[1]);res.end(readFileSync(resolve(__dirname,'../site',file[0])));
  }catch(e){res.writeHead(500);res.end(e.message)}});
  try{
@@ -53,6 +53,11 @@ const {tmpdir}=require('node:os');
   assert.equal(await page.locator('#profile-description').textContent(),config.profile.description);
   await page.locator('img').evaluateAll(images=>Promise.all(images.map(img=>img.complete?Promise.resolve():new Promise(r=>{img.addEventListener('load',r,{once:true});img.addEventListener('error',r,{once:true})}))));
   for(const selector of ['#profile-avatar','#profile-logo','#footer-logo','.video-visual img','.offer-visual img'])assert(await page.locator(selector).first().evaluate(i=>i.complete&&i.naturalWidth>0),'Image missing: '+selector);
+  const productFooter=page.locator('footer .footer-product img');
+  assert.equal(await productFooter.getAttribute('alt'),'LinKs by DomotiK Studio');
+  assert(await productFooter.evaluate(i=>i.complete&&i.naturalWidth>0),'LinKs footer brand missing');
+  assert(await page.locator('#footer-version').textContent());
+
   assert.equal(await page.locator('.social').count(),config.socials.length);
   assert.deepEqual(await page.locator('#links a').evaluateAll(nodes=>nodes.map(n=>n.getAttribute('href'))),config.links.filter(x=>x.type==='classic').map(x=>x.url));
   assert.equal(await page.locator('.video-title').textContent(),video.title);
@@ -147,7 +152,7 @@ const {tmpdir}=require('node:os');
   await request('/api/settings',{name:config.profile.name,tagline:'Accroche de vérification temporaire',description:config.profile.description});await load();assert.equal(await page.locator('#profile-tagline').textContent(),'Accroche de vérification temporaire');
   await request('/api/content/'+future.id,block('Campagne désormais active'),'PUT');await load();assert.equal(await page.locator('.carousel-slide').count(),3);
   // Theme preferences on the admin origin have no effect on public dark colors.
-  await page.evaluate(()=>{localStorage.setItem('links-admin-theme','light');document.documentElement.dataset.theme='light'});assert.equal(await page.locator('body').evaluate(n=>getComputedStyle(n).backgroundColor),'rgb(10, 17, 30)');
+  await page.evaluate(()=>{localStorage.setItem('links-admin-theme','light');document.documentElement.dataset.theme='light'});assert.equal(await page.locator('body').evaluate(n=>getComputedStyle(n).backgroundColor),'rgb(6, 14, 36)');
   await request('/api/content/'+second.id+'/archive',{});await request('/api/content/'+future.id+'/archive',{});await load();assert.equal(await page.locator('.carousel-slide').count(),1);assert(await page.locator('#offers-controls').isHidden());
   await request('/api/content/'+first.id+'/archive',{});await page.goto(origin);await page.waitForSelector('#links .card');assert(await page.locator('#offers').isHidden());
   assert.deepEqual(consoleErrors,[],'Console errors during successful public flows');
@@ -158,7 +163,7 @@ const {tmpdir}=require('node:os');
   await request('/api/content/'+first.id+'/restore',{});await request('/api/content/'+second.id+'/restore',{});await page.emulateMedia({reducedMotion:'no-preference'});await load();await page.mouse.move(0,0);await page.locator('#profile-name').click();await page.waitForFunction(()=>document.querySelector('.carousel-dots button.active')?.getAttribute('aria-label')==='Afficher l’offre 2 sur 2',{},{timeout:8000});await page.emulateMedia({reducedMotion:'reduce'});
   const luminance=hex=>{const c=hex.replace('#','').match(/../g).map(v=>parseInt(v,16)/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4);return c[0]*.2126+c[1]*.7152+c[2]*.0722};
   const contrast=(a,b)=>{const x=luminance(a),y=luminance(b);return (Math.max(x,y)+.05)/(Math.min(x,y)+.05)};
-  for(const [fg,bg] of [['#f1f4fa','#131e2e'],['#b0bdd0','#131e2e'],['#9aabc2','#0a111e'],['#7acfe5','#0a111e'],['#b8e6f1','#213547']])assert(contrast(fg,bg)>=4.5,'Text contrast '+fg);
+  for(const [fg,bg] of [['#EAF2FF','#101B33'],['#AFBED8','#101B33'],['#AFC2DD','#060E24'],['#00E5FF','#060E24'],['#EAF2FF','#060E24']])assert(contrast(fg,bg)>=4.5,'Text contrast '+fg);
   assert.deepEqual(errors,[]);
   // Resolution selection only: actual browser load/error events, including HTTP-200 placeholders.
   const thumbnail=page.locator('.video-visual img');
