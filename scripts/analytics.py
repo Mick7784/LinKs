@@ -212,7 +212,8 @@ def report(start,end,source=""):
             elif metric["link"].startswith("block:"):
                 campaign_metrics.append({"day":metric["day"],"source":metric["source"],"id":metric["link"][6:],"kind":metric["kind"],"total":metric["total"]})
         tracked=tracked_links.tracked_events(db,start,end,source)
-    return {"rows":rows,"stories":stories,"tracked":tracked,"promo_code_copies":copies,"campaign_metrics":campaign_metrics,"timezone":str(PARIS)}
+        source_names={"tracked:"+r["id"]:r["name"] for r in db.execute("SELECT id,name FROM tracking_sources")}
+    return {"rows":rows,"stories":stories,"tracked":tracked,"source_names":source_names,"promo_code_copies":copies,"campaign_metrics":campaign_metrics,"timezone":str(PARIS)}
 
 STORY_TOKEN=re.compile(r'st_[A-Za-z0-9_-]{16}')
 def story_url_valid(url):
@@ -577,7 +578,7 @@ def restore_backup(data):
                             if not isinstance(snapshot,dict) or set(snapshot)!={'id','name','code','timestamp'} or any(not isinstance(v,str) for v in snapshot.values()) or not snapshot['code'] or len(snapshot['code'])>80:raise ValueError('Copie de code invalide')
                             instant(snapshot['timestamp'])
                         if row['kind']=='tracked' and (not re.fullmatch(r'tracked:tk_[A-Za-z0-9_-]{16}:\d{2}',row['link']) or int(row['link'][-2:])>23 or not re.fullmatch(r'tracked:[a-f0-9]{32}',row['source'])):raise ValueError('Statistique de lien suivi invalide')
-                        if row['kind']=='story' and (row['source'] not in {'instagram-story','shared-unknown','instagram','youtube','facebook','tiktok','discord','newsletter','site','mail','qr'} or not re.fullmatch(r'story:st_[A-Za-z0-9_-]{16}:\d{2}',row['link']) or int(row['link'][-2:])>23):raise ValueError('Statistique Story invalide')
+                        if row['kind']=='story' and ((row['source'] not in {'instagram-story','shared-unknown','instagram','youtube','facebook','tiktok','discord','newsletter','site','mail','qr'} and not re.fullmatch(r'tracked:[a-f0-9]{32}',row['source'])) or not re.fullmatch(r'story:st_[A-Za-z0-9_-]{16}:\d{2}',row['link']) or int(row['link'][-2:])>23):raise ValueError('Statistique Story invalide')
                     elif table=='story_links':
                         if not STORY_TOKEN.fullmatch(row['token']) or row['deleted'] not in (0,1) or not row['name'] or not row['promotion_id']:raise ValueError('Lien Story invalide')
                         instant(row['created_at'])
@@ -1147,7 +1148,10 @@ class Handler(BaseHTTPRequestHandler):
                 if count and instance.get(db,"analytics.enabled")=="true" and not any(x in agent for x in ['bot','spider','crawler','headless','facebookexternalhit','meta-externalagent','preview']):
                     now=datetime.now(PARIS)
                     source=parse_qs(urlsplit(self.path).query).get('utm_source',[''])[0].strip().lower()
-                    if source not in {'instagram','youtube','facebook','tiktok','discord','newsletter','site','mail','qr'}:source='shared-unknown'
+                    if re.fullmatch(r'src_[a-f0-9]{32}',source):
+                        ref=source[4:]
+                        source='tracked:'+ref if db.execute("SELECT 1 FROM tracking_sources WHERE id=?",(ref,)).fetchone() else 'shared-unknown'
+                    elif source not in {'instagram','youtube','facebook','tiktok','discord','newsletter','site','mail','qr'}:source='shared-unknown'
                     increment(db,'story',source,'story:'+token+':'+now.strftime('%H'),now.date().isoformat())
                 target=story_destination(item['url'])
             self.send_response(302);self.send_header('Location',target);self.send_header('Cache-Control','no-store');self.send_header('Referrer-Policy','no-referrer');self.send_header('Content-Length','0');self.end_headers()
