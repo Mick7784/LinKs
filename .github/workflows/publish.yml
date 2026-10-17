@@ -26,7 +26,7 @@ concurrency:
 jobs:
   docker:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 40
     permissions:
       contents: write
       packages: write
@@ -65,6 +65,7 @@ jobs:
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/shortcuts-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/audit-fixes-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/optimization-browser-test.cjs
+          NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/conservation-browser-test.cjs
       - name: Build and smoke-test
         shell: bash
         run: |
@@ -87,6 +88,12 @@ jobs:
           for file in style.css icons.css config.js cards.js app.js metrics.js theme.js theme.css theme-tokens.json asset-library.json assets/link-shopping.webp assets/background-network.svg assets/photo-community.webp assets/photo-creator.webp assets/photo-technology.webp assets/photo-shopping.webp assets/photo-professional.webp assets/photo-lifestyle.webp; do
             curl -fsS "http://127.0.0.1:18080/$file" -o /dev/null
           done
+      - name: Set up ARM64 emulation
+        uses: docker/setup-qemu-action@v3
+      - name: Set up multiarchitecture builder
+        uses: docker/setup-buildx-action@v3
+      - name: Validate disposable AMD64 and ARM64 images
+        run: bash scripts/check-images.sh "$(cat VERSION)" "$GITHUB_SHA"
       - name: Reserve persistent production version
         if: github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && inputs.official_release == true && inputs.validation_only == false) || (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'Release V')))
         id: release
@@ -109,8 +116,7 @@ jobs:
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
         run: |
           set -euo pipefail
-          docker buildx create --use --name links-builder
-          docker build -t links-release-check --build-arg "APP_RELEASE_VERSION=$RELEASE_VERSION" --build-arg "APP_RELEASE_ID=$RELEASE_VERSION:$COMMIT_SHA" .
+          bash scripts/check-images.sh "$RELEASE_VERSION" "$COMMIT_SHA"
           release_args=()
           if [ -n "$RELEASE_VERSION" ]; then
             if docker buildx imagetools inspect "$IMAGE:$RELEASE_TAG" >/dev/null 2>&1; then
@@ -150,5 +156,7 @@ jobs:
           fi
           docker buildx imagetools inspect "$IMAGE:$RELEASE_TAG"
           test "$(docker buildx imagetools inspect "$IMAGE:$RELEASE_TAG" --format '{{.Manifest.Digest}}')" = "$(docker buildx imagetools inspect "$IMAGE:latest" --format '{{.Manifest.Digest}}')"
+          docker buildx imagetools inspect --raw "$IMAGE:$RELEASE_TAG" > /tmp/links-release-manifest.json
+          python3 -c 'import json; data=json.load(open("/tmp/links-release-manifest.json")); platforms={(m.get("platform",{}).get("os"),m.get("platform",{}).get("architecture")) for m in data["manifests"]}; assert {("linux","amd64"),("linux","arm64")} <= platforms, platforms'
 
 

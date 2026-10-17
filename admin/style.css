@@ -370,6 +370,16 @@ small {
   font-size: 0.8rem;
   background: var(--surface);
 }
+.theme-control #theme-icon{display:flex;align-items:center;flex:0 0 20px}
+.theme-control #theme-icon svg{width:20px;height:20px}
+.tracked-source-color[data-color-index="0"]{background:#22d3ee}
+.tracked-source-color[data-color-index="1"]{background:#8b5cf6}
+.tracked-source-color[data-color-index="2"]{background:#3b82f6}
+.tracked-source-color[data-color-index="3"]{background:#14b8a6}
+.tracked-source-color[data-color-index="4"]{background:#a78bfa}
+.tracked-source-color[data-color-index="5"]{background:#f59e0b}
+.tracked-source-color[data-color-index="6"]{background:#64748b}
+.tracked-source-color[data-color-index="7"]{background:#ec4899}
 main {
   width: 100%;
   max-width: 1560px;
@@ -2125,11 +2135,9 @@ a.brand:focus-visible{outline:2px solid var(--focus);outline-offset:4px}
 #dashboard .analytics-kpis{gap:12px}
 #dashboard .analytics-kpis article{position:relative;overflow:hidden;min-height:118px;padding:17px 18px;border-color:var(--line);transition:border-color .18s ease,transform .18s ease}
 #dashboard .analytics-kpis article:hover{border-color:var(--accent)}
-#dashboard .analytics-kpis article:nth-child(1){background:linear-gradient(145deg,var(--surface),var(--surface) 72%,rgba(34,211,238,.075))}
-#dashboard .analytics-kpis article:nth-child(2){background:linear-gradient(145deg,var(--surface),var(--surface) 72%,rgba(139,92,246,.075))}
-#dashboard .analytics-kpis article:nth-child(4){background:linear-gradient(145deg,var(--surface),var(--surface) 72%,rgba(34,211,238,.11));border-bottom:2px solid #22d3ee}
+#dashboard .analytics-kpis article{background:var(--surface);border-bottom:1px solid var(--line)}
+#dashboard .analytics-kpis article:hover{background:var(--accent-soft)}
 #dashboard .analytics-kpis strong{font-size:clamp(1.5rem,2.15vw,1.9rem);letter-spacing:-.04em}
-#dashboard .analytics-kpis article:nth-child(4) strong{color:var(--accent)}
 #dashboard .analytics-kpis small{max-width:240px;display:block;line-height:1.45}
 #dashboard .kpi-note{line-height:1.6;margin-top:12px;margin-bottom:18px}
 #dashboard .panel-title{align-items:center}
@@ -2166,7 +2174,6 @@ a.brand:focus-visible{outline:2px solid var(--focus);outline-offset:4px}
  #dashboard .analytics-kpis{gap:8px}
  #dashboard .analytics-kpis article{min-height:104px;padding:13px}
  #dashboard .analytics-kpis strong{font-size:1.5rem}
- #dashboard .analytics-kpis article:nth-child(4){border-bottom-width:2px}
  #dashboard .campaign-card>img,#dashboard .campaign-card>.type-mark{width:72px;height:64px}
  #dashboard .campaign-card .campaign-metrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}
  #dashboard .campaign-metrics>span{padding-left:9px}

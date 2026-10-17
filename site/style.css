@@ -152,3 +152,5 @@ footer .footer-identity #footer-logo{width:19px;height:19px}
 footer .footer-identity p{font-size:.74rem}
 footer .footer-version{font-variant-numeric:tabular-nums;letter-spacing:.01em}
 @media(max-width:399px){footer .footer-product img{width:118px}footer .footer-identity{gap:4px 7px}}
+
+.carousel-pause{border:1px solid #9facbf55;border-radius:6px;padding:3px 8px;background:transparent;color:var(--muted);font-size:.7rem;cursor:pointer}.carousel-pause[aria-pressed=true]{color:var(--text);border-color:var(--cyan)}

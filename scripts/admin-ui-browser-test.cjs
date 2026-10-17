@@ -21,8 +21,8 @@ const installedVersion=(await api('/api/settings')).app_version;assert.match(ins
 assert.equal(await page.locator('.chart-bucket').count(),14);
 assert.equal(await page.locator('.brand').getAttribute('href'),'https://github.com/Mick7784/links');assert.equal(await page.locator('.brand').getAttribute('target'),'_blank');assert.equal(await page.locator('.brand').getAttribute('rel'),'noopener noreferrer');
 assert.equal(await page.locator('.product-brand').getAttribute('alt'),'LinKs by DomotiK Studio');
-assert(await page.locator('.studio-eyebrow').isVisible(),'DomotiK Studio identity should be visible in desktop sidebar');
-assert.match(await page.locator('.studio-eyebrow').textContent(),/DOMOTIK STUDIO/);
+assert.equal(await page.locator('.studio-eyebrow,.instance-context').count(),0,'Only the product logo remains in the sidebar header');
+assert(await page.locator('.product-brand').isVisible());
 assert.equal(await page.locator('.topbar .breadcrumb-brand').count(),1);
 assert(await page.locator('.sidebar').evaluate(e=>getComputedStyle(e,'::before').backgroundImage.includes('linear-gradient')),'sidebar color signature absent');
 assert(await page.locator('.tabs button.active').evaluate(e=>getComputedStyle(e).boxShadow.includes('inset')),'selected navigation identity absent');
