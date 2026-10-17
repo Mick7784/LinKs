@@ -48,19 +48,23 @@ class AnalyticsTests(unittest.TestCase):
         self.assertEqual(status,201,body);source_id=json.loads(body)['id']
         endpoint=admin+'/api/tracked-links/'+link_id+'/token'
         status,body=self.request(endpoint,{'source_id':source_id});self.assertEqual(status,200,body)
-        url=json.loads(body)['url'];token=url.rsplit('/',1)[-1]
+        generated=json.loads(body);url=generated['url'];token=generated['token'];code=generated['code']
         self.assertRegex(token,r'^tk_[A-Za-z0-9_-]{16}$')
+        self.assertRegex(code,r'^[A-Za-z0-9_-]{9}$')
+        self.assertEqual(url,self.a.ORIGIN+'/'+code)
         self.assertEqual(json.loads(self.request(endpoint,{'source_id':source_id})[1])['url'],url)
+        self.assertEqual(self.redirect(public+'/'+code)[0],302)
+        self.assertEqual(self.redirect(public+'/'+code,method='HEAD')[0],302)
         self.assertEqual(self.redirect(public+'/go/'+token)[0],302)
         self.assertEqual(self.redirect(public+'/go/'+token,method='HEAD')[0],302)
         self.assertEqual(self.redirect(public+'/go/'+token,agent='Googlebot')[0],302)
         rows=json.loads(self.request(admin+'/api/tracked-links')[1])['items']
         item=next(x for x in rows if x['id']==link_id)
-        self.assertEqual(item['clicks'],1)
+        self.assertEqual(item['clicks'],2)
         self.assertEqual(item['sources'][0]['name'],'YouTube Post perso')
         day=self.a.datetime.now(self.a.PARIS).date().isoformat()
         report=self.a.report(day,day)
-        self.assertEqual(sum(x['total'] for x in report['tracked']),1)
+        self.assertEqual(sum(x['total'] for x in report['tracked']),2)
         self.assertEqual(len(report['stories']),0)
         self.assertEqual(sum(x['total'] for x in report['rows']),0)
         status,_=self.request(admin+'/api/tracked-links/'+link_id,{'name':'Chargeur UGREEN','url':'https://shop.example/second'},method='PUT')
@@ -71,7 +75,7 @@ class AnalyticsTests(unittest.TestCase):
         self.assertEqual(self.request(source_endpoint,method='DELETE')[0],200)
         archived=next(x for x in json.loads(self.request(admin+'/api/tracking-sources')[1])['items'] if x['id']==source_id)
         self.assertFalse(archived['active'])
-        self.assertEqual(archived['clicks'],2)
+        self.assertEqual(archived['clicks'],3)
         self.assertEqual(self.redirect(public+'/go/'+token)[0],302)
         self.assertEqual(self.request(source_endpoint+'/restore',{},method='POST')[0],200)
         self.assertEqual(self.request(source_endpoint,{'name':'YouTube communautaire'},method='PUT')[0],200)
@@ -91,9 +95,58 @@ class AnalyticsTests(unittest.TestCase):
         old['tables']['counts']=[row for row in backup['tables']['counts'] if row['kind']!='tracked']
         self.a.restore_backup(old)
         self.assertEqual(self.redirect(public+'/go/'+token)[0],302)
-        self.assertGreaterEqual(next(x for x in json.loads(self.request(admin+'/api/tracked-links')[1])['items'] if x['id']==link_id)['clicks'],4)
+        self.assertGreaterEqual(next(x for x in json.loads(self.request(admin+'/api/tracked-links')[1])['items'] if x['id']==link_id)['clicks'],5)
         self.a.init()
         self.assertEqual(self.redirect(public+'/go/'+token)[0],302)
+
+    def test_opaque_campaign_alias_is_stable_source_bound_and_legacy_safe(self):
+        admin=self.server(True);public=self.server();promotion=self.promo()
+        endpoint=admin+'/api/content/'+promotion+'/story-link'
+        status,body=self.request(endpoint,{'source':'youtube'})
+        self.assertEqual(status,200,body)
+        short=json.loads(body)['url'];code=short.rsplit('/',1)[-1]
+        self.assertRegex(code,r'^[A-Za-z0-9_-]{9}$')
+        self.assertNotIn('utm_source',short);self.assertNotIn('/go/',short)
+        self.assertEqual(json.loads(self.request(endpoint,{'source':'youtube'})[1])['url'],short)
+        insta=json.loads(self.request(endpoint,{'source':'instagram'})[1])['url']
+        self.assertNotEqual(short,insta)
+        old=json.loads(self.request(endpoint,{})[1])['url'];legacy=old.rsplit('/',1)[-1]
+        self.assertEqual(self.redirect(public+'/'+code)[1]['Location'],'https://partner.example/offer?aff=117')
+        self.assertEqual(self.redirect(public+'/'+insta.rsplit('/',1)[-1])[0],302)
+        self.assertEqual(self.redirect(public+'/'+code,method='HEAD')[0],302)
+        self.assertEqual(self.redirect(public+'/'+code,agent='Googlebot')[0],302)
+        self.assertEqual(self.redirect(public+'/go/'+legacy+'?utm_source=youtube')[0],302)
+        today=self.a.datetime.now(self.a.PARIS).date().isoformat()
+        reports=self.a.report(today,today)
+        self.assertEqual(sum(r['total'] for r in reports['stories']),3)
+        self.assertEqual(sum(r['total'] for r in self.a.report(today,today,'youtube')['stories']),2)
+        self.assertEqual(sum(r['total'] for r in self.a.report(today,today,'instagram')['stories']),1)
+        self.assertEqual(len({r['token'] for r in reports['stories']}),1)
+        self.assertEqual(self.a.story_link(promotion)['url'],old)
+        with self.a.connection() as db:db.execute("UPDATE content_blocks SET url=? WHERE id=?",('https://partner.example/new-destination',promotion))
+        self.assertEqual(self.redirect(public+'/'+code)[1]['Location'],'https://partner.example/new-destination')
+        backup=json.loads(self.a.export_backup())
+        self.assertIn('short_aliases',backup['tables'])
+        self.a.restore_backup(backup)
+        self.assertEqual(self.redirect(public+'/'+code)[0],302)
+        original=dict(backup);original['tables']=dict(backup['tables']);del original['tables']['short_aliases']
+        original['tables']['counts']=[r for r in original['tables']['counts'] if r['kind']!='story']
+        self.a.restore_backup(original)
+        self.assertEqual(self.redirect(public+'/'+code)[0],302)
+        self.assertEqual(self.redirect(public+'/go/'+legacy+'?utm_source=youtube')[0],302)
+        self.assertGreaterEqual(sum(r['total'] for r in self.a.report(today,today)['stories']),4)
+
+    def test_deleted_zero_click_short_alias_is_reserved_and_revoked(self):
+        admin=self.server(True);public=self.server()
+        link=json.loads(self.request(admin+'/api/tracked-links',{'name':'Sans clic','url':'https://shop.example/item'})[1])
+        source=json.loads(self.request(admin+'/api/tracking-sources',{'name':'Source éphémère'})[1])
+        payload=json.loads(self.request(admin+'/api/tracked-links/'+link['id']+'/token',{'source_id':source['id']})[1])
+        code=payload['code'];self.assertEqual(self.redirect(public+'/'+code,method='HEAD')[0],302)
+        self.assertEqual(self.request(admin+'/api/tracking-sources/'+source['id'],method='DELETE')[0],200)
+        self.assertEqual(self.redirect(public+'/'+code)[0],410)
+        with self.a.connection() as db:self.assertEqual(db.execute("SELECT revoked FROM short_aliases WHERE code=?",(code,)).fetchone()[0],1)
+        self.a.restore_backup(json.loads(self.a.export_backup()))
+        self.assertEqual(self.redirect(public+'/'+code)[0],410)
 
     def test_custom_sources_on_campaigns_are_retained_after_clicks(self):
         admin=self.server(True);public=self.server();campaign_id=self.promo()

@@ -13,6 +13,7 @@ import themes
 import images as user_images
 import storage
 import tracked_links
+import short_urls
 from urllib.request import urlopen
 
 ROOT=Path(__file__).resolve().parent
@@ -96,6 +97,7 @@ def init():
           created_at TEXT NOT NULL,deleted INTEGER NOT NULL DEFAULT 0)""")
         db.execute("CREATE TABLE IF NOT EXISTS footer_quotes(id TEXT PRIMARY KEY,text TEXT NOT NULL UNIQUE,active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),created_at TEXT NOT NULL)")
         tracked_links.initialize(db)
+        short_urls.initialize(db)
         instance.initialize(db,legacy,CONFIG,[DATA_DIR/"assets",STATIC/"assets"],DATA_DIR)
         themes.initialize(db)
         storage.initialize(db)
@@ -234,7 +236,7 @@ def story_destination(url):
     netloc=host+(':'+str(parsed.port) if parsed.port is not None else '')
     return urlunsplit((parsed.scheme,netloc,quote(parsed.path,safe="/%:@!$&'()*+,;=-._~"),quote(parsed.query,safe="%/?@:!$&'()*+,;=-._~"),quote(parsed.fragment,safe="%/?@:!$&'()*+,;=-._~")))
 
-def story_link(promotion_id):
+def story_link(promotion_id,source=None):
     with connection() as db:
         db.execute('BEGIN IMMEDIATE')
         item=db.execute("SELECT * FROM content_blocks WHERE id=? AND type IN ('promo','featured')",(promotion_id,)).fetchone()
@@ -248,6 +250,9 @@ def story_link(promotion_id):
                 except sqlite3.IntegrityError:continue
             else:raise ValueError('Impossible de générer le lien Story')
             link=db.execute('SELECT * FROM story_links WHERE promotion_id=?',(promotion_id,)).fetchone()
+        if source is not None:
+            channel=short_urls.campaign_source(db,source)
+            return short_urls.get_or_create(db,link['token'],channel,ORIGIN,now_iso())
         return {'url':ORIGIN+'/go/'+link['token']}
 
 def profile(db):
@@ -472,7 +477,8 @@ def save_content(db,item,item_id=None):
 
 LEGACY_BACKUP_TABLES=('content_blocks','top_buttons','settings','counts','story_links','footer_quotes')
 TRACKING_BACKUP_TABLES=('tracking_sources','tracked_links','tracked_tokens')
-BACKUP_TABLES=LEGACY_BACKUP_TABLES+TRACKING_BACKUP_TABLES
+SHORT_BACKUP_TABLES=('short_aliases',)
+BACKUP_TABLES=LEGACY_BACKUP_TABLES+TRACKING_BACKUP_TABLES+SHORT_BACKUP_TABLES
 BACKUP_LIMIT=64*1024*1024
 UPLOAD_NAME=re.compile(r'[a-f0-9-]{36}\.(jpg|png|webp|gif)')
 
@@ -522,6 +528,8 @@ def restore_backup(data):
             old_keys={(r['day'],r['source'],r['kind'],r['link']) for r in tables['counts']}
             for row in db.execute("SELECT * FROM counts WHERE kind='tracked'"):
                 if (row['day'],row['source'],row['kind'],row['link']) not in old_keys:tables['counts'].append(dict(row))
+    if 'short_aliases' not in tables:
+        with connection() as db:tables['short_aliases']=[dict(r) for r in db.execute('SELECT * FROM short_aliases')]
     if set(tables)!=set(BACKUP_TABLES):raise ValueError('Sauvegarde incomplète')
     assets=data.get('assets',{})
     if not isinstance(assets,dict):raise ValueError('Assets invalides')
@@ -588,6 +596,12 @@ def restore_backup(data):
                         if not tracked_links.IDENT.fullmatch(row['id']) or not row['name'].strip() or len(row['name'])>160 or not story_url_valid(row['url']) or row['archived'] not in (0,1) or row['enabled'] not in (0,1):raise ValueError('Lien suivi invalide')
                     elif table=='tracked_tokens':
                         if not tracked_links.TOKEN.fullmatch(row['token']) or not tracked_links.IDENT.fullmatch(row['link_id']) or not tracked_links.IDENT.fullmatch(row['source_id']):raise ValueError('Jeton suivi invalide')
+                    elif table=='short_aliases':
+                        if (not short_urls.CODE.fullmatch(row['code']) or not short_urls.LONG_TOKEN.fullmatch(row['target_token']) or
+                            row['revoked'] not in (0,1) or not (
+                                row['source'] in short_urls.CAMPAIGN_SOURCES or
+                                re.fullmatch(r'tracked:[a-f0-9]{32}',row['source']))):raise ValueError('Lien court invalide')
+                        instant(row['created_at'])
                     elif table=='footer_quotes':
                         if not row['text'].strip() or len(row['text'])>1000 or row['active'] not in (0,1):raise ValueError('Citation invalide')
                         instant(row['created_at'])
@@ -659,6 +673,23 @@ def restore_backup(data):
                 if (old['day'],old['source'],old['kind'],old['link']) not in old_keys:tables['counts'].append(dict(old))
             tracked_tokens={r['token'] for r in tables['tracked_tokens']}
             if any(r['kind']=='tracked' and r['link'].split(':')[1] not in tracked_tokens for r in tables['counts']):raise ValueError('Lien suivi manquant')
+            # Short codes are never recycled or reassigned after restore.
+            aliases={r['code']:r for r in tables['short_aliases']}
+            for old in db.execute('SELECT * FROM short_aliases'):
+                if old['code'] in aliases:
+                    entry=aliases[old['code']]
+                    if (entry['target_token'],entry['source'])!=(old['target_token'],old['source']):
+                        raise ValueError('Un lien court ne peut pas changer de cible ou de source')
+                    entry['revoked']=max(entry['revoked'],old['revoked'])
+                else:
+                    entry=dict(old);tables['short_aliases'].append(entry);aliases[old['code']]=entry
+            # Preserve current redirect clicks if an older backup is restored.
+            indexed={(r['day'],r['source'],r['kind'],r['link']):r for r in tables['counts']}
+            for old in db.execute("SELECT * FROM counts WHERE kind IN ('story','tracked')"):
+                key=(old['day'],old['source'],old['kind'],old['link'])
+                if key in indexed:indexed[key]['total']=max(indexed[key]['total'],old['total'])
+                else:
+                    entry=dict(old);tables['counts'].append(entry);indexed[key]=entry
             tokens={r['token'] for r in tables['story_links']}
             if any(r['kind']=='story' and r['link'].split(':')[1] not in tokens for r in tables['counts']):raise ValueError('Référent Story manquant')
             # Every uploaded image used by the restored content must exist in this backup.
@@ -684,13 +715,15 @@ def restore_backup(data):
             refs=[r['image'] for r in tables['content_blocks']]+[r['value'] for r in tables['settings'] if r['key'] in {'profile.logo','profile.avatar'}]
             for ref in refs:
                 if ref.startswith('/assets/') and not (STATIC/ref[1:]).is_file() and not (DATA_DIR/ref[1:]).is_file() and ref[8:] not in asset_bytes:raise ValueError('Asset référencé manquant')
+            for table in SHORT_BACKUP_TABLES:
+                db.execute('DELETE FROM '+table)
             for table in reversed(TRACKING_BACKUP_TABLES):
                 db.execute('DELETE FROM '+table)
             for table in LEGACY_BACKUP_TABLES:
                 db.execute('DELETE FROM '+table)
                 columns=[c['name'] for c in db.execute('PRAGMA table_info('+table+')')]
                 db.executemany('INSERT INTO '+table+' ('+','.join(columns)+') VALUES ('+','.join('?' for _ in columns)+')',[[row[c] for c in columns] for row in tables[table]])
-            for table in TRACKING_BACKUP_TABLES:
+            for table in TRACKING_BACKUP_TABLES+SHORT_BACKUP_TABLES:
                 columns=[c['name'] for c in db.execute('PRAGMA table_info('+table+')')]
                 db.executemany('INSERT INTO '+table+' ('+','.join(columns)+') VALUES ('+','.join('?' for _ in columns)+')',[[row[c] for c in columns] for row in tables[table]])
             db.execute("INSERT OR REPLACE INTO settings VALUES('content.initialized','1')")
@@ -961,6 +994,8 @@ class Handler(BaseHTTPRequestHandler):
         if url.path.startswith('/go/'):
             token=url.path.removeprefix('/go/')
             return self.redirect_tracked(token) if tracked_links.TOKEN.fullmatch(token) else self.redirect_story(token)
+        if short_urls.CODE.fullmatch(url.path[1:]):
+            return self.redirect_short(url.path[1:])
         if url.path=="/latest-video.json":
             try:return self.json(200,latest_video())
             except (OSError,ValueError):return self.json(502,{"error":"Vidéo momentanément indisponible"})
@@ -1077,7 +1112,7 @@ class Handler(BaseHTTPRequestHandler):
                 item=block_data(data);return self.json(200,promotion_check(item,data.get("id") or None))
             if path=="/api/content/reorder":return self.reorder("content_blocks",data)
             match=re.fullmatch(r"/api/content/([\w-]+)/story-link",path)
-            if match:return self.json(200,story_link(match.group(1)))
+            if match:return self.json(200,story_link(match.group(1),data.get("source") if "source" in data else None))
             match=re.fullmatch(r"/api/content/([\w-]+)/(duplicate|archive|restore)",path)
             if match:return self.content_action(match.group(1),match.group(2))
             if path=="/api/buttons":return self.create_button(data)
@@ -1141,9 +1176,20 @@ class Handler(BaseHTTPRequestHandler):
         return self.send(204) if changed else self.send(404)
     def do_HEAD(self):
         path=urlsplit(self.path).path
+        if short_urls.CODE.fullmatch(path[1:]):
+            return self.redirect_short(path[1:],count=False)
         if not path.startswith('/go/'):return self.send(404)
         token=path.removeprefix('/go/')
         return self.redirect_tracked(token,count=False) if tracked_links.TOKEN.fullmatch(token) else self.redirect_story(token,count=False)
+    def redirect_short(self,code,count=True):
+        try:
+            with connection() as db:alias=short_urls.lookup(db,code)
+            if not alias:return self.send(404)
+            if alias['revoked']:return self.send(410)
+            token=alias['target_token']
+            if token.startswith('tk_'):return self.redirect_tracked(token,count=count)
+            return self.redirect_story(token,count=count,source_override=alias['source'])
+        except (sqlite3.Error,OSError):return self.send(503)
     def redirect_tracked(self,token,count=True):
         try:
             with connection() as db:
@@ -1159,7 +1205,7 @@ class Handler(BaseHTTPRequestHandler):
                 target=story_destination(row['url'])
             self.send_response(302);self.send_header('Location',target);self.send_header('Cache-Control','no-store');self.send_header('Referrer-Policy','no-referrer');self.send_header('Content-Length','0');self.end_headers()
         except (sqlite3.Error,OSError):return self.send(503)
-    def redirect_story(self,token,count=True):
+    def redirect_story(self,token,count=True,source_override=None):
         if not STORY_TOKEN.fullmatch(token):return self.send(404)
         try:
             with connection() as db:
@@ -1172,8 +1218,9 @@ class Handler(BaseHTTPRequestHandler):
                 agent=self.headers.get('User-Agent','').lower()
                 if count and instance.get(db,"analytics.enabled")=="true" and not any(x in agent for x in ['bot','spider','crawler','headless','facebookexternalhit','meta-externalagent','preview']):
                     now=datetime.now(PARIS)
-                    source=parse_qs(urlsplit(self.path).query).get('utm_source',[''])[0].strip().lower()
-                    if re.fullmatch(r'src_[a-f0-9]{32}',source):
+                    source=source_override if source_override is not None else parse_qs(urlsplit(self.path).query).get('utm_source',[''])[0].strip().lower()
+                    if source_override is not None:pass
+                    elif re.fullmatch(r'src_[a-f0-9]{32}',source):
                         ref=source[4:]
                         source='tracked:'+ref if db.execute("SELECT 1 FROM tracking_sources WHERE id=?",(ref,)).fetchone() else 'shared-unknown'
                     elif source not in {'instagram','youtube','facebook','tiktok','discord','newsletter','site','mail','qr'}:source='shared-unknown'

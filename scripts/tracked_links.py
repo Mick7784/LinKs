@@ -6,6 +6,7 @@ the 400-day analytics retention window and mutable destination/source labels.
 import re
 import secrets
 import uuid
+import short_urls
 from datetime import date
 
 TOKEN = re.compile(r"tk_[A-Za-z0-9_-]{16}")
@@ -81,6 +82,7 @@ def remove_source(db,ident):
     if clicks:
         db.execute("UPDATE tracking_sources SET active=0 WHERE id=?",(ident,))
         return {"action":"archived","clicks":clicks}
+    short_urls.revoke_source(db,ident,db.execute("SELECT name FROM tracking_sources WHERE id=?",(ident,)).fetchone()[0])
     db.execute("DELETE FROM tracked_tokens WHERE source_id=?",(ident,))
     db.execute("DELETE FROM tracking_sources WHERE id=?",(ident,))
     return {"action":"deleted","clicks":0}
@@ -135,7 +137,8 @@ def token_link(db,ident,source_id,origin,now):
                 raise exc
         else:raise ValueError("Impossible de générer le lien")
     else:token=row["token"]
-    return {"url":origin+"/go/"+token,"token":token,"source_id":source_id}
+    alias=short_urls.get_or_create(db,token,"tracked:"+source_id,origin,now)
+    return {"url":alias["url"],"token":token,"code":alias["code"],"source_id":source_id}
 
 def find_destination(db,token):
     if not TOKEN.fullmatch(token):return None
