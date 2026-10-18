@@ -308,6 +308,10 @@ def public_config(snapshot=False):
         buttons=[dict(r) for r in db.execute("SELECT * FROM top_buttons WHERE active=1 AND retired=0 ORDER BY position,created_at")]
         result={"profile":profile(db),"socials":[{"id":x["id"],"platform":x["icon"],"custom_icon":x["custom_icon"],"label":x["label"],"url":x["url"],"metricKey":"button:"+x["id"]} for x in buttons],
                 "links":[{"id":x["id"],"type":x["type"],"title":x["title"],"description":x["description"],"url":x["url"],"icon":x["icon"],"image":x["image"],"badge":x["badge"],"cta":x["cta"],"priority":x["priority"],"start_at":x["start_at"],"end_at":x["end_at"],"promo_code":x["promo_code"],"metricKey":"block:"+x["id"]} for x in blocks]}
+        # Expose only the next public schedule boundary, never future private content.
+        now=datetime.now(timezone.utc)
+        boundaries=[stamp for row in db.execute("SELECT start_at,end_at FROM content_blocks WHERE retired=0 AND archived=0 AND active=1 AND draft=0 AND type IN ('promo','featured')") for key in ("start_at","end_at") if (stamp:=instant(row[key])) and stamp>now]
+        result["next_campaign_change"]=min(boundaries).isoformat().replace("+00:00","Z") if boundaries else None
         result["appearance"]=themes.public(db)
         result["profile"]["footer_quote"]=quote["text"] if quote else ""
     if result["profile"]["video_enabled"]:result["latestVideo"]={"enabled":True}
@@ -1147,7 +1151,7 @@ class Handler(BaseHTTPRequestHandler):
         if url.path=="/preview/style.css":return self.file(ROOT/"site"/"style.css" if (ROOT/"site"/"style.css").exists() else Path("/usr/share/nginx/html/style.css"),"text/css")
         if url.path=="/preview/preview.css":return self.file(ADMIN/"promo-preview.css","text/css")
         if url.path.startswith("/preview/") and url.path[9:] in {"index.html","app.js","config.js","metrics.js","theme.js","theme.css","theme-tokens.json","asset-library.json"}:return self.file(STATIC/url.path[9:])
-        if url.path in {"/appearance.js","/appearance.css","/shortcuts.js","/uploads.js","/storage.js","/settings.js","/tracking.js","/theme-init.js"}:return self.file(ADMIN/url.path[1:])
+        if url.path in {"/collection.js","/charts.js","/navigation.js","/appearance.js","/appearance.css","/shortcuts.js","/uploads.js","/storage.js","/settings.js","/tracking.js","/theme-init.js"}:return self.file(ADMIN/url.path[1:])
         files={"/":("index.html","text/html;charset=utf-8"),"/app.js":("app.js","application/javascript"),"/dates.js":("dates.js","application/javascript"),"/calendar.js":("calendar.js","application/javascript"),"/style.css":("style.css","text/css")}
         return self.file(ADMIN/files[url.path][0],files[url.path][1]) if url.path in files else self.send(404)
     def do_POST(self):

@@ -653,6 +653,21 @@ class AnalyticsTests(unittest.TestCase):
         for item in self.a.button_list()[3:]:
             self.assertEqual(item['icon'],'mail');self.assertEqual((self.a.UPLOADS/item['custom_icon'].split('/')[-1]).read_bytes(),raw)
 
+    def test_public_schedule_boundary_excludes_private_campaigns_and_preserves_counts(self):
+        from datetime import datetime,timedelta,timezone
+        now=datetime.now(timezone.utc)
+        start=(now+timedelta(hours=2)).isoformat().replace('+00:00','Z')
+        private_start=(now+timedelta(hours=1)).isoformat().replace('+00:00','Z')
+        with self.a.connection() as db:
+            self.a.save_content(db,self.a.block_data({'type':'promo','internal_name':'Scheduled','title':'Scheduled','url':'https://example.com','start_at':start}))
+            self.a.save_content(db,self.a.block_data({'type':'promo','internal_name':'Private draft','title':'Private draft','url':'https://example.com','start_at':private_start,'draft':True}))
+            before=[tuple(row) for row in db.execute('SELECT * FROM counts')]
+        config=self.a.public_config()
+        self.assertEqual(config['next_campaign_change'],start)
+        self.assertNotIn('Private draft',json.dumps(config))
+        self.assertNotIn('Scheduled',json.dumps(config))
+        with self.a.connection() as db:self.assertEqual([tuple(row) for row in db.execute('SELECT * FROM counts')],before)
+
 if __name__=='__main__':unittest.main()
 
 
