@@ -68,16 +68,18 @@ function chart(days){
 }
 
 let statsRequest=0;
-async function loadStats(){const request=++statsRequest;try{
- const range=dates(),data=await api("/api/stats?"+new URLSearchParams(range)),stories=data.stories||[],tracked=data.tracked||[],previous=$("source").value;
+async function loadStats(){const request=++statsRequest;let range;
+ try{range=dates();$("stats-range-error").textContent=""}catch(error){$("stats-range-error").textContent=error.message;return}
+ try{
+ const data=await api("/api/stats?"+new URLSearchParams(range)),stories=data.stories||[],tracked=data.tracked||[],previous=$("source").value;
  if(request!==statsRequest)return;
  const trackedNames=new Map([...Object.entries(data.source_names||{}),...tracked.map(x=>[x.source,x.source_name])]);
  const sources=[...new Set([...data.rows.map(x=>x.source),...stories.map(x=>x.source),...tracked.map(x=>x.source),...(data.promo_code_copies||[]).map(x=>x.source),...(data.campaign_metrics||[]).map(x=>x.source)])].sort();
  $("source").replaceChildren(new Option("Toutes les sources",""),...sources.map(x=>new Option(trackedNames.get(x)||names[x]||x,x)));if(sources.includes(previous))$("source").value=previous;
- const source=$("source").value,rows=data.rows.filter(x=>!source||x.source===source),storyRows=stories.filter(x=>!source||x.source===source),trackedRows=tracked.filter(x=>!source||x.source===source),days=new Map(),bySource=new Map(),byLink=new Map(),labels=new Map(),byStory=new Map();
+ const source=$("source").value,rows=data.rows.filter(x=>!source||x.source===source),storyRows=stories.filter(x=>!source||x.source===source),trackedRows=tracked.filter(x=>!source||x.source===source),days=new Map(),bySource=new Map(),byLink=new Map(),linkSources=new Map(),labels=new Map(),byStory=new Map();
  for(let d=new Date(range.start+"T12:00Z");d<=new Date(range.end+"T12:00Z");d.setUTCDate(d.getUTCDate()+1))days.set(d.toISOString().slice(0,10),[0,0]);
  let views=0,clicks=0,storyClicks=0;
- for(const row of rows){labels.set(row.link,row.label||row.link);const pair=days.get(row.day);if(!pair)continue;if(row.kind==="view"){views+=row.total;pair[0]+=row.total;bySource.set(row.source,(bySource.get(row.source)||0)+row.total)}else if(row.kind==="click"){clicks+=row.total;pair[1]+=row.total;byLink.set(row.link,(byLink.get(row.link)||0)+row.total)}}
+ for(const row of rows){labels.set(row.link,row.label||row.link);const pair=days.get(row.day);if(!pair)continue;if(row.kind==="view"){views+=row.total;pair[0]+=row.total;bySource.set(row.source,(bySource.get(row.source)||0)+row.total)}else if(row.kind==="click"){clicks+=row.total;pair[1]+=row.total;byLink.set(row.link,(byLink.get(row.link)||0)+row.total);const sources=linkSources.get(row.link)||new Map();sources.set(row.source,(sources.get(row.source)||0)+row.total);linkSources.set(row.link,sources)}}
  for(const row of trackedRows){storyClicks+=row.total;const key="tracked:"+row.link_id,item=byStory.get(key)||{label:row.label+" · Lien suivi",total:0,sources:new Map()};item.total+=row.total;item.sources.set(row.source_name,(item.sources.get(row.source_name)||0)+row.total);byStory.set(key,item);bySource.set(row.source,(bySource.get(row.source)||0)+row.total)}
  for(const row of storyRows){storyClicks+=row.total;const item=byStory.get(row.promotion_id)||{label:row.label,total:0,sources:new Map()};item.total+=row.total;item.sources.set(row.source,(item.sources.get(row.source)||0)+row.total);byStory.set(row.promotion_id,item);bySource.set(row.source,(bySource.get(row.source)||0)+row.total)}
  $("views").textContent=fmt.format(views);$("clicks").textContent=fmt.format(clicks);$("ratio").textContent=views?(clicks*100/views).toLocaleString("fr-FR",{maximumFractionDigits:1})+" %":"—";
@@ -92,7 +94,7 @@ async function loadStats(){const request=++statsRequest;try{
  $("promo-copies").textContent=fmt.format(copyTotal);$("promo-copy-total").textContent=fmt.format(copyTotal);
  metricRows("promo-copy-list",[...copyStats.values()].sort((a,b)=>b.total-a.total).map(value=>{const impressions=campaignStats.get(value.id)?.impressions||0;return {name:value.name,total:value.total,unit:"copies",details:[value.code,...(impressions?["Taux de copie : "+(value.total*100/impressions).toLocaleString("fr-FR",{maximumFractionDigits:1})+" %"]:[])]}}),"Aucun code copié sur cette période.");
  await loadCampaigns(campaignStats,request);if(request!==statsRequest)return;
- chart([...days].map(([day,value])=>[day,...value]));const sorted=map=>[...map].sort((a,b)=>b[1]-a[1]);metricRows("top-links",sorted(byLink).map(([key,value])=>({name:labels.get(key)||key,total:value,unit:"clics publics",details:[key]})),"Aucun clic public sur cette période.");
+ chart([...days].map(([day,value])=>[day,...value]));const sorted=map=>[...map].sort((a,b)=>b[1]-a[1]);metricRows("top-links",sorted(byLink).map(([key,value])=>({name:labels.get(key)||key,total:value,unit:"clics publics",details:[...linkSources.get(key)].map(([source,total])=>(trackedNames.get(source)||names[source]||source)+" : "+fmt.format(total))})),"Aucun clic public sur cette période.");
  const sourceItems=sorted(bySource).map(([key,value])=>[trackedNames.get(key)||names[key]||key,value]);
  metricRows("source-details",sourceItems.map(([name,total])=>({name,total,unit:"visites et ouvertures",details:[]})),"Aucune source sur cette période.");
  const main=sourceItems.slice(0,5),rest=sourceItems.slice(5).reduce((n,x)=>n+x[1],0);sourceDonut(rest?[...main,["Autres sources",rest]]:main);

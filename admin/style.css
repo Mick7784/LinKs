@@ -514,37 +514,6 @@ footer {
   grid-template-columns: 1fr 1fr;
   gap: 20px;
 }
-.bar-list {
-  display: grid;
-  gap: 18px;
-}
-.bar-row {
-  display: grid;
-  grid-template-columns: minmax(90px, 1.1fr) 1.5fr auto;
-  gap: 12px;
-  align-items: center;
-  font-size: 0.8rem;
-}
-.bar-row > span:first-child {
-  overflow-wrap: anywhere;
-  line-height: 1.5;
-}
-.bar {
-  height: 7px;
-  border-radius: 99px;
-  background: var(--raised);
-  overflow: hidden;
-}
-.bar i {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--accent);
-}
-.bar-row strong {
-  font-variant-numeric: tabular-nums;
-  font-weight: 600;
-}
 #chart {
   width: 100%;
   min-width: 0;
@@ -1503,10 +1472,6 @@ dialog h2 {
     width: 42px;
     height: 42px;
   }
-  .bar-row {
-    grid-template-columns: minmax(70px, 1.2fr) 1fr auto;
-    font-size: 0.75rem;
-  }
   .planning-row {
     grid-template-columns: 1fr;
   }
@@ -1998,7 +1963,7 @@ main{max-width:1400px;padding:24px 28px 32px}
 .campaign-card .campaign-metrics{grid-column:2;grid-row:1/4;display:grid;grid-template-columns:repeat(4,minmax(55px,1fr));gap:18px}
 .campaign-metrics>span{display:grid;gap:6px}.campaign-metrics small{font-size:.65rem;color:var(--muted)}.campaign-metrics b{font-size:.86rem;font-weight:600}
 .campaign-card>button{border:0;background:transparent;color:var(--muted)}
-.bar-row{font-size:.76rem;gap:12px}.bar{height:6px;border-radius:3px;background:var(--raised)}.bar i{background:var(--purple);border-radius:3px}
+
 .story-row,.promo-copy-row{font-size:.76rem;padding:12px 0}.empty{font-size:.76rem;line-height:1.6;color:var(--muted)}
 button.primary{background:#3B82F6;color:#fff;border-color:#3B82F6;box-shadow:none}
 .settings-shortcuts{margin-bottom:16px}.settings-shortcuts a{font-size:.75rem;padding:7px 11px}
