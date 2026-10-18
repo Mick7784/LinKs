@@ -3,12 +3,14 @@ const $=id=>document.getElementById(id),fmt=new Intl.NumberFormat("fr-FR");
 const names={"direct-inconnu":"Direct / inconnu","autre-site":"Autre site","autre-campagne":"Autre campagne",youtube:"YouTube",instagram:"Instagram","instagram-story":"Ancien lien partagé (source incertaine)","shared-unknown":"Lien partagé (source inconnue)",facebook:"Facebook",google:"Google",discord:"Discord",newsletter:"Newsletter",tiktok:"TikTok",site:"Site",mail:"E-mail",qr:"QR"};
 let csrf="",adminTimezone="UTC";
 const state={content:[],buttons:[],archives:[],settings:{},chart:[]};
-const api=async(path,options={})=>{const response=await fetch(path,{cache:"no-store",...options,headers:{"Content-Type":"application/json","X-Links-Request":"1","X-Links-CSRF":csrf,...(options.headers||{})}});if(response.status===401){location.href="/login";throw new Error("Connexion requise.")}if(!response.ok){let message="Une erreur est survenue.";try{message=(await response.json()).error||message}catch{}throw new Error(message)}return response.status===204?null:response.json()};
+const reportCache=new Map();
+async function reportApi(path){const entry=reportCache.get(path);if(entry&&Date.now()-entry.at<15000)return entry.promise;const value={at:Date.now(),promise:api(path)};if(!reportCache.has(path)&&reportCache.size>=4)reportCache.delete(reportCache.keys().next().value);reportCache.set(path,value);try{return await value.promise}catch(error){if(reportCache.get(path)===value)reportCache.delete(path);throw error}}
+const api=async(path,options={})=>{const response=await fetch(path,{cache:"no-store",...options,headers:{"Content-Type":"application/json","X-Links-Request":"1","X-Links-CSRF":csrf,...(options.headers||{})}});if(response.status===401){location.href="/login";throw new Error("Connexion requise.")}if(!response.ok){let message="Une erreur est survenue.";try{message=(await response.json()).error||message}catch{}throw new Error(message)}if(options.method&&options.method!=="GET")reportCache.clear();return response.status===204?null:response.json()};
 const say=(message,error=false)=>{const dialog=[...document.querySelectorAll("dialog[open]")].at(-1);if(dialog){let feedback=dialog.querySelector("[data-dialog-feedback]");if(!feedback){feedback=document.createElement("p");feedback.dataset.dialogFeedback="";feedback.className="editor-feedback";feedback.setAttribute("role","alert");(dialog.querySelector("form")||dialog).prepend(feedback)}feedback.hidden=false;feedback.textContent=message;feedback.classList.toggle("notice-error",error)}const node=$("notice");node.textContent=message;node.classList.toggle("notice-error",error);clearTimeout(say.timer);say.timer=setTimeout(()=>node.textContent="",4000)};
 const esc=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const typeName={classic:"Lien",featured:"Mise en avant",promo:"Campagne"};
 const statusClass=value=>({Actif:"active",Programmé:"scheduled",Expiré:"expired",Brouillon:"draft"}[value]||"");
-function activate(id){StudioNavigation.activate(id,document.querySelectorAll(".view"),document.querySelectorAll(".tabs button"));syncNavigation();$("topbar-current").textContent=document.querySelector(".tabs button.active")?.textContent.trim()||"Links";if(id==="dashboard"||id==="statistics"){$(id+"-summary").append($("analytics-summary"));loadStats()}if(id==="content"){loadContent();window.LinksTracking?.load().then(()=>{if(state.content.length)renderContent()})}if(id==="buttons")loadButtons();if(id==="archives")loadArchives();if(id==="appearance")window.LinksAppearance?.load();else window.LinksAppearance?.cancelUploads();if(id!=="settings")profileUploads.forEach(g=>g.invalidate());if(id==="settings"){loadSettings().then(()=>window.LinksSettings?.open())}}
+function activate(id){StudioNavigation.activate(id,document.querySelectorAll(".view"),document.querySelectorAll(".tabs button"));syncNavigation();$("topbar-current").textContent=document.querySelector(".tabs button.active")?.textContent.trim()||"Links";if(id==="dashboard"||id==="statistics"){$(id+"-filters").append($("analytics-filters"));syncAnalysis();loadStats()}if(id==="content"){loadContent();window.LinksTracking?.load().then(()=>{if(state.content.length)renderContent()})}if(id==="buttons")loadButtons();if(id==="archives")loadArchives();if(id==="appearance")window.LinksAppearance?.load();else window.LinksAppearance?.cancelUploads();if(id!=="settings")profileUploads.forEach(g=>g.invalidate());if(id==="settings"){loadSettings().then(()=>window.LinksSettings?.open())}}
 const navigation=$("navigation"),menuToggle=$("menu-toggle"),mobileNavigation=matchMedia("(max-width:760px)");
 function closeMenu(restoreFocus=false){navigation.classList.remove("open");menuToggle.setAttribute("aria-expanded","false");if(restoreFocus)menuToggle.focus()}
 function syncNavigation(){document.querySelectorAll(".tabs button").forEach(button=>{const active=button.classList.contains("active");if(active){button.setAttribute("aria-current","page");$("menu-current").textContent=button.textContent.trim()}else button.removeAttribute("aria-current")})}
@@ -28,60 +30,82 @@ function dates(){
  }
  const days=Number($("period").value),end=new Intl.DateTimeFormat("en-CA",{timeZone:adminTimezone,year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date()),start=new Date(end+"T12:00:00Z");start.setUTCDate(start.getUTCDate()-days+1);return {start:start.toISOString().slice(0,10),end}}
 
-// Daily chronology includes zero days; only axis labels are thinned.
-function chartBuckets(days){return days.map(([day,views,clicks])=>({start:day,end:day,views,clicks}))}
-const analyticCollections=new Map();
+const analyticCollections=new Map(),analyticRows=new Map();
+let campaignRows=[],sourceRows=[],analysisDays={},renderedData=null,renderedSource="";
+const analysisScope=()=>$("analysis-scope").value;
+function collectionOptions(){const preview=analysisScope()==="all";return {preview,pageSize:preview?5:20,query:preview?"":$("analysis-search").value,sort:preview?"total":$("analysis-sort").value}}
 function metricRows(id,items,empty){
- if(!analyticCollections.has(id))analyticCollections.set(id,StudioCollection.create($(id),{empty,renderRow:item=>{
-  const row=document.createElement("div");row.className="engagement-row";
-  row.innerHTML=`<div class="engagement-copy"><strong>${esc(item.name)}</strong>${item.details.length?`<details><summary>Détails</summary><small>${item.details.map(esc).join(" · ")}</small></details>`:""}</div><div class="engagement-value"><strong>${fmt.format(item.total)}</strong><small>${esc(item.unit)}</small></div>`;return row;
- }}));
- const collection=analyticCollections.get(id);collection.setRows(items);collection.filter({query:$("analysis-search").value,sort:$("analysis-sort").value});
+ analyticRows.set(id,items);
+ if(!analyticCollections.has(id)){
+  const node=$(id);node.setAttribute("aria-label",node.closest("section").querySelector("h3").textContent);
+  analyticCollections.set(id,StudioCollection.create(node,{empty,renderRow:(item,context)=>{
+   const row=document.createElement("div");row.className="engagement-row";
+   row.innerHTML=`<div class="engagement-copy"><strong>${esc(item.name)}</strong></div><div class="engagement-value"><strong>${fmt.format(item.total)}</strong><small>${esc(item.unit)}</small></div>`;
+   const visual=item.series||([{label:item.unit,value:item.total}]);
+   if(id!=="promo-copy-list")row.append(StudioCharts.ranking(visual,item.series?context.seriesMax:context.max));
+   if(!context.preview&&item.details.length){const details=document.createElement("details"),summary=document.createElement("summary");summary.textContent="Détails";details.append(summary);details.addEventListener("toggle",()=>{if(details.open&&!details.dataset.loaded){details.dataset.loaded="true";const text=document.createElement("small");text.textContent=item.details.join(" · ");details.append(text)}},{once:false});row.querySelector(".engagement-copy").append(details)}
+   return row;
+  }}));
+ }
+ const options=collectionOptions();analyticCollections.get(id).setRows(options.preview?items.filter(item=>item.total>0||item.series?.some(entry=>entry.value>0)):items,options);
+}
+function drawCampaignRanking(){
+ const metric=$("campaign-metric").value,units={clicks:"clics publics",shared:"ouvertures partagées",impressions:"impressions",copies:"copies de codes"};
+ metricRows("campaign-details",campaignRows.map(row=>({...row,total:row.metrics[metric]||0,unit:units[metric]})),"Aucune campagne sur cette période.");
+}
+function drawSources(){const options=collectionOptions();StudioCharts.donut($("sources"),sourceRows,{preview:options.preview,query:options.query,sort:options.preview?"input":options.sort})}
+
+function syncAnalysis(){
+ const scope=analysisScope(),preview=scope==="all",statistics=$("statistics").classList.contains("active");
+ document.querySelectorAll("[data-detail-control]").forEach(node=>node.hidden=preview);
+ $("campaign-metric-control").hidden=scope!=="campaigns";
+ document.querySelectorAll("[data-analysis]").forEach(node=>{
+  const id=({shared:"story-list",public:"top-links",copies:"promo-copy-list",campaigns:"campaign-details"}[node.dataset.analysis]);
+  const useful=node.dataset.analysis==="sources"?sourceRows.some(x=>x[1]>0):(analyticRows.get(id)||[]).some(row=>row.total>0||row.series?.some(entry=>entry.value>0));
+  node.hidden=preview?!useful:scope!==node.dataset.analysis;
+  node.querySelector("[data-analysis-detail]").hidden=!preview;
+ });
+ document.querySelectorAll(".analysis-column").forEach(node=>node.hidden=![...node.querySelectorAll("[data-analysis]")].some(cell=>!cell.hidden));
+ $("analysis-grid").classList.toggle("detailed",!preview);
+ $("analysis-empty").hidden=!preview||[...document.querySelectorAll("[data-analysis]")].some(node=>!node.hidden);
+ const days=analysisDays[scope]||[],usefulHistory=days.filter(row=>row[1]||row[2]).length>1,history=statistics&&!preview&&scope!=="sources"&&usefulHistory;
+ $("analysis-history").hidden=!history;
+ (history?$("statistics-chart"):$("dashboard-chart")).append($("traffic-chart"));
+ const labels=scope==="shared"?["","Ouvertures partagées"]:scope==="copies"?["","Copies de codes"]:scope==="campaigns"?["Clics publics","Ouvertures partagées"]:["Visites","Clics publics"];
+ $("analysis-history-legend").replaceChildren(...labels.filter(Boolean).map((label,index)=>{const node=document.createElement("span");node.className=index===0&&labels[0]?"legend-visits":"legend-clicks";node.textContent=label;return node}));
+ if(statistics&&history)chart(days,labels);else if(!statistics&&analysisDays.public)chart(analysisDays.public);
 }
 function filterAnalysis(){
- for(const collection of analyticCollections.values())collection.filter({query:$("analysis-search").value,sort:$("analysis-sort").value});
- const scope=$("analysis-scope").value;document.querySelectorAll("[data-analysis]").forEach(node=>node.hidden=scope!=="all"&&scope!==node.dataset.analysis);
+ const scope=analysisScope(),selected={public:"top-links",shared:"story-list",copies:"promo-copy-list"}[scope];
+ for(const [id,collection] of analyticCollections){if(id!=="campaign-details"&&(scope==="all"||id===selected)){const options=collectionOptions(),rows=analyticRows.get(id)||[];collection.setRows(options.preview?rows.filter(row=>row.total>0):rows,options)}}
+ if(scope==="all"||scope==="campaigns")drawCampaignRanking();if(scope==="all"||scope==="sources")drawSources();syncAnalysis();
 }
 $("analysis-controls").onsubmit=event=>event.preventDefault();
-$("analysis-search").oninput=filterAnalysis;$("analysis-sort").onchange=filterAnalysis;$("analysis-scope").onchange=filterAnalysis;
-document.addEventListener("click",event=>{const button=event.target.closest("[data-open-statistics]");if(button){$("analysis-scope").value=button.dataset.openStatistics;$("analysis-search").value=button.dataset.analysisQuery||"";filterAnalysis();activate("statistics");document.querySelector("#statistics h1").tabIndex=-1;document.querySelector("#statistics h1").focus()}});
-function sourceDonut(items){StudioCharts.donut($("sources"),items)}
+$("analysis-search").oninput=filterAnalysis;$("analysis-sort").onchange=filterAnalysis;
+$("analysis-scope").onchange=()=>{if(analysisScope()==="all")$("analysis-search").value="";filterAnalysis()};
+$("campaign-metric").onchange=()=>{drawCampaignRanking();syncAnalysis()};
+document.addEventListener("click",event=>{const button=event.target.closest("[data-open-statistics],[data-analysis-detail]");if(button){$("analysis-scope").value=button.dataset.openStatistics||button.dataset.analysisDetail;$("analysis-search").value=button.dataset.analysisQuery||"";filterAnalysis();activate("statistics");document.querySelector("#statistics h1").tabIndex=-1;document.querySelector("#statistics h1").focus()}});
 let chartRenderedWidth=0;
-function chart(days){
- state.chart=days;const root=$("chart"),buckets=chartBuckets(days),width=Math.max(200,root.clientWidth),left=44,right=width-8,height=width>600?250:180,bottom=height+44,slot=(right-left)/Math.max(1,buckets.length),barWidth=Math.max(1,slot-3),peak=Math.max(1,...buckets.flatMap(x=>[x.views,x.clicks]));
- const magnitude=10**Math.floor(Math.log10(peak/4)),step=Math.max(1,Math.ceil(peak/4/magnitude)*magnitude),max=step*4;
- chartRenderedWidth=root.clientWidth;
- const short=d=>d.slice(8,10)+"/"+d.slice(5,7),description=b=>`${short(b.start)} : ${fmt.format(b.views)} visites · ${fmt.format(b.clicks)} clics`,stride=Math.max(1,Math.ceil(buckets.length/Math.max(2,Math.floor((right-left)/58))));
- const groups=buckets.map((b,i)=>{const center=left+slot*(i+.5),halfWidth=Math.max(2,(barWidth-4)/2),offset=halfWidth/2+2;
- const series=[{value:b.views,cls:"visits-bar",x:center-offset},{value:b.clicks,cls:"clicks-bar",x:center+offset}];
- const bars=series.map(s=>{const h=s.value*height/max;return `<rect class="${s.cls} animated-bar" x="${s.x-halfWidth/2}" y="${bottom-h}" width="${halfWidth}" height="${h}" rx="${Math.min(4,halfWidth/3)}"/>`}).join("");
- const marker=(value,y,cls,x)=>`<g class="chart-value ${cls}"><rect x="${x-Math.max(12,String(value).length*3.6+5)}" y="${y-12}" width="${Math.max(24,String(value).length*7.2+10)}" height="17" rx="3"/><text text-anchor="middle" x="${x}" y="${y}">${fmt.format(value)}</text></g>`;
- const markers=slot>=58?series.filter(x=>x.value).map(x=>marker(x.value,bottom-x.value*height/max-9,x.cls+"-value",x.x)).join(""):"";
- const label=i%stride===0?`<text text-anchor="middle" x="${center}" y="${bottom+23}">${short(b.start)}</text>`:"";
- return `<g class="chart-bucket" role="button" tabindex="0" data-bucket="${i}" aria-label="${esc(description(b))}"><title>${esc(description(b))}</title><rect class="chart-hit" x="${left+i*slot}" y="0" width="${slot}" height="${bottom}"/>${bars}<g class="chart-values${slot>=Math.max(36,String(peak).length*8+12)?" always":""}">${markers}</g>${label}</g>`}).join("");
- const grid=Array.from({length:5},(_,i)=>{const y=bottom-i*height/4;return `<line class="chart-grid" x1="${left}" x2="${right}" y1="${y}" y2="${y}"/><text x="2" y="${y+4}">${fmt.format(i*step)}</text>`}).join("");
- root.innerHTML=`<svg viewBox="0 0 ${width} ${bottom+35}" role="group" aria-label="Visites et clics par jour">${grid}${groups}</svg><div class="chart-tooltip" role="tooltip" hidden></div>`;
- const show=index=>{const b=buckets[index];if(!b)return;$("chart-detail").textContent=description(b);root.querySelectorAll("[data-bucket]").forEach(g=>g.classList.toggle("selected",Number(g.dataset.bucket)===index));const tooltip=root.querySelector('.chart-tooltip');tooltip.hidden=false;tooltip.innerHTML=`<strong>${esc(b.start.split('-').reverse().join('/'))}</strong><span>Visites : ${fmt.format(b.views)}</span><span>Clics : ${fmt.format(b.clicks)}</span>`;tooltip.style.left=`${Math.max(0,Math.min(root.clientWidth-155,(left+slot*(index+.5))/width*root.clientWidth-75))}px`};
- const select=event=>{const g=event.target.closest("[data-bucket]");if(g)show(Number(g.dataset.bucket))};root.onclick=select;root.onpointerover=select;if(root.chartFocusHandler)root.removeEventListener("focusin",root.chartFocusHandler);root.chartFocusHandler=select;root.addEventListener("focusin",select);root.onpointerleave=()=>{root.querySelector('.chart-tooltip').hidden=true};
- root.onkeydown=event=>{const g=event.target.closest("[data-bucket]");if(!g)return;if(event.key==="Enter"||event.key===" "){event.preventDefault();show(Number(g.dataset.bucket))}else if(event.key==="Escape"){root.querySelector('.chart-tooltip').hidden=true}else if(event.key==="ArrowRight"||event.key==="ArrowLeft"){event.preventDefault();const index=Math.max(0,Math.min(buckets.length-1,Number(g.dataset.bucket)+(event.key==="ArrowRight"?1:-1)));root.querySelector(`[data-bucket="${index}"]`).focus()}};
- $("chart-detail").textContent=buckets.length?(matchMedia('(pointer:coarse)').matches?"Touchez une barre pour afficher les chiffres.":""):"Aucune donnée sur cette période.";
-}
+function chart(days,labels=["Visites","Clics publics"]){if(state.chart===days&&state.chartLabels?.join("|")===labels.join("|")&&chartRenderedWidth===$("chart").clientWidth&&$("chart").children.length)return;state.chart=days;state.chartLabels=labels;chartRenderedWidth=$("chart").clientWidth;StudioCharts.timeline($("chart"),$("chart-detail"),days,labels)}
 
 let statsRequest=0;
-async function loadStats(){const request=++statsRequest;let range;
+async function loadStats(force=false){if(force===true)reportCache.clear();const request=++statsRequest;let range;
  try{range=dates();$("stats-range-error").textContent=""}catch(error){$("stats-range-error").textContent=error.message;return}
  try{
- const data=await api("/api/stats?"+new URLSearchParams(range)),stories=data.stories||[],tracked=data.tracked||[],previous=$("source").value;
+ const data=await reportApi("/api/stats?"+new URLSearchParams(range)),stories=data.stories||[],tracked=data.tracked||[],previous=$("source").value;
  if(request!==statsRequest)return;
+ if(renderedData===data&&renderedSource===$("source").value){syncAnalysis();return}
  const trackedNames=new Map([...Object.entries(data.source_names||{}),...tracked.map(x=>[x.source,x.source_name])]);
  const sources=[...new Set([...data.rows.map(x=>x.source),...stories.map(x=>x.source),...tracked.map(x=>x.source),...(data.promo_code_copies||[]).map(x=>x.source),...(data.campaign_metrics||[]).map(x=>x.source)])].sort();
  $("source").replaceChildren(new Option("Toutes les sources",""),...sources.map(x=>new Option(trackedNames.get(x)||names[x]||x,x)));if(sources.includes(previous))$("source").value=previous;
  const source=$("source").value,rows=data.rows.filter(x=>!source||x.source===source),storyRows=stories.filter(x=>!source||x.source===source),trackedRows=tracked.filter(x=>!source||x.source===source),days=new Map(),bySource=new Map(),byLink=new Map(),linkSources=new Map(),labels=new Map(),byStory=new Map();
+ const sharedDays=new Map(),copyDays=new Map(),campaignDays=new Map();
+ const addDay=(map,day,total,index=1)=>{const pair=map.get(day)||[0,0];pair[index]+=total;map.set(day,pair)};
  for(let d=new Date(range.start+"T12:00Z");d<=new Date(range.end+"T12:00Z");d.setUTCDate(d.getUTCDate()+1))days.set(d.toISOString().slice(0,10),[0,0]);
  let views=0,clicks=0,storyClicks=0;
  for(const row of rows){labels.set(row.link,row.label||row.link);const pair=days.get(row.day);if(!pair)continue;if(row.kind==="view"){views+=row.total;pair[0]+=row.total;bySource.set(row.source,(bySource.get(row.source)||0)+row.total)}else if(row.kind==="click"){clicks+=row.total;pair[1]+=row.total;byLink.set(row.link,(byLink.get(row.link)||0)+row.total);const sources=linkSources.get(row.link)||new Map();sources.set(row.source,(sources.get(row.source)||0)+row.total);linkSources.set(row.link,sources)}}
- for(const row of trackedRows){storyClicks+=row.total;const key="tracked:"+row.link_id,item=byStory.get(key)||{label:row.label+" · Lien suivi",total:0,sources:new Map()};item.total+=row.total;item.sources.set(row.source_name,(item.sources.get(row.source_name)||0)+row.total);byStory.set(key,item);bySource.set(row.source,(bySource.get(row.source)||0)+row.total)}
- for(const row of storyRows){storyClicks+=row.total;const item=byStory.get(row.promotion_id)||{label:row.label,total:0,sources:new Map()};item.total+=row.total;item.sources.set(row.source,(item.sources.get(row.source)||0)+row.total);byStory.set(row.promotion_id,item);bySource.set(row.source,(bySource.get(row.source)||0)+row.total)}
+ for(const row of trackedRows){addDay(sharedDays,row.day,row.total);storyClicks+=row.total;const key="tracked:"+row.link_id,item=byStory.get(key)||{label:row.label+" · Lien suivi",total:0,sources:new Map()};item.total+=row.total;item.sources.set(row.source_name,(item.sources.get(row.source_name)||0)+row.total);byStory.set(key,item);bySource.set(row.source,(bySource.get(row.source)||0)+row.total)}
+ for(const row of storyRows){addDay(sharedDays,row.day,row.total);addDay(campaignDays,row.day,row.total);storyClicks+=row.total;const item=byStory.get(row.promotion_id)||{label:row.label,total:0,sources:new Map()};item.total+=row.total;item.sources.set(row.source,(item.sources.get(row.source)||0)+row.total);byStory.set(row.promotion_id,item);bySource.set(row.source,(bySource.get(row.source)||0)+row.total)}
  $("views").textContent=fmt.format(views);$("clicks").textContent=fmt.format(clicks);$("ratio").textContent=views?(clicks*100/views).toLocaleString("fr-FR",{maximumFractionDigits:1})+" %":"—";
  $("story-clicks").textContent=fmt.format(storyClicks);$("story-promos").textContent=fmt.format(byStory.size);$("story-total").textContent=fmt.format(storyClicks);$("story-total").parentElement.title=fmt.format(byStory.size)+" lien(s) ou campagne(s)";
  metricRows("story-list",[...byStory.values()].sort((a,b)=>b.total-a.total).map(item=>({name:item.label,total:item.total,unit:"ouvertures",details:[...item.sources].sort((a,b)=>b[1]-a[1]).map(([key,count])=>(names[key]||key)+" : "+fmt.format(count))})),"Aucun lien partagé ouvert sur cette période.");
@@ -90,18 +114,19 @@ async function loadStats(){const request=++statsRequest;let range;
  for(const row of (data.campaign_metrics||[]).filter(x=>!source||x.source===source)){const value=getCampaign(row.id);value.name=row.name||value.name;value[row.kind==="click"?"clicks":"impressions"]+=row.total;campaignStats.set(row.id,value)}
  for(const row of storyRows){const value=getCampaign(row.promotion_id);value.name=row.label;value.shared+=row.total;campaignStats.set(row.promotion_id,value)}
  let copyTotal=0;
- for(const row of (data.promo_code_copies||[]).filter(x=>!source||x.source===source)){copyTotal+=row.total;const metric=getCampaign(row.id);metric.name=row.name;metric.copies+=row.total;campaignStats.set(row.id,metric);const key=JSON.stringify([row.id,row.code]);const value=copyStats.get(key)||{id:row.id,name:row.name,code:row.code,total:0};value.total+=row.total;copyStats.set(key,value)}
+ for(const row of (data.promo_code_copies||[]).filter(x=>!source||x.source===source)){copyTotal+=row.total;addDay(copyDays,row.day,row.total);const metric=getCampaign(row.id);metric.name=row.name;metric.copies+=row.total;campaignStats.set(row.id,metric);const key=JSON.stringify([row.id,row.code]);const value=copyStats.get(key)||{id:row.id,name:row.name,code:row.code,total:0};value.total+=row.total;copyStats.set(key,value)}
  $("promo-copies").textContent=fmt.format(copyTotal);$("promo-copy-total").textContent=fmt.format(copyTotal);
- metricRows("promo-copy-list",[...copyStats.values()].sort((a,b)=>b.total-a.total).map(value=>{const impressions=campaignStats.get(value.id)?.impressions||0;return {name:value.name,total:value.total,unit:"copies",details:[value.code,...(impressions?["Taux de copie : "+(value.total*100/impressions).toLocaleString("fr-FR",{maximumFractionDigits:1})+" %"]:[])]}}),"Aucun code copié sur cette période.");
+ metricRows("promo-copy-list",[...copyStats.values()].sort((a,b)=>b.total-a.total).map(value=>{const impressions=campaignStats.get(value.id)?.impressions||0;return {name:value.name+" · "+value.code,total:value.total,unit:"copies",details:[...(impressions?["Taux de copie : "+(value.total*100/impressions).toLocaleString("fr-FR",{maximumFractionDigits:1})+" %"]:[])]}}),"Aucun code copié sur cette période.");
  await loadCampaigns(campaignStats,request);if(request!==statsRequest)return;
- chart([...days].map(([day,value])=>[day,...value]));const sorted=map=>[...map].sort((a,b)=>b[1]-a[1]);metricRows("top-links",sorted(byLink).map(([key,value])=>({name:labels.get(key)||key,total:value,unit:"clics publics",details:[...linkSources.get(key)].map(([source,total])=>(trackedNames.get(source)||names[source]||source)+" : "+fmt.format(total))})),"Aucun clic public sur cette période.");
- const sourceItems=sorted(bySource).map(([key,value])=>[trackedNames.get(key)||names[key]||key,value]);
- metricRows("source-details",sourceItems.map(([name,total])=>({name,total,unit:"visites et ouvertures",details:[]})),"Aucune source sur cette période.");
- const main=sourceItems.slice(0,5),rest=sourceItems.slice(5).reduce((n,x)=>n+x[1],0);sourceDonut(rest?[...main,["Autres sources",rest]]:main);
+ const campaignIds=new Set(campaignRows.map(row=>row.id));for(const row of data.campaign_metrics||[])if(row.kind==="click"&&campaignIds.has(row.id)&&(!source||row.source===source))addDay(campaignDays,row.day,row.total,0);
+ analysisDays.public=[...days].map(([day,value])=>[day,...value]);for(const [scope,map] of [["shared",sharedDays],["copies",copyDays],["campaigns",campaignDays]])analysisDays[scope]=[...days.keys()].map(day=>[day,...(map.get(day)||[0,0])]);const sorted=map=>[...map].sort((a,b)=>b[1]-a[1]);metricRows("top-links",sorted(byLink).map(([key,value])=>({name:labels.get(key)||key,total:value,unit:"clics publics",details:[...linkSources.get(key)].map(([source,total])=>(trackedNames.get(source)||names[source]||source)+" : "+fmt.format(total))})),"Aucun clic public sur cette période.");
+ sourceRows=sorted(bySource).map(([key,value])=>[trackedNames.get(key)||names[key]||key,value]);
+ drawSources();syncAnalysis();renderedData=data;renderedSource=source;
+
  }catch(error){say(error.message,true)}}
 $("filters").onsubmit=event=>event.preventDefault();
 $("period").addEventListener("change",()=>{const custom=$("period").value==="custom";document.querySelectorAll("[data-custom-period]").forEach(node=>node.hidden=!custom);if(custom&&!$("stats-start").value){$("period").value="14";const range=dates();$("stats-start").value=range.start;$("stats-end").value=range.end;$("period").value="custom"}loadStats()});
-$("stats-start").onchange=loadStats;$("stats-end").onchange=loadStats;$("source").addEventListener("change",loadStats);new ResizeObserver(()=>{const width=$("chart").clientWidth;if(width>0&&width!==chartRenderedWidth&&state.chart.length)chart(state.chart)}).observe($("chart"));
+$("stats-start").onchange=loadStats;$("stats-end").onchange=loadStats;$("source").addEventListener("change",loadStats);new ResizeObserver(()=>{const width=$("chart").clientWidth;if(width>0&&width!==chartRenderedWidth&&state.chart.length)chart(state.chart,state.chartLabels)}).observe($("chart"));
 
 function canStory(item){try{const url=new URL(item.url);return ["http:","https:"].includes(url.protocol)&&!url.username&&!url.password&&url.hostname!==new URL(publicSiteUrl||location.origin).hostname}catch{return false}}
 function storyButton(item){if(item.type==="classic")return "";const disabled=!canStory(item),title=disabled?"URL requise":"Copier le lien tracké pour la plateforme choisie";return `<div class="share-picker"><select aria-label="Plateforme de partage pour ${esc(item.internal_name)}" ${disabled?"disabled":""}>${window.LinksTracking?.campaignOptions()||'<option value="instagram">Instagram Story</option><option value="youtube">YouTube Post</option><option value="facebook">Facebook</option><option value="tiktok">TikTok</option><option value="">Autre / sans source</option>'}</select><button data-action="copy-story" class="story-link-button" title="${title}" aria-label="${title}" ${disabled?"disabled":""}>🔗</button></div>`;}
@@ -256,11 +281,12 @@ const iconPaths={
 };
 document.querySelectorAll("[data-icon]").forEach(node=>{node.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${iconPaths[node.dataset.icon]||""}</svg>`});
 async function loadCampaigns(metrics=new Map(),request=0){try{
- const [current,archived]=await Promise.all([api("/api/content"),api("/api/content?archived=1")]);const campaigns=current.items;if(request&&request!==statsRequest)return;
+ const [current,archived]=await Promise.all([reportApi("/api/content"),reportApi("/api/content?archived=1")]);const campaigns=current.items;if(request&&request!==statsRequest)return;
  const allCampaigns=new Map([...campaigns,...archived.items].filter(x=>x.type!=="classic").map(x=>[x.id,x]));
  const classicIds=new Set([...campaigns,...archived.items].filter(x=>x.type==="classic").map(x=>x.id));
  for(const [id,value] of metrics){if(!classicIds.has(id)&&!allCampaigns.has(id))allCampaigns.set(id,{id,internal_name:value.name||id,status:"Historique"})}
- metricRows("campaign-details",[...allCampaigns.values()].map(item=>{const value=metrics.get(item.id)||{};return {name:item.internal_name,total:value.clicks||0,unit:"clics publics",details:[item.status,"Impressions : "+fmt.format(value.impressions||0),"Ouvertures partagées : "+fmt.format(value.shared||0),"Copies : "+fmt.format(value.copies||0),"CTR page : "+(value.impressions?(value.clicks*100/value.impressions).toLocaleString("fr-FR",{maximumFractionDigits:1})+" %":"—")]}}),"Aucune campagne.");
+ campaignRows=[...allCampaigns.values()].map(item=>{const value=metrics.get(item.id)||{};return {id:item.id,name:item.internal_name,metrics:{clicks:value.clicks||0,shared:value.shared||0,impressions:value.impressions||0,copies:value.copies||0},series:[{label:"Clics publics",value:value.clicks||0},{label:"Ouvertures partagées",value:value.shared||0}],details:[item.status,"Impressions : "+fmt.format(value.impressions||0),"Clics publics : "+fmt.format(value.clicks||0),"Ouvertures partagées : "+fmt.format(value.shared||0),"Copies : "+fmt.format(value.copies||0),"CTR page : "+(value.impressions?(value.clicks*100/value.impressions).toLocaleString("fr-FR",{maximumFractionDigits:1})+" %":"—")]}});
+ drawCampaignRanking();
  const items=campaigns.filter(item=>item.type!=="classic"&&item.status==="Actif").map(item=>{const value=metrics.get(item.id)||{clicks:0,shared:0,impressions:0,copies:0};return {...item,...value,pageClicks:value.clicks,sharedClicks:value.shared,totalClicks:value.clicks+value.shared,ctr:value.impressions?Math.round(value.clicks*1000/value.impressions)/10:null}});
  $("active-campaigns").innerHTML=items.length?items.map(item=>`<article class="campaign-card">${item.image?`<img src="${esc(LinksTheme.asset(item.image))}" alt="" loading="lazy">`:'<span class="type-mark" aria-hidden="true">↗</span>'}<div><strong>${esc(item.internal_name)}</strong><small>${esc(periodText(item.start_at||item.created_at))} → ${esc(periodText(item.end_at))}</small><span class="status active">Actif</span><div class="campaign-metrics"><span><small>Clics publics</small><b>${fmt.format(item.pageClicks||0)}</b></span><span><small>Ouvertures partagées</small><b>${fmt.format(item.sharedClicks||0)}</b></span></div><button type="button" data-open-statistics="campaigns">Statistiques</button></div><button type="button" data-open-content aria-label="Gérer ${esc(item.internal_name)}">→</button></article>`).join(""):'<p class="empty">Aucune campagne en cours.</p>';
  }catch(error){$("active-campaigns").textContent=error.message}}
