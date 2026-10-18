@@ -95,7 +95,7 @@ const {tmpdir}=require('node:os');
   assert.equal((await request('/api/stats',undefined,'GET')).promo_code_copies.reduce((n,x)=>n+x.total,0),afterFallback.promo_code_copies.reduce((n,x)=>n+x.total,0));
   await page.evaluate(()=>{document.execCommand=window.nativeExec;navigator.clipboard.writeText=window.nativeWrite});
   const foreign=await fetch('http://127.0.0.1:3003/metrics',{method:'POST',headers:{Origin:'https://foreign.example','Content-Type':'application/json','User-Agent':'Mozilla/5.0'},body:JSON.stringify({kind:'promo_code_copy',link:'block:'+first.id,code:'TEST10'})});assert.equal(foreign.status,403);
-  const dashboard=await context.newPage();await dashboard.goto(admin);await dashboard.waitForFunction(()=>document.getElementById('promo-copies').textContent==='2');assert((await dashboard.locator('#promo-copy-list').textContent()).includes('TEST10'));await dashboard.close();
+  const dashboard=await context.newPage();await dashboard.goto(admin);await dashboard.waitForFunction(()=>document.getElementById('promo-copies').textContent==='2');await dashboard.locator('[data-open-statistics=all]').click();await dashboard.selectOption('#analysis-scope','copies');assert((await dashboard.locator('#promo-copy-list').textContent()).includes('TEST10'));await dashboard.close();
   // Amazon works with and without artwork, with an explicit icon or recognized domain only.
   for(const width of [320,1440]){await page.setViewportSize({width,height:900});
    const rendered=await page.evaluate(()=>{

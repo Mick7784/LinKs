@@ -8,3 +8,9 @@ test('shared collection filters details, sorts deterministically and bounds page
  assert.equal(rows[0].total,0,'input must remain unchanged');
  assert.deepEqual(StudioCollection.select(rows,{query:'absent'}),{rows:[],total:0,pages:1,page:0});
 });
+test('overview caps results at five and explicit input order supports one shared legend',()=>{
+ const rows=Array.from({length:25},(_,i)=>({name:'Source '+i,total:25-i,details:[]}));
+ assert.equal(StudioCollection.select(rows,{pageSize:5}).rows.length,5);
+ assert.deepEqual(StudioCollection.select(rows,{sort:'input',pageSize:20}).rows,rows.slice(0,20));
+ assert.equal(StudioCollection.select(rows,{query:'Source 24'}).pages,1);
+});
