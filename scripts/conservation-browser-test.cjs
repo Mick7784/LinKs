@@ -46,8 +46,8 @@ const {readFileSync,mkdtempSync,rmSync,mkdirSync}=require('node:fs'),{join,resol
    if(process.env.V1310_SCREENSHOTS&&[1440,390].includes(width)&&theme!=='system'){mkdirSync(process.env.V1310_SCREENSHOTS,{recursive:true});await page.screenshot({path:join(process.env.V1310_SCREENSHOTS,'admin-'+theme+'-'+width+'.png'),fullPage:true})}
   }}
   await page.setViewportSize({width:1440,height:1000});await page.locator('[data-tab=content]').click();await page.locator('.tracked-item').waitFor();
-  await page.selectOption('#tracked-period','all');await page.locator('[data-tracked-action=toggle]').click();assert((await page.locator('.tracked-panel').textContent()).includes('Historique')||(await page.locator('.tracked-panel').textContent()).includes('Toutes périodes'));
-  await page.selectOption('#tracked-period','7');await page.waitForFunction(()=>document.querySelector('.tracked-panel')?.textContent.includes('7 derniers jours'));
+  await page.locator('[data-open-statistics=shared]').first().click();await page.locator('#statistics.active').waitFor();assert.equal(await page.locator('#analysis-scope').inputValue(),'shared');await page.selectOption('#period','7');await page.locator('#story-list').waitFor();
+
   await page.locator('[data-tab=appearance]').click();await page.getByRole('button',{name:'Créer un thème',exact:true}).click();
   // Enum controls must update without referencing the image upload guard.
   const enumLabel=await page.evaluate(async()=>{const {schema}=await LinksTheme.ready;return Object.values(schema).find(x=>x.type==='enum').label});

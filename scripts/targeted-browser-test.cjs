@@ -4,8 +4,8 @@ const {spawn,execFileSync}=require('node:child_process');
 const {mkdtempSync,rmSync,readFileSync}=require('node:fs');
 const {tmpdir}=require('node:os');const {join,resolve}=require('node:path');
 (async()=>{const temp=mkdtempSync(join(tmpdir(),'links-targeted-'));let browser;const origin='http://127.0.0.1:8081';
-execFileSync('python3',[resolve(__dirname,'fixtures.py'),join(temp,'stats.db')]);
-const server=spawn('python3',[resolve(__dirname,'analytics.py')],{env:{...process.env,ANALYTICS_DB:join(temp,'stats.db'),UPLOAD_DIR:join(temp,'uploads')},stdio:'ignore'});
+execFileSync(process.env.PYTHON_PATH||'python3',[resolve(__dirname,'fixtures.py'),join(temp,'stats.db')]);
+const server=spawn(process.env.PYTHON_PATH||'python3',[resolve(__dirname,'analytics.py')],{env:{...process.env,ANALYTICS_DB:join(temp,'stats.db'),UPLOAD_DIR:join(temp,'uploads')},stdio:'ignore'});
 const api=async(path,data)=>{const r=await fetch(origin+path,{method:data?'POST':'GET',headers:{'Content-Type':'application/json','X-Links-Request':'1'},body:data?JSON.stringify(data):undefined});assert(r.ok,await r.clone().text());return r.json()};
 try{for(let i=0;i<100;i++){try{if((await fetch(origin+'/healthz')).ok)break}catch{}await new Promise(r=>setTimeout(r,100))}
 const classic=await api('/api/content',{type:'classic',title:'Amazon',internal_name:'Amazon historique',url:'https://amazon.fr',icon:'cart',badge:'Partenaire',priority:'high',start_at:'2025-01-01T00:00:00Z'});

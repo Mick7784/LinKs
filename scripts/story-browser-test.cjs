@@ -11,8 +11,8 @@ const { join, resolve } = require('node:path');
   const database = join(temp, 'stats.db');
   const admin = 'http://127.0.0.1:8081';
   const publicOrigin = 'http://127.0.0.1:3003';
-  execFileSync('python3',[resolve(__dirname,'fixtures.py'),database,publicOrigin]);
-  const server = spawn('python3', [resolve(__dirname, 'analytics.py')], {
+  execFileSync(process.env.PYTHON_PATH||'python3',[resolve(__dirname,'fixtures.py'),database,publicOrigin]);
+  const server = spawn(process.env.PYTHON_PATH||'python3', [resolve(__dirname, 'analytics.py')], {
     env: { ...process.env, ANALYTICS_DB: database, UPLOAD_DIR: join(temp, 'uploads'), ANALYTICS_ORIGIN: publicOrigin },
     stdio: 'inherit'
   });
@@ -53,8 +53,8 @@ const { join, resolve } = require('node:path');
     assert.equal(page.url(), promo.url);
     const legacy = await api('/api/content/'+id+'/story-link', {});
     const token = new URL(legacy.url).pathname.split('/').at(-1);
-    execFileSync('python3', ['-c', "import sqlite3,sys;from datetime import datetime,timedelta;from zoneinfo import ZoneInfo;db=sqlite3.connect(sys.argv[1]);day=(datetime.now(ZoneInfo('Europe/Paris'))-timedelta(days=20)).date().isoformat();db.execute('INSERT INTO counts VALUES(?,?,?,?,1)',(day,'instagram-story','story','story:'+sys.argv[2]+':09'));db.commit()", database, token]);
-    execFileSync('python3', ['-c', "import sqlite3,sys;from datetime import datetime;from zoneinfo import ZoneInfo;db=sqlite3.connect(sys.argv[1]);day=datetime.now(ZoneInfo('Europe/Paris')).date().isoformat();db.executemany('INSERT INTO counts VALUES(?,?,?,?,?)',[(day,'youtube','view','',2),(day,'youtube','click','Amazon',1)]);db.commit()", database]);
+    execFileSync(process.env.PYTHON_PATH||'python3', ['-c', "import sqlite3,sys;from datetime import datetime,timedelta;from zoneinfo import ZoneInfo;db=sqlite3.connect(sys.argv[1]);day=(datetime.now(ZoneInfo('Europe/Paris'))-timedelta(days=20)).date().isoformat();db.execute('INSERT INTO counts VALUES(?,?,?,?,1)',(day,'instagram-story','story','story:'+sys.argv[2]+':09'));db.commit()", database, token]);
+    execFileSync(process.env.PYTHON_PATH||'python3', ['-c', "import sqlite3,sys;from datetime import datetime;from zoneinfo import ZoneInfo;db=sqlite3.connect(sys.argv[1]);day=datetime.now(ZoneInfo('Europe/Paris')).date().isoformat();db.executemany('INSERT INTO counts VALUES(?,?,?,?,?)',[(day,'youtube','view','',2),(day,'youtube','click','Amazon',1)]);db.commit()", database]);
     const stats = async expected => {
       await page.goto(admin);
       await page.waitForFunction(n => document.getElementById('story-clicks').textContent === String(n), expected);
