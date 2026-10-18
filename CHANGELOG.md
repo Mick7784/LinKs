@@ -1,5 +1,25 @@
 # Changelog
 
+## V1.311
+
+### ✨ Statistiques et administration
+
+- Nouvelle page Statistiques : liens publics et partagés, campagnes, sources et copies de codes promo, avec recherche, tri, détails et pagination commune.
+- Dashboard limité aux cinq KPI, au graphique synthétique et aux campagnes actives. Accès contextuels aux analyses ; planning déplacé dans Liens & campagnes.
+- Synthèse partagée sans duplication, périodes personnalisées pour les historiques, composants autonomes de navigation, collection paginée et graphique de répartition.
+- Analyses des liens suivis centralisées ; retrait de leurs anciens contrôles et styles analytiques redondants. Correction des libellés liés à `/go/`.
+
+### 🐛 Campagnes programmées
+
+- Les campagnes apparaissent et expirent sur une page publique déjà ouverte. Le carrousel précédent est nettoyé avant reconstruction.
+- Une seule collecte de visite et une impression par campagne visible et par chargement de page, sans doublon lors des actualisations.
+
+### 🛡️ Conservation et validation
+
+- Réutilisation des API, calculs, migrations et protections V1.310. Aucune modification du schéma SQLite ni des identités, sources, jetons ou URL courtes.
+- Tests Python, JavaScript et navigateur, dont 504 liens, archives, périodes historiques, sources séparées, texte hostile et transitions programmées sans rechargement.
+- Pipeline existant de validation Docker et publication AMD64/ARM64 conservé. Aucun accès au VPS ni à son volume de données.
+
 ## V1.310
 
 ### 🛡️ Conservation des données et des liens
