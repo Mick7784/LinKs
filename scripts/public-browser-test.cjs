@@ -155,6 +155,20 @@ const {tmpdir}=require('node:os');
   await page.evaluate(()=>{localStorage.setItem('links-admin-theme','light');document.documentElement.dataset.theme='light'});assert.equal(await page.locator('body').evaluate(n=>getComputedStyle(n).backgroundColor),'rgb(6, 14, 36)');
   await request('/api/content/'+second.id+'/archive',{});await request('/api/content/'+future.id+'/archive',{});await load();assert.equal(await page.locator('.carousel-slide').count(),1);assert(await page.locator('#offers-controls').isHidden());
   await request('/api/content/'+first.id+'/archive',{});await page.goto(origin);await page.waitForSelector('#links .card');assert(await page.locator('#offers').isHidden());
+  // A public tab must cross scheduled boundaries without reload or duplicate metrics.
+  const scheduled=await request('/api/content',block('Campagne en direct',{start_at:new Date(Date.now()+5000).toISOString(),end_at:new Date(Date.now()+16000).toISOString()}));
+  const events=[];const capture=req=>{if(new URL(req.url()).pathname==='/metrics')events.push(JSON.parse(req.postData()))};page.on('request',capture);
+  await page.goto(origin+'?utm_source=live-test');await page.locator('#links .card').first().waitFor();assert(await page.locator('#offers').isHidden());
+  await page.locator('.offer-title').filter({hasText:'Campagne en direct'}).waitFor({timeout:12000});await page.locator('#offers').scrollIntoViewIfNeeded();
+  await page.waitForFunction(()=>document.querySelector('#offers')?.hidden===false);
+  await page.waitForTimeout(300);
+  const initialMetrics=events.filter(e=>e.kind==='impression').length;assert.equal(initialMetrics,1);
+  const current=(await request('/api/content',undefined,'GET')).items.find(x=>x.id===scheduled.id);
+  await request('/api/content/'+scheduled.id,{...current,title:'Campagne mise à jour'},'PUT');
+  await page.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));await page.locator('.offer-title').filter({hasText:'Campagne mise à jour'}).waitFor();
+  await page.waitForTimeout(300);assert.equal(events.filter(e=>e.kind==='view').length,1);assert.equal(events.filter(e=>e.kind==='impression').length,initialMetrics);
+  await page.waitForFunction(()=>document.getElementById('offers').hidden,null,{timeout:18000});assert.equal(await page.locator('.carousel-slide').count(),0);assert.equal(events.filter(e=>e.kind==='click').length,0);
+  page.off('request',capture);
   assert.deepEqual(consoleErrors,[],'Console errors during successful public flows');
   // Existing fetch fallback and failure paths remain operational.
   await page.route('**/api/public-config',r=>r.fulfill({status:503,body:'{}'}));await page.goto(origin);await page.waitForSelector('#links .card');assert.equal(await page.locator('#links .card').count(),config.links.filter(x=>x.type==='classic').length);await page.unroute('**/api/public-config');

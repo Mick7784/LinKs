@@ -16,7 +16,8 @@ function startMetrics(config) {
   view(); document.addEventListener('visibilitychange', view);
   function click(e) { if (e.type === 'auxclick' && e.button !== 1) return; const a = e.target.closest('a[data-metric]'); if (a && e.isTrusted) send('click', a.dataset.metric); }
   document.addEventListener('click', click); document.addEventListener('auxclick', click);
-  window.addEventListener('links:impression', event => { const link=event.detail?.link; if(typeof link==='string' && link.startsWith('block:')) send('impression',link); });
+  const impressed=new Set();
+  window.addEventListener('links:impression', event => { const link=event.detail?.link; if(typeof link==='string' && link.startsWith('block:')&&!impressed.has(link)){impressed.add(link);send('impression',link);} });
 }
 if(window.LINKS_PUBLIC_CONFIG)startMetrics(window.LINKS_PUBLIC_CONFIG);else window.addEventListener("links:config",({detail})=>startMetrics(detail),{once:true});
 

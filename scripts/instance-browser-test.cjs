@@ -4,7 +4,7 @@ const {spawn}=require('node:child_process'),{createServer}=require('node:http');
 const {mkdtempSync,rmSync,readFileSync}=require('node:fs'),{join,resolve}=require('node:path'),{tmpdir}=require('node:os');
 (async()=>{
  const temp=mkdtempSync(join(tmpdir(),'links-setup-')),admin='http://127.0.0.1:8081',publicOrigin='http://127.0.0.1:18080';
- const backend=spawn('python3',[resolve(__dirname,'analytics.py')],{env:{...process.env,ANALYTICS_DB:join(temp,'analytics.db'),UPLOAD_DIR:join(temp,'uploads')},stdio:'inherit'});
+ const backend=spawn(process.env.PYTHON_PATH||'python3',[resolve(__dirname,'analytics.py')],{env:{...process.env,ANALYTICS_DB:join(temp,'analytics.db'),UPLOAD_DIR:join(temp,'uploads')},stdio:'inherit'});
  const site=createServer(async(req,res)=>{try{if(req.url.startsWith('/api/')||req.url.startsWith('/uploads/')||req.url.startsWith('/assets/')){const r=await fetch('http://127.0.0.1:3003'+req.url);res.statusCode=r.status;res.setHeader('Content-Type',r.headers.get('content-type')||'application/json');res.end(Buffer.from(await r.arrayBuffer()));return}const path=req.url==='/'?'index.html':req.url.slice(1);if(!['index.html','app.js','cards.js','style.css','icons.css','config.js','metrics.js','theme.js','theme.css','theme-tokens.json','asset-library.json'].includes(path)){res.writeHead(404).end();return}res.setHeader('Content-Type',path.endsWith('.js')?'application/javascript':path.endsWith('.css')?'text/css':path.endsWith('.json')?'application/json':'text/html');res.end(readFileSync(resolve(__dirname,'../site',path)))}catch(e){res.writeHead(500).end(e.message)}});
  let browser;
  try{

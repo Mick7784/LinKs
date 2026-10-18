@@ -52,7 +52,8 @@ jobs:
           python3 scripts/youtube_test.py
           python3 scripts/themes_test.py
           python3 scripts/release_notes_test.py
-          node --test scripts/metrics.test.cjs scripts/dates.test.cjs scripts/video-api.test.mjs scripts/calendar.test.cjs
+          node --test scripts/metrics.test.cjs scripts/dates.test.cjs scripts/video-api.test.mjs scripts/calendar.test.cjs scripts/collection.test.cjs
+          NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/statistics-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/instance-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/story-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/admin-browser-test.cjs
@@ -158,5 +159,8 @@ jobs:
           test "$(docker buildx imagetools inspect "$IMAGE:$RELEASE_TAG" --format '{{.Manifest.Digest}}')" = "$(docker buildx imagetools inspect "$IMAGE:latest" --format '{{.Manifest.Digest}}')"
           docker buildx imagetools inspect --raw "$IMAGE:$RELEASE_TAG" > /tmp/links-release-manifest.json
           python3 -c 'import json; data=json.load(open("/tmp/links-release-manifest.json")); platforms={(m.get("platform",{}).get("os"),m.get("platform",{}).get("architecture")) for m in data["manifests"]}; assert {("linux","amd64"),("linux","arm64")} <= platforms, platforms'
+          gh release upload "$RELEASE_TAG" /tmp/links-release-manifest.json --clobber
+          gh release download "$RELEASE_TAG" --pattern links-release-manifest.json --dir /tmp/links-release-verification
+          cmp /tmp/links-release-manifest.json /tmp/links-release-verification/links-release-manifest.json
 
 
