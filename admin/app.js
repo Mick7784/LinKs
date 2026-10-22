@@ -33,6 +33,25 @@ function dates(){
 const analyticCollections=new Map(),analyticRows=new Map();
 let campaignRows=[],sourceRows=[],analysisDays={},renderedData=null,renderedSource="";
 const analysisScope=()=>$("analysis-scope").value;
+function readableSourceName({key,label}){
+ if(key==="instagram-story"||label==="Ancien lien partagé (source incertaine)")return "Ancien lien partagé";
+ if(key==="shared-unknown"||label==="Lien partagé (source inconnue)")return "Source inconnue";
+ return label;
+}
+function renderSourceBreakdown(sources,total){
+ const list=document.createElement("div");list.className="engagement-source-list";list.setAttribute("role","list");
+ for(const source of sources){
+  const item=document.createElement("div");item.className="engagement-source-item";item.setAttribute("role","listitem");
+  if(source.key==="instagram-story")item.classList.add("is-uncertain");
+  if(source.key==="shared-unknown")item.classList.add("is-unknown");
+  const label=document.createElement("span");label.className="engagement-source-name";label.textContent=readableSourceName(source);
+  const numbers=document.createElement("span");numbers.className="engagement-source-figures";
+  const count=document.createElement("strong");count.textContent=fmt.format(source.total);
+  const percent=document.createElement("small");percent.textContent=(total>0?source.total/total*100:0).toLocaleString("fr-FR",{maximumFractionDigits:1})+" %";
+  numbers.append(count,percent);item.append(label,numbers);list.append(item);
+ }
+ return list;
+}
 function collectionOptions(){const preview=analysisScope()==="all";return {preview,pageSize:preview?5:20,query:preview?"":$("analysis-search").value,sort:preview?"total":$("analysis-sort").value}}
 function metricRows(id,items,empty){
  analyticRows.set(id,items);
@@ -43,7 +62,17 @@ function metricRows(id,items,empty){
    row.innerHTML=`<div class="engagement-copy"><strong>${esc(item.name)}</strong></div><div class="engagement-value"><strong>${fmt.format(item.total)}</strong><small>${esc(item.unit)}</small></div>`;
    const visual=item.series||([{label:item.unit,value:item.total}]);
    if(id!=="promo-copy-list")row.append(StudioCharts.ranking(visual,item.series?context.seriesMax:context.max));
-   if(!context.preview&&item.details.length){const details=document.createElement("details"),summary=document.createElement("summary");summary.textContent="Détails";details.append(summary);details.addEventListener("toggle",()=>{if(details.open&&!details.dataset.loaded){details.dataset.loaded="true";const text=document.createElement("small");text.textContent=item.details.join(" · ");details.append(text)}},{once:false});row.querySelector(".engagement-copy").append(details)}
+   if(!context.preview&&item.details.length){
+     const details=document.createElement("details"),summary=document.createElement("summary");summary.textContent="Détails";details.append(summary);
+     details.addEventListener("toggle",()=>{
+      if(!details.open||details.dataset.loaded)return;
+      details.dataset.loaded="true";
+      if(item.sourceBreakdown)details.append(renderSourceBreakdown(item.sourceBreakdown,item.total));
+      else{const text=document.createElement("small");text.textContent=item.details.join(" · ");details.append(text)}
+     });
+     if(item.sourceBreakdown){details.className="engagement-source-details";row.insertBefore(details,row.querySelector(".ranking-bars"))}
+     else row.querySelector(".engagement-copy").append(details);
+    }
    return row;
   }}));
  }
@@ -108,7 +137,10 @@ async function loadStats(force=false){if(force===true)reportCache.clear();const 
  for(const row of storyRows){addDay(sharedDays,row.day,row.total);addDay(campaignDays,row.day,row.total);storyClicks+=row.total;const item=byStory.get(row.promotion_id)||{label:row.label,total:0,sources:new Map()};item.total+=row.total;item.sources.set(row.source,(item.sources.get(row.source)||0)+row.total);byStory.set(row.promotion_id,item);bySource.set(row.source,(bySource.get(row.source)||0)+row.total)}
  $("views").textContent=fmt.format(views);$("clicks").textContent=fmt.format(clicks);$("ratio").textContent=views?(clicks*100/views).toLocaleString("fr-FR",{maximumFractionDigits:1})+" %":"—";
  $("story-clicks").textContent=fmt.format(storyClicks);$("story-promos").textContent=fmt.format(byStory.size);$("story-total").textContent=fmt.format(storyClicks);$("story-total").parentElement.title=fmt.format(byStory.size)+" lien(s) ou campagne(s)";
- metricRows("story-list",[...byStory.values()].sort((a,b)=>b.total-a.total).map(item=>({name:item.label,total:item.total,unit:"ouvertures",details:[...item.sources].sort((a,b)=>b[1]-a[1]).map(([key,count])=>(names[key]||key)+" : "+fmt.format(count))})),"Aucun lien partagé ouvert sur cette période.");
+ metricRows("story-list",[...byStory.values()].sort((a,b)=>b.total-a.total).map(item=>{
+   const sourceBreakdown=[...item.sources].sort((a,b)=>b[1]-a[1]).map(([key,total])=>({key,label:names[key]||key,total}));
+   return {name:item.label,total:item.total,unit:"ouvertures",sourceBreakdown,details:sourceBreakdown.map(({label,total})=>label+" : "+fmt.format(total))};
+  }),"Aucun lien partagé ouvert sur cette période.");
  const campaignStats=new Map(),copyStats=new Map();
  const getCampaign=id=>campaignStats.get(id)||{clicks:0,impressions:0,shared:0,copies:0};
  for(const row of (data.campaign_metrics||[]).filter(x=>!source||x.source===source)){const value=getCampaign(row.id);value.name=row.name||value.name;value[row.kind==="click"?"clicks":"impressions"]+=row.total;campaignStats.set(row.id,value)}
@@ -119,7 +151,10 @@ async function loadStats(force=false){if(force===true)reportCache.clear();const 
  metricRows("promo-copy-list",[...copyStats.values()].sort((a,b)=>b.total-a.total).map(value=>{const impressions=campaignStats.get(value.id)?.impressions||0;return {name:value.name+" · "+value.code,total:value.total,unit:"copies",details:[...(impressions?["Taux de copie : "+(value.total*100/impressions).toLocaleString("fr-FR",{maximumFractionDigits:1})+" %"]:[])]}}),"Aucun code copié sur cette période.");
  await loadCampaigns(campaignStats,request);if(request!==statsRequest)return;
  const campaignIds=new Set(campaignRows.map(row=>row.id));for(const row of data.campaign_metrics||[])if(row.kind==="click"&&campaignIds.has(row.id)&&(!source||row.source===source))addDay(campaignDays,row.day,row.total,0);
- analysisDays.public=[...days].map(([day,value])=>[day,...value]);for(const [scope,map] of [["shared",sharedDays],["copies",copyDays],["campaigns",campaignDays]])analysisDays[scope]=[...days.keys()].map(day=>[day,...(map.get(day)||[0,0])]);const sorted=map=>[...map].sort((a,b)=>b[1]-a[1]);metricRows("top-links",sorted(byLink).map(([key,value])=>({name:labels.get(key)||key,total:value,unit:"clics publics",details:[...linkSources.get(key)].map(([source,total])=>(trackedNames.get(source)||names[source]||source)+" : "+fmt.format(total))})),"Aucun clic public sur cette période.");
+ analysisDays.public=[...days].map(([day,value])=>[day,...value]);for(const [scope,map] of [["shared",sharedDays],["copies",copyDays],["campaigns",campaignDays]])analysisDays[scope]=[...days.keys()].map(day=>[day,...(map.get(day)||[0,0])]);const sorted=map=>[...map].sort((a,b)=>b[1]-a[1]);metricRows("top-links",sorted(byLink).map(([key,value])=>{
+   const sourceBreakdown=[...linkSources.get(key)].sort((a,b)=>b[1]-a[1]).map(([source,total])=>({key:source,label:trackedNames.get(source)||names[source]||source,total}));
+   return {name:labels.get(key)||key,total:value,unit:"clics publics",sourceBreakdown,details:sourceBreakdown.map(({label,total})=>label+" : "+fmt.format(total))};
+  }),"Aucun clic public sur cette période.");
  sourceRows=sorted(bySource).map(([key,value])=>[trackedNames.get(key)||names[key]||key,value]);
  drawSources();syncAnalysis();renderedData=data;renderedSource=source;
 
