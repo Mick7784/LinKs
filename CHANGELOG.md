@@ -1,5 +1,20 @@
 # Changelog
 
+## V1.313
+
+### 🎨 Détails des sources plus lisibles
+
+- Les ouvertures partagées et les clics publics présentent leur répartition dans un accordéon « Détails » : une ligne par source, un compteur visible et sa part du total.
+- Les libellés « Ancien lien partagé » et « Source inconnue » remplacent les anciens textes longs dans ces détails, sans modifier les clés d’attribution.
+- Affichage adapté aux petits écrans, aux thèmes clair et sombre et à la navigation au clavier. Le contenu est chargé à la première ouverture et ne se duplique pas à la réouverture.
+
+### 🛡️ Conservation et vérifications
+
+- Aucun changement des campagnes, des historiques, du stockage, des API de tracking ou des règles d’attribution. Aucune migration nécessaire. Le graphique des clics par jour reste inchangé.
+- Tests des compteurs et pourcentages, des filtres, des archives, de la pagination, des états vides, des libellés longs et du total nul ; détails dépliés à 320, 390, 768 et 1440 px dans les deux thèmes.
+- La chaîne de publication vérifie les tests Python, JavaScript et navigateur, le démarrage Docker, les images AMD64/ARM64 et l’identité des manifests de la version publiée et de latest.
+- La publication GitHub/GHCR ne redémarre pas le serveur et ne touche pas à ses données. Conserver le volume existant lors de la mise à jour de l’instance.
+
 ## V1.312
 
 ### 🎨 Statistiques plus lisibles
