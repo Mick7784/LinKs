@@ -16,7 +16,7 @@ for(const width of [1600,390]){
  await page.setViewportSize({width,height:1000});if(width===390)await page.getByRole('button',{name:'Mobile',exact:true}).click();await iframe.locator('.card').first().waitFor();
  await iframe.locator('img').evaluateAll(images=>Promise.all(images.map(img=>img.complete?Promise.resolve():new Promise(r=>{img.onload=r;img.onerror=r}))));
  // Normalize only intentional offer geometry, since it changes the page background coordinates.
- await iframe.locator('.offer-card').evaluate(n=>{n.style.minHeight=innerWidth<600?'440px':'clamp(440px,66vw,450px)';n.style.paddingTop=innerWidth<600?'140px':'150px'});
+ await iframe.locator('.offer-card').evaluate(n=>{n.style.minHeight=innerWidth<600?'440px':'clamp(440px,66vw,450px)';n.style.paddingTop=innerWidth<600?'140px':'150px';n.style.height='440px';n.style.overflow='hidden'});
  const before=await Promise.all(['.profile','#links'].map(selector=>iframe.locator(selector).evaluate(n=>{const r=n.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}})));
  const originalCss=execFileSync('git',['show','2f381f8c485318259cca947b50a16d26937393cc:site/style.css'],{cwd:resolve(__dirname,'..'),encoding:'utf8'});
  await page.route('**/preview/original-style.css',r=>r.fulfill({contentType:'text/css',body:originalCss}));
