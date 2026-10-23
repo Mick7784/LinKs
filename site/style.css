@@ -161,12 +161,12 @@ footer .footer-version{font-variant-numeric:tabular-nums;letter-spacing:.01em}
 .carousel-slide .card.visual .promo-visual img{max-width:100%;object-fit:contain}
 .carousel-pause{display:none!important}
 
-/* Promotion cards: full uncropped artwork, with a separate readable footer. */
-.carousel-slide .offer-card{display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;height:auto;min-height:0;padding:0;overflow:hidden;background:#101b33}
-.carousel-slide .offer-card .offer-visual{position:relative;inset:auto;z-index:0;display:flex;align-items:center;justify-content:center;width:100%;aspect-ratio:1;background:#101b33;overflow:hidden}
-.carousel-slide .offer-card .offer-visual img{width:100%;height:100%;object-fit:contain;object-position:center}
-.carousel-slide .offer-card .offer-copy{position:relative;z-index:2;flex:0 0 auto;width:100%;padding:20px 22px 48px;background:linear-gradient(180deg,#152234,#07101b);pointer-events:none}
+/* Fixed-height offer card: scale the creative inside the available space, never the card. */
+.carousel-slide .offer-card{display:grid;grid-template-rows:minmax(0,1fr) auto;align-items:stretch;height:505px;min-height:505px;max-height:505px;padding:0;overflow:hidden;background:#101b33}
+.carousel-slide .offer-card .offer-visual{position:relative;inset:auto;z-index:0;display:flex;align-items:center;justify-content:center;width:100%;height:100%;min-height:0;aspect-ratio:auto;background:#101b33;overflow:hidden}
+.carousel-slide .offer-card .offer-visual img{display:block;width:100%;height:100%;object-fit:contain;object-position:center}
+.carousel-slide .offer-card .offer-copy{position:relative;z-index:2;min-width:0;width:100%;padding:14px 22px 44px;background:linear-gradient(180deg,#152234,#07101b);pointer-events:none}
 .carousel-slide .offer-card::after,.carousel-slide .offer-card .offer-copy::before{display:none}
 .carousel-slide .offer-card .offer-link{z-index:1}
 .carousel-slide .offer-card .offer-code{pointer-events:auto;position:relative;z-index:3}
-@media(max-width:599px){.carousel-slide .offer-card{min-height:0;padding:0}.carousel-slide .offer-card .offer-copy{padding:18px 18px 48px}}
+@media(max-width:599px){.carousel-slide .offer-card{height:465px;min-height:465px;max-height:465px;padding:0}.carousel-slide .offer-card .offer-copy{padding:12px 18px 44px}}
