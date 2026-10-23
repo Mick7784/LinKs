@@ -1,5 +1,31 @@
 # Changelog
 
+## V1.314
+
+### ✨ Nouveautés
+
+- add blurred background image behind contained offer artwork
+
+### 🔧 Améliorations
+
+- Release V1.314 - publish validated LinKs carousel and default manual runs to release
+- test: replace obsolete pause-button interaction with autoplay-resume check
+- test: verify legacy overlay is hidden rather than its unused computed height
+- test: target foreground artwork when offer also has blurred background
+- test: allow non-square visual viewport inside fixed-height promo card
+- test: inspect sharp foreground image instead of blurred background
+- style: blur and darken backdrop while keeping original promotion uncropped
+- test: require fixed promotional card height with contained image
+- test: update legacy promo height assertions for uncropped responsive artwork
+- test: normalize redesigned offer geometry in theme baseline comparison
+- test: validate uncropped square offers and footer instead of cover
+- Fix mobile promo artwork and remove Pause control (#39)
+
+### 🐛 Corrections
+
+- keep blurred artwork layer visible behind foreground image
+- preserve fixed offer card dimensions and contain artwork within image area
+
 ## V1.313
 
 ### 🎨 Détails des sources plus lisibles
