@@ -173,5 +173,5 @@ footer .footer-version{font-variant-numeric:tabular-nums;letter-spacing:.01em}
 
 /* Fill letterboxing with a softly blurred copy of the same creative. */
 .carousel-slide .offer-card .offer-visual{isolation:isolate}
-.carousel-slide .offer-card .offer-visual .offer-backdrop{position:absolute;inset:-18px;width:calc(100% + 36px);height:calc(100% + 36px);max-width:none;object-fit:cover;filter:blur(20px) brightness(.48);opacity:.8;z-index:-1;pointer-events:none}
+.carousel-slide .offer-card .offer-visual .offer-backdrop{position:absolute;inset:-18px;width:calc(100% + 36px);height:calc(100% + 36px);max-width:none;object-fit:cover;filter:blur(20px) brightness(.48);opacity:.8;z-index:0;pointer-events:none}
 .carousel-slide .offer-card .offer-visual img:not(.offer-backdrop){position:relative;z-index:1;object-fit:contain}
