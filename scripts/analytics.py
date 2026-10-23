@@ -978,7 +978,7 @@ def pulse_story_link(data):
     if data["type"]=="campaign":
         with connection() as db:
             row=db.execute("""SELECT * FROM content_blocks
-                              WHERE id=? AND type='promo' AND retired=0""",(ident,)).fetchone()
+                              WHERE id=? AND type IN ('promo','featured') AND retired=0""",(ident,)).fetchone()
             if not row or status_of(row)!="Actif":
                 raise ValueError("Promotion non active ou introuvable")
         # Reuse the same stable campaign Story redirect as the existing back office.
