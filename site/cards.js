@@ -226,7 +226,11 @@ function renderOffer(item) {
     image.alt = "";
     image.loading = "lazy";
     image.decoding = "async";
-    visual.append(image);
+    const backdrop = image.cloneNode();
+    backdrop.className = 'offer-backdrop';
+    backdrop.alt = '';
+    backdrop.setAttribute('aria-hidden', 'true');
+    visual.append(backdrop, image);
   }
   const copy = text("div", "offer-copy", ""),
     label = text("span", "offer-kicker", "Offre du moment");
