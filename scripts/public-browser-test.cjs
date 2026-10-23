@@ -121,7 +121,7 @@ const {tmpdir}=require('node:os');
     const video=box('.video-visual'),details=box('.video-details');
     return {imageRight:image.right,imageBottom:image.bottom,imageWidth:image.width,copyLeft:copy.left,copyTop:copy.top,slideWidth:box(".carousel-slide .card").width,headerHeight:header.height,videoRight:video.right,detailsLeft:details.left};
    });
-   const creative=await page.locator('.carousel-slide .offer-visual').first().evaluate(n=>{const r=n.getBoundingClientRect();return {ratio:r.width/r.height,fit:getComputedStyle(n.querySelector('img')).objectFit}});
+   const creative=await page.locator('.carousel-slide .offer-visual').first().evaluate(n=>{const r=n.getBoundingClientRect();return {ratio:r.width/r.height,fit:getComputedStyle(n.querySelector('img:not(.offer-backdrop)')).objectFit}});
    assert.equal(creative.fit,'contain');
    assert(Math.abs(creative.ratio-1)<0.02,'Square creative at '+width);
    assert(composition.copyTop>=composition.imageBottom-1,'Offer details below full image at '+width);
