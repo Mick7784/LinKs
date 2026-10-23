@@ -924,7 +924,101 @@ def public_mutation(path):
             or (path.startswith('/api/appearance') and path not in {'/api/appearance/css','/api/appearance/css-export','/api/appearance/export'}))
 
 
+
+# PulSe uses a narrow machine-to-machine API. Its token is never a LinKs admin
+# session and grants no access to content editing, settings, or backups.
+def pulse_token_ready():
+    value=os.environ.get("PULSE_BRIDGE_TOKEN","")
+    return 32<=len(value)<=512
+
+def pulse_authenticated(header):
+    if not pulse_token_ready():return False
+    if not isinstance(header,str) or not header.startswith("Bearer "):return False
+    token=header[7:]
+    return secrets.compare_digest(os.environ["PULSE_BRIDGE_TOKEN"],token)
+
+def pulse_links():
+    with connection() as db:
+        return {"links":[{"id":r["id"],"name":r["name"],"url":r["url"],
+                          "category":r["category"],"enabled":bool(r["enabled"]),
+                          "archived":bool(r["archived"])}
+                         for r in db.execute("""SELECT id,name,url,category,enabled,archived
+                           FROM tracked_links WHERE archived=0 AND enabled=1
+                           ORDER BY created_at DESC LIMIT 400""")]}
+
+def pulse_stats():
+    today=datetime.now(PARIS).date()
+    first=today-timedelta(days=6)
+    with connection() as db:
+        daily={r["day"]:int(r["total"]) for r in db.execute(
+            """SELECT day,COALESCE(SUM(total),0) AS total FROM counts
+               WHERE day BETWEEN ? AND ? AND kind IN ('click','story','tracked')
+               GROUP BY day""",(first.isoformat(),today.isoformat()))}
+        story_clicks=db.execute("""SELECT COALESCE(SUM(total),0) FROM counts
+               WHERE day BETWEEN ? AND ? AND kind='story'""",
+               (first.isoformat(),today.isoformat())).fetchone()[0]
+        independent_story_clicks=db.execute("""SELECT COALESCE(SUM(c.total),0)
+               FROM counts c JOIN tracked_tokens t ON c.link=('tracked:'||t.token)
+               JOIN tracking_sources s ON t.source_id=s.id
+               WHERE c.day BETWEEN ? AND ? AND c.kind='tracked'
+                 AND s.name='Instagram Story'""",
+               (first.isoformat(),today.isoformat())).fetchone()[0]
+    days=[{"date":(first+timedelta(days=i)).isoformat(),
+           "clicks":daily.get((first+timedelta(days=i)).isoformat(),0)} for i in range(7)]
+    return {"today":days[-1]["clicks"],"last7":sum(d["clicks"] for d in days),
+            "stories":int(story_clicks)+int(independent_story_clicks),
+            "days":days}
+
+def pulse_story_link(data):
+    if not isinstance(data,dict) or data.get("type") not in {"campaign","independent"}:
+        raise ValueError("Type PulSe invalide")
+    ident=data.get("id")
+    if not isinstance(ident,str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,100}",ident):
+        raise ValueError("Identifiant PulSe invalide")
+    if data["type"]=="campaign":
+        with connection() as db:
+            row=db.execute("""SELECT * FROM content_blocks
+                              WHERE id=? AND type='promo' AND retired=0""",(ident,)).fetchone()
+            if not row or status_of(row)!="Actif":
+                raise ValueError("Promotion non active ou introuvable")
+        # Reuse the same stable campaign Story redirect as the existing back office.
+        return story_link(ident,"instagram")
+    with connection() as db:
+        db.execute("BEGIN IMMEDIATE")
+        source=db.execute("""SELECT id FROM tracking_sources
+                             WHERE name='Instagram Story' AND active=1""").fetchone()
+        if not source:raise ValueError("Source Instagram Story indisponible")
+        # Only independent, currently shareable links can be published.
+        return tracked_links.token_link(db,ident,source["id"],ORIGIN,now_iso())
+
+
 class Handler(BaseHTTPRequestHandler):
+
+    def pulse_bridge_get(self):
+        if not self.server.admin or not pulse_token_ready():return self.send(404)
+        if not pulse_authenticated(self.headers.get("Authorization","")):
+            return self.json(401,{"error":"Accès PulSe refusé"})
+        path=urlsplit(self.path).path
+        try:
+            if path=="/api/pulse/links":return self.json(200,pulse_links())
+            if path=="/api/pulse/stats":return self.json(200,pulse_stats())
+            return self.send(404)
+        except (sqlite3.Error,OSError):
+            return self.json(503,{"error":"Données PulSe indisponibles"})
+
+    def pulse_bridge_post(self):
+        if not self.server.admin or not pulse_token_ready():return self.send(404)
+        if not pulse_authenticated(self.headers.get("Authorization","")):
+            return self.json(401,{"error":"Accès PulSe refusé"})
+        if not self.headers.get("Content-Type","").lower().startswith("application/json"):
+            return self.json(415,{"error":"JSON requis"})
+        try:
+            return self.json(200,pulse_story_link(self.body(1024)))
+        except (ValueError,TypeError,json.JSONDecodeError) as exc:
+            return self.json(400,{"error":str(exc) or "Demande PulSe invalide"})
+        except (sqlite3.Error,OSError):
+            return self.json(503,{"error":"Tracking temporairement indisponible"})
+
     def handle_one_request(self):
         self.response_status=0
         super().handle_one_request()
@@ -1082,6 +1176,8 @@ class Handler(BaseHTTPRequestHandler):
         except OSError:return self.send(404)
         self.send(200,data,mime or mimetypes.guess_type(path.name)[0] or "application/octet-stream")
     def do_GET(self):
+        if urlsplit(self.path).path in {"/api/pulse/links","/api/pulse/stats"}:
+            return self.pulse_bridge_get()
         if self.server.admin and self.auth_get():return
         url=urlsplit(self.path)
         if self.server.admin and url.path in {"/brand.svg","/brand-light.svg","/mark.svg"}:return self.file(ADMIN/url.path[1:],"image/svg+xml")
@@ -1155,6 +1251,8 @@ class Handler(BaseHTTPRequestHandler):
         files={"/":("index.html","text/html;charset=utf-8"),"/app.js":("app.js","application/javascript"),"/dates.js":("dates.js","application/javascript"),"/calendar.js":("calendar.js","application/javascript"),"/style.css":("style.css","text/css")}
         return self.file(ADMIN/files[url.path][0],files[url.path][1]) if url.path in files else self.send(404)
     def do_POST(self):
+        if urlsplit(self.path).path=="/api/pulse/story-link":
+            return self.pulse_bridge_post()
         if self.server.admin and self.auth_post():return
         path=urlsplit(self.path).path
         if not self.server.admin:
