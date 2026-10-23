@@ -56,8 +56,9 @@ const {readFileSync,mkdtempSync,rmSync,mkdirSync}=require('node:fs'),{join,resol
   for(const width of [1440,390]){await page.setViewportSize({width,height:1000});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));if(process.env.V1310_SCREENSHOTS)await page.screenshot({path:join(process.env.V1310_SCREENSHOTS,'public-'+width+'.png'),fullPage:true})}
   await page.clock.install();await page.goto(origin);await page.waitForSelector('.carousel-slide:nth-child(2)');await page.locator('.offer-code').first().focus();
   await page.clock.runFor(20000);assert.equal(await page.locator('.carousel-slide').first().getAttribute('aria-hidden'),'false','Focus must keep the offer visible');
-  await page.locator('.carousel-pause').click();await page.locator('#profile-name').evaluate(n=>{n.tabIndex=-1;n.focus()});await page.mouse.move(0,0);await page.clock.runFor(20000);
-  assert.equal(await page.locator('.carousel-slide').first().getAttribute('aria-hidden'),'false','Explicit pause must persist');
+  assert.equal(await page.locator('.carousel-pause').count(),0,'Pause button is intentionally removed');
+  await page.locator('#profile-name').evaluate(n=>{n.tabIndex=-1;n.focus()});await page.mouse.move(0,0);await page.clock.runFor(20000);
+  assert.equal(await page.locator('.carousel-slide').first().getAttribute('aria-hidden'),'true','Autoplay resumes after focus leaves offer');
   assert.deepEqual(csp,[],'No blocked application scripts/styles');assert.deepEqual(errors,[]);
   console.log('PASS V1.310: library images, stable KPI, theme icons/layout, private periods, enum controls, CSP, responsive public and focus/pause carousel');
  }finally{await browser?.close();await new Promise(r=>site.close(r));backend.kill();await new Promise(r=>backend.once('exit',r));rmSync(temp,{recursive:true,force:true})}
