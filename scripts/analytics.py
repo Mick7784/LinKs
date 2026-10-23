@@ -958,7 +958,7 @@ def pulse_stats():
                WHERE day BETWEEN ? AND ? AND kind='story'""",
                (first.isoformat(),today.isoformat())).fetchone()[0]
         independent_story_clicks=db.execute("""SELECT COALESCE(SUM(c.total),0)
-               FROM counts c JOIN tracked_tokens t ON c.link=('tracked:'||t.token)
+               FROM counts c JOIN tracked_tokens t ON substr(c.link,9,length(t.token))=t.token
                JOIN tracking_sources s ON t.source_id=s.id
                WHERE c.day BETWEEN ? AND ? AND c.kind='tracked'
                  AND s.name='Instagram Story'""",
