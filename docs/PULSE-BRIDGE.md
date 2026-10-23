@@ -9,8 +9,8 @@ La ressource PulSe reste une application Docker distincte. Elle contacte `http:/
 Trois endpoints serveur-à-serveur sont ajoutés :
 
 - `GET /api/pulse/links` retourne seulement les **liens suivis indépendants** actifs, et jamais les liens classiques ni les campagnes ;
-- `GET /api/pulse/stats` retourne les clics du jour, ceux des sept derniers jours (y compris les journées à 0), les clics issus des Stories, et les sept points du graphique ;
-- `POST /api/pulse/story-link` avec `{"type":"campaign","id":"..."}` ou `{"type":"independent","id":"..."}` prépare une URL courte suivie attribuée à Instagram Story. Seules les promotions actives et les liens suivis disponibles sont autorisés.
+- `GET /api/pulse/stats` conserve par défaut les statistiques sur sept jours ; `?days=7` et `?days=30` choisissent la période (jours à zéro inclus). `period` indique la période, `total` le nombre de clics sur cette période, `today` les clics du jour, `last7` toujours les clics des sept derniers jours, `stories` les clics issus des Stories sur la période, et `days` les points datés du graphique. Une période différente, vide ou répétée renvoie HTTP 400 ;
+- `POST /api/pulse/story-link` avec `{"type":"campaign","id":"..."}`, `{"type":"independent","id":"..."}` ou `{"type":"youtube","id":"<ID vidéo YouTube>"}` prépare une URL courte suivie attribuée à Instagram Story. Seules les promotions actives, les liens suivis disponibles et la vidéo courante de la source YouTube LinKs sont autorisés. Le client ne choisit jamais la destination vidéo.
 
 Les campagnes et les liens indépendants conservent leur historique existant : PulSe appelle les méthodes `story_link` et `tracked_links.token_link` déjà utilisées par LinKs. Aucune réattribution ou purge des jetons historiques.
 
@@ -43,4 +43,12 @@ python3 -m unittest discover -s scripts -p 'pulse_bridge_test.py'
 python3 -m unittest discover -s scripts -p 'analytics_test.py'
 ```
 
-La carte « Stories déclarées » de PulSe est un **compteur local au téléphone**, pas une preuve de publication Instagram. `stories` dans les statistiques de l'API compte des ouvertures de liens attribuées aux Stories, pas des publications.
+`stories` compte des ouvertures de liens attribuées aux Stories, pas des publications. Il s'agit d'un sous-ensemble des clics de `total`, à ne pas additionner à ce total. La carte locale « Stories déclarées » doit être retirée de l'interface PulSe V1.1.
+
+## Extension préparatoire pour PulSe V1.1
+
+Le choix 7/30 jours est additif : aucune migration, création de jeton, modification de redirection ou écriture des compteurs lors de la consultation. Le fuseau est celui configuré par LinKs. Les anciennes réponses à sept jours conservent leurs champs et valeurs.
+
+Les liens existants sont réutilisés par campagne ou couple lien/source ; ils ne prouvent pas l'attribution à une publication Instagram précise. Aucun classement « top publications » n'est fourni. La source vidéo existante est `/latest-video.json`. À la préparation explicite d'une vidéo, la passerelle vérifie son ID contre cette source, crée ou réutilise un lien privé déterministe dans `tracked_links` (catégorie YouTube), puis utilise `tracked_links.token_link` et les redirections existantes. Sa destination est fixée à `https://www.youtube.com/watch?v=<ID>` : une nouvelle dernière vidéo ne modifie pas les anciennes Stories. Aucun changement de schéma ni réattribution des jetons existants. Une vidéo devenue ancienne au moment de la préparation exige une actualisation PulSe. Un lien désactivé/archivé n'est pas réactivé ; une destination modifiée dans l'admin est refusée à la préparation.
+
+L'application PulSe V1.1 est développée dans le dépôt séparé `Mick7784/PulSe`, à partir des sources V1 récupérées dans le Compose Dockhand du propriétaire. Cette PR LinKs est une dépendance distincte, à valider et publier avant d'utiliser les fonctions YouTube/30 jours. Elle ne publie et ne déploie pas PulSe.

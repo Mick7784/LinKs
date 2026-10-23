@@ -946,9 +946,12 @@ def pulse_links():
                            FROM tracked_links WHERE archived=0 AND enabled=1
                            ORDER BY created_at DESC LIMIT 400""")]}
 
-def pulse_stats():
+def pulse_stats(period=7):
+    if str(period) not in {"7","30"}:
+        raise ValueError("Période PulSe invalide : 7 ou 30 jours requis")
+    period=int(period)
     today=datetime.now(PARIS).date()
-    first=today-timedelta(days=6)
+    first=today-timedelta(days=period-1)
     with connection() as db:
         daily={r["day"]:int(r["total"]) for r in db.execute(
             """SELECT day,COALESCE(SUM(total),0) AS total FROM counts
@@ -964,17 +967,48 @@ def pulse_stats():
                  AND s.name='Instagram Story'""",
                (first.isoformat(),today.isoformat())).fetchone()[0]
     days=[{"date":(first+timedelta(days=i)).isoformat(),
-           "clicks":daily.get((first+timedelta(days=i)).isoformat(),0)} for i in range(7)]
-    return {"today":days[-1]["clicks"],"last7":sum(d["clicks"] for d in days),
+           "clicks":daily.get((first+timedelta(days=i)).isoformat(),0)} for i in range(period)]
+    return {"today":days[-1]["clicks"],"last7":sum(d["clicks"] for d in days[-7:]),
+            "period":period,"total":sum(d["clicks"] for d in days),
             "stories":int(story_clicks)+int(independent_story_clicks),
             "days":days}
 
+def pulse_youtube_story_link(video_id):
+    # Freeze a video's destination in an existing private tracked link. Never
+    # point an old Story at the dynamic "latest video" URL or accept a client URL.
+    if not re.fullmatch(r"[A-Za-z0-9_-]{11}",video_id):
+        raise ValueError("Identifiant vidéo invalide")
+    video=latest_video()
+    if not isinstance(video,dict):raise ValueError("Aucune vidéo YouTube disponible")
+    parsed=urlsplit(video.get("url", ""))
+    current_id=(parsed.path[1:] if parsed.hostname=="youtu.be" else
+                parse_qs(parsed.query).get("v",[""])[0] if parsed.hostname in {"youtube.com","www.youtube.com"} and parsed.path=="/watch" else "")
+    if parsed.scheme!="https" or parsed.username or parsed.password or current_id!=video_id:
+        raise ValueError("La dernière vidéo a changé : actualisez PulSe")
+    destination="https://www.youtube.com/watch?v="+video_id
+    ident=uuid.uuid5(uuid.NAMESPACE_URL,"pulse-youtube:"+video_id).hex
+    with connection() as db:
+        db.execute("BEGIN IMMEDIATE")
+        source=db.execute("SELECT id FROM tracking_sources WHERE name='Instagram Story' AND active=1").fetchone()
+        if not source:raise ValueError("Source Instagram Story indisponible")
+        existing=db.execute("SELECT url FROM tracked_links WHERE id=?",(ident,)).fetchone()
+        if existing and existing["url"]!=destination:
+            raise ValueError("La destination vidéo a été modifiée dans LinKs")
+        if not existing:
+            title=video.get("title")
+            title=title.strip()[:160] if isinstance(title,str) and title.strip() else "Vidéo YouTube"
+            db.execute("INSERT INTO tracked_links VALUES(?,?,?,?,?,0,1,?,?)",
+                       (ident,title,destination,"YouTube","Créé depuis PulSe pour une vidéo précise",now_iso(),now_iso()))
+        return tracked_links.token_link(db,ident,source["id"],ORIGIN,now_iso())
+
+
 def pulse_story_link(data):
-    if not isinstance(data,dict) or data.get("type") not in {"campaign","independent"}:
+    if not isinstance(data,dict) or data.get("type") not in {"campaign","independent","youtube"}:
         raise ValueError("Type PulSe invalide")
     ident=data.get("id")
     if not isinstance(ident,str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,100}",ident):
         raise ValueError("Identifiant PulSe invalide")
+    if data["type"]=="youtube":return pulse_youtube_story_link(ident)
     if data["type"]=="campaign":
         with connection() as db:
             row=db.execute("""SELECT * FROM content_blocks
@@ -1001,8 +1035,13 @@ class Handler(BaseHTTPRequestHandler):
         path=urlsplit(self.path).path
         try:
             if path=="/api/pulse/links":return self.json(200,pulse_links())
-            if path=="/api/pulse/stats":return self.json(200,pulse_stats())
+            if path=="/api/pulse/stats":
+                periods=parse_qs(urlsplit(self.path).query,keep_blank_values=True).get("days",["7"])
+                if len(periods)!=1:raise ValueError("Une seule période PulSe est autorisée")
+                return self.json(200,pulse_stats(periods[0]))
             return self.send(404)
+        except ValueError as exc:
+            return self.json(400,{"error":str(exc)})
         except (sqlite3.Error,OSError):
             return self.json(503,{"error":"Données PulSe indisponibles"})
 
