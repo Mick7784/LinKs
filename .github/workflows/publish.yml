@@ -9,7 +9,7 @@ on:
       official_release:
         description: Publish an official numbered release
         type: boolean
-        default: false
+        default: true
       version:
         description: Optional explicit version (otherwise increment VERSION)
         type: string
@@ -17,7 +17,7 @@ on:
       validation_only:
         description: Run checks without publishing an image
         type: boolean
-        default: true
+        default: false
 permissions:
   contents: read
 concurrency:
