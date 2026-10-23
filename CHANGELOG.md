@@ -1,5 +1,23 @@
 # Changelog
 
+## V1.315
+
+### ✨ Nouveautés
+
+- Ajout d'une passerelle privée pour l'application PulSe : récupération des liens suivis indépendants, des statistiques quotidiennes et génération de liens Story courts.
+- Les promotions et les mises en avant actives peuvent être publiées via PulSe ; les liens classiques sont exclus.
+
+### ⚙️ Technique
+
+- API `/api/pulse/links`, `/api/pulse/stats` et `/api/pulse/story-link` protégée par un jeton serveur dédié `PULSE_BRIDGE_TOKEN`.
+- Attribution Instagram Story fondée sur les jetons et redirections historiques de LinKs, sans réinitialisation des statistiques.
+- Ajout de tests automatiques dédiés et d'un guide de configuration Dockhand dans `docs/PULSE-BRIDGE.md`.
+
+### 🔧 Déploiement
+
+- La passerelle est désactivée sans jeton serveur configuré ; les données persistantes restent dans le volume LinKs existant.
+- Sauvegarder `/data` avant toute mise à jour du conteneur en production. Configurer le même secret aléatoire côté LinKs et côté PulSe.
+
 ## V1.314
 
 ### ✨ Nouveautés
