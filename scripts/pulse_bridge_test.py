@@ -47,6 +47,28 @@ class PulseBridgeTests(unittest.TestCase):
         self.assertFalse(result[0]["archived"])
         db.close()
 
+    def test_story_link_accepts_active_featured_and_rejects_classic(self):
+        db=sqlite3.connect(":memory:")
+        db.row_factory=sqlite3.Row
+        db.execute("""CREATE TABLE content_blocks (
+            id TEXT, type TEXT, retired INTEGER, archived INTEGER,
+            draft INTEGER, active INTEGER, start_at TEXT, end_at TEXT)""")
+        db.executemany("INSERT INTO content_blocks VALUES(?,?,?,?,?,?,?,?)", [
+            ("featured1","featured",0,0,0,1,None,None),
+            ("classic1","classic",0,0,0,1,None,None),
+            ("disabled1","promo",0,0,0,0,None,None)])
+        @contextmanager
+        def conn():
+            yield db
+        with patch.object(analytics,"connection",conn), patch.object(analytics,"story_link",return_value={"url":"https://links.example/test"}) as called:
+            result=analytics.pulse_story_link({"type":"campaign","id":"featured1"})
+            self.assertEqual(result["url"],"https://links.example/test")
+            called.assert_called_once_with("featured1","instagram")
+            for ident in ("classic1","disabled1","unknown"):
+                with self.assertRaises(ValueError):
+                    analytics.pulse_story_link({"type":"campaign","id":ident})
+        db.close()
+
     def test_daily_stats_include_clicks_stories_and_tracked_with_zero_days(self):
         db=sqlite3.connect(":memory:")
         db.row_factory=sqlite3.Row
