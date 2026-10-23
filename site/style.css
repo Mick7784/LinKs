@@ -154,3 +154,9 @@ footer .footer-version{font-variant-numeric:tabular-nums;letter-spacing:.01em}
 @media(max-width:399px){footer .footer-product img{width:118px}footer .footer-identity{gap:4px 7px}}
 
 .carousel-pause{border:1px solid #9facbf55;border-radius:6px;padding:3px 8px;background:transparent;color:var(--muted);font-size:.7rem;cursor:pointer}.carousel-pause[aria-pressed=true]{color:var(--text);border-color:var(--cyan)}
+
+/* Keep complete promotional artwork legible at every viewport width. */
+.carousel-slide .card:not(.visual) .promo-visual img{object-fit:contain;object-position:center}
+.carousel-slide .card.visual .promo-visual{max-width:min(100%,380px)}
+.carousel-slide .card.visual .promo-visual img{max-width:100%;object-fit:contain}
+.carousel-pause{display:none!important}
