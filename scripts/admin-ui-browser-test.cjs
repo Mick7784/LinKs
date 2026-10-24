@@ -79,6 +79,24 @@ await page.locator('#tracked-form [name="url"]').fill('https://example.com/track
 await page.locator('#tracked-form button[type="submit"]').click();
 await page.locator('.tracked-item').filter({hasText:'Produit temporaire suivi'}).waitFor();
 const trackedRow=page.locator('.tracked-item').filter({hasText:'Produit temporaire suivi'});
+// Regression: the global button centering rule must not center the tracked-link title.
+await page.setViewportSize({width:1600,height:900});
+const trackedGeometry=await trackedRow.evaluate(row=>{
+ const rect=selector=>row.querySelector(selector).getBoundingClientRect();
+ return {button:rect('.tracked-expand'),icon:rect('.tracked-item-icon'),label:rect('.tracked-item-label'),arrow:rect('.tracked-expander'),actions:rect('.tracked-item-actions')};
+});
+assert(trackedGeometry.icon.left-trackedGeometry.button.left<20,'Tracked-link icon must start at the left edge, not float in the center');
+assert(trackedGeometry.arrow.left-trackedGeometry.label.right<40,'Tracked-link arrow must remain beside its label');
+assert(trackedGeometry.actions.left>=trackedGeometry.button.right-1,'Desktop tracked-link actions must remain in their own right-hand column');
+for(const width of [760,390,320]){
+ await page.setViewportSize({width,height:844});
+ await overflow();
+ assert(await trackedRow.locator('.tracked-item-actions select').evaluate(select=>{
+  const row=select.closest('.tracked-item').getBoundingClientRect(),rect=select.getBoundingClientRect();
+  return rect.left>=row.left-1&&rect.right<=row.right+1;
+ }),`Tracked-link source selector must fit within the row at ${width}px`);
+}
+await page.setViewportSize({width:1600,height:900});
 await trackedRow.locator('[data-open-statistics="shared"]').click();await page.locator("#statistics.active").waitFor();assert.equal(await page.locator("#analysis-search").inputValue(),"Produit temporaire suivi");await nav("content");
 await page.locator('#tracked-manage-sources').click();
 await page.locator('#tracked-source-form [name="name"]').fill('Canal navigateur');

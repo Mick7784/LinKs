@@ -2145,14 +2145,14 @@ a.brand:focus-visible{outline:2px solid var(--focus);outline-offset:4px}
 .tracked-item{border-top:1px solid var(--line);min-width:0}
 .tracked-item:first-child{border-top:0}
 .tracked-item-top{display:flex;align-items:center;gap:14px;padding:14px 0;min-width:0}
-.tracked-expand{flex:1;min-width:0;display:flex;align-items:center;gap:12px;text-align:left;border:0;background:transparent;padding:4px;color:var(--text);font-size:.82rem}
+.tracked-expand{flex:1 1 0;min-width:0;display:flex;align-items:center;justify-content:flex-start;gap:12px;text-align:left;border:0;background:transparent;padding:4px;color:var(--text);font-size:.82rem}
 .tracked-expand:hover .tracked-item-label>strong{color:var(--accent)}
 .tracked-expand:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:6px}
 .tracked-item-icon{display:grid;place-items:center;flex:0 0 34px;height:34px;border-radius:7px;background:var(--raised);color:var(--muted)}
 .tracked-item-label{display:grid;gap:5px;min-width:0;overflow-wrap:anywhere}
 .tracked-item-label strong{font-size:.82rem;line-height:1.35}
 .tracked-item-label small{font-size:.69rem;color:var(--muted);line-height:1.4}
-.tracked-expander{font-size:1rem;color:var(--muted)}
+.tracked-expander{font-size:1rem;color:var(--muted);flex:0 0 auto;margin-left:2px}
 .tracked-item-actions{display:flex;align-items:center;gap:6px;justify-content:flex-end;flex-wrap:wrap}
 .tracked-item-actions select,.tracked-item-actions button{min-height:33px;border-radius:7px;font-size:.7rem;background:var(--raised);color:var(--text);border:1px solid var(--line)}
 .tracked-item-actions select{width:148px;max-width:148px;padding:5px}
@@ -2180,8 +2180,12 @@ a.brand:focus-visible{outline:2px solid var(--focus);outline-offset:4px}
 @media(max-width:760px){
  .tracked-source-manager-row{grid-template-columns:minmax(0,1fr) auto auto}
  .tracked-source-counter{grid-column:1/-1;grid-row:2}
- .tracked-item-actions{padding-left:0}
- .tracked-item-actions select{width:132px;max-width:132px}
+ .tracked-item-top{gap:9px;padding:12px 0}
+ .tracked-expand{flex-basis:100%}
+ .tracked-item-actions{padding-left:0;width:100%;justify-content:flex-start}
+ .tracked-item-actions select{width:100%;max-width:none;flex:1 1 100%}
+ .tracked-item-actions button{flex:1 1 auto;white-space:nowrap}
+ .tracked-item-actions [data-tracked-action="copy"]{flex:0 0 38px}
  .tracked-editor{padding:12px;gap:12px}
  .tracked-new-source{flex-wrap:wrap}
 }
