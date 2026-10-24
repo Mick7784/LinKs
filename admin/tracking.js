@@ -82,7 +82,7 @@ get("tracked-list").addEventListener("click",async event=>{
 get("tracked-form").addEventListener("submit",async event=>{
  event.preventDefault();const form=event.currentTarget,button=form.querySelector('[type="submit"]');button.disabled=true;
  const fields=Object.fromEntries(new FormData(form));
- try{await api(state.editing?"/api/tracked-links/"+state.editing:"/api/tracked-links",{method:state.editing?"PUT":"POST",body:JSON.stringify(fields)});close("tracked-dialog");await load();say("Lien suivi enregistré.")}
+ try{await api(state.editing?"/api/tracked-links/"+state.editing:"/api/tracked-links",{method:state.editing?"PUT":"POST",body:JSON.stringify(fields)});await load();close("tracked-dialog");say("Lien suivi enregistré.")}
  catch(error){say(error.message,true)}finally{button.disabled=false}
 });
 get("tracked-source-form").addEventListener("submit",async event=>{

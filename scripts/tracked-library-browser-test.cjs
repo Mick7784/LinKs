@@ -37,8 +37,11 @@ const {join,resolve}=require('node:path');
   await page.fill('#tracked-search','absent');assert.equal(await page.locator('.tracked-item').count(),0);await page.fill('#tracked-search','');
   await page.selectOption('#tracked-category','Produit');assert(await row.isVisible());
   await row.locator('[data-tracked-action="copy"]').click();await page.waitForFunction(()=>window.copiedLink);assert.equal(await page.evaluate(()=>window.copiedLink),token.url);
+  // A slow refresh must never expose the previous destination after saving.
+  await page.route('**/api/tracked-links',async route=>{if(route.request().method()==='GET')await new Promise(resolve=>setTimeout(resolve,300));await route.continue()});
   await row.locator('[data-tracked-action="edit"]').click();await page.fill('#tracked-form [name="url"]','https://example.com/new');await page.click('#tracked-form [type="submit"]');await page.locator('#tracked-dialog').waitFor({state:'hidden'});
   const popupPromise=context.waitForEvent('page');await row.locator('[data-tracked-action="open"]').click();const popup=await popupPromise;await popup.waitForLoadState();assert.equal(popup.url(),'https://example.com/new');assert.equal(await popup.evaluate(()=>window.opener),null);await popup.close();
+  await page.unroute('**/api/tracked-links');
   assert.equal((await api('/api/tracked-links')).items.find(item=>item.id===existing.id).clicks,history.clicks,'Preview must not count clicks');
   assert.equal(await redirect(shortPath),'https://example.com/new');assert.equal(await redirect(legacyPath),'https://example.com/new');
   assert.equal((await api(`/api/tracked-links/${existing.id}/token`,{source_id:source.id})).url,token.url);
