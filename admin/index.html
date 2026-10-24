@@ -75,7 +75,7 @@
  </section>
  <section class="panel" id="tracked-links-partners" aria-labelledby="tracked-links-partners-heading">
   <div class="panel-title"><h3 id="tracked-links-partners-heading">Partenaires</h3><button type="button" id="partner-add">Ajouter un partenaire</button></div>
-  <p class="panel-helper">Facultatif : les URL affiliées fournies directement par Amazon, Awin, Impact ou un autre réseau restent utilisables sans configuration. Ces règles ne sont pas encore appliquées aux liens.</p>
+  <p class="panel-helper">Facultatif : les URL affiliées fournies directement par Amazon, Awin, Impact ou un autre réseau restent utilisables sans configuration. Les changements de règles ne modifient jamais les destinations déjà enregistrées.</p>
   <div id="partner-list" aria-label="Partenaires affiliés" aria-live="polite"><p class="empty">Chargement des partenaires…</p></div>
  </section>
 </section>
@@ -126,7 +126,7 @@
   <label>Nom du partenaire<input name="name" required maxlength="100"></label>
   <label>Code affilié<input name="code" maxlength="500"></label>
   <label>Domaines associés<textarea name="domains" rows="2" placeholder="boutique.fr&#10;boutique.com"></textarea></label>
-  <p class="field-help">Un domaine par ligne, sans https:// ni chemin. Ils serviront à la détection lors d’une prochaine étape.</p>
+  <p class="field-help">Un domaine par ligne, sans https:// ni chemin. La détection inclut ses sous-domaines.</p>
   <label>Modèle d’URL<textarea name="template" required maxlength="4000" rows="3" placeholder="{url}?ref={code}"></textarea></label>
   <p class="field-help">Variables : {url} et {code}. Remplacement tel quel, sans ajout ni encodage automatique. Vous pouvez utiliser des paramètres, un chemin, un fragment ou une URL complète.</p>
   <label>URL de test<input name="test_url" type="url" maxlength="2000" placeholder="https://boutique.fr/produit"></label>
@@ -139,7 +139,11 @@
  <header><h2 id="tracked-dialog-title">Créer un lien suivi</h2><button type="button" class="icon-button" data-close-tracked aria-label="Fermer">×</button></header>
  <p class="field-help">Ce lien ne sera pas visible sur la page publique. Son URL de partage restera identique si vous changez sa destination.</p>
  <label>Nom interne<input name="name" required maxlength="160" placeholder="Ex. UGREEN Nexode 200W"></label>
- <label>URL de destination<input name="url" required type="url" maxlength="2000" placeholder="https://…"></label>
+ <label>URL d’origine<input name="url" required type="url" maxlength="2000" placeholder="https://…"></label>
+ <label>Partenaire (facultatif)<select id="tracked-partner" name="partner_id"><option value="">Aucun</option></select></label>
+ <p id="tracked-partner-note" class="field-help">Le domaine permet de présélectionner un partenaire. Vous pouvez en choisir un autre ou « Aucun ».</p>
+ <button type="button" id="tracked-recalculate" hidden>Recalculer avec la configuration actuelle</button>
+ <section aria-labelledby="tracked-final-heading"><h3 id="tracked-final-heading">Destination finale</h3><p id="tracked-final-message" class="field-help" role="status" aria-live="polite"></p><a id="tracked-final-link" target="_blank" rel="noopener noreferrer" hidden></a></section>
  <label>Catégorie (facultatif)<input name="category" maxlength="80" placeholder="Produit, accessoire, offre…"></label>
  <label>Notes (facultatif)<textarea name="notes" rows="2" maxlength="800"></textarea></label>
  <div class="dialog-actions"><button type="button" data-close-tracked>Annuler</button><button type="submit" class="primary">Enregistrer</button></div>

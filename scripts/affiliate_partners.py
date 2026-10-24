@@ -1,4 +1,4 @@
-"""Optional affiliate configuration. No link rewriting or automatic detection."""
+"""Optional affiliate rules; saved destinations are immutable until explicitly edited."""
 import json
 import re
 import sqlite3
@@ -6,12 +6,14 @@ import uuid
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
 from tracked_links import text_field
+import tracked_links
 
 DEFAULTS = (
     ('Domadoo', '117', ['domadoo.fr'], '{url}?domid={code}'),
     ('Reolink', '1404', ['reolink.com'], '{url}?aff={code}'),
-    ('Sanyipace', 'DomotiK', ['sanyipace.com', 'sanyipace.eu'], '{url}?ref={code}'),
+    ('Sanyipace', 'DomotiK', ['sanyipacetoilet.com'], '{url}?ref={code}'),
 )
+SANYIPACE_MIGRATION = 'affiliate.sanyipace_domain_v1'
 
 
 def initialize(db):
@@ -20,16 +22,33 @@ def initialize(db):
         id TEXT PRIMARY KEY, name TEXT NOT NULL COLLATE NOCASE UNIQUE,
         code TEXT NOT NULL, domains TEXT NOT NULL, template TEXT NOT NULL,
         created_at TEXT NOT NULL, updated_at TEXT NOT NULL)''')
-    # Association storage is reserved for the next step; no current link is attached.
     db.execute('''CREATE TABLE IF NOT EXISTS tracked_link_partners(
         link_id TEXT PRIMARY KEY REFERENCES tracked_links(id),
         partner_id TEXT NOT NULL REFERENCES affiliate_partners(id) ON DELETE RESTRICT)''')
+    if 'original_url' not in {row[1] for row in db.execute('PRAGMA table_info(tracked_link_partners)')}:
+        db.execute("ALTER TABLE tracked_link_partners ADD COLUMN original_url TEXT NOT NULL DEFAULT ''")
     if first:
         now = datetime.now(timezone.utc).isoformat()
         for name, code, domains, template in DEFAULTS:
             ident = uuid.uuid5(uuid.NAMESPACE_URL, 'links:affiliate-partner:' + name.lower()).hex
             db.execute('INSERT OR IGNORE INTO affiliate_partners VALUES(?,?,?,?,?,?,?)',
                        (ident, name, code, json.dumps(domains), template, now, now))
+    if not db.execute('SELECT 1 FROM settings WHERE key=?', (SANYIPACE_MIGRATION,)).fetchone():
+        ident = uuid.uuid5(uuid.NAMESPACE_URL, 'links:affiliate-partner:sanyipace').hex
+        row = db.execute('SELECT domains FROM affiliate_partners WHERE id=?', (ident,)).fetchone()
+        if row:
+            domains = corrected_sanyipace_domains(json.loads(row['domains']))
+            db.execute('UPDATE affiliate_partners SET domains=? WHERE id=?', (json.dumps(domains), ident))
+        db.execute('INSERT INTO settings VALUES(?,?)', (SANYIPACE_MIGRATION, '1'))
+
+
+def corrected_sanyipace_domains(domains):
+    # Only domains shipped by step 3 on the seeded partner are replaced. Extra custom
+    # domains, names, codes and templates remain intact; fully custom lists stay intact.
+    old = {'sanyipace.com', 'sanyipace.eu'}
+    if old.intersection(domains):
+        return list(dict.fromkeys(['sanyipacetoilet.com'] + [domain for domain in domains if domain not in old]))
+    return domains
 
 
 def http_url(value):
@@ -37,7 +56,7 @@ def http_url(value):
         parsed = urlsplit(value)
         return (parsed.scheme in {'http', 'https'} and bool(parsed.hostname)
                 and not parsed.username and not parsed.password
-                and not re.search(r'[\s\x00-\x1f\x7f]', value) and parsed.port != 0)
+                and '\\' not in value and not re.search(r'[\s\x00-\x1f\x7f]', value) and parsed.port != 0)
     except ValueError:
         return False
 
@@ -124,16 +143,93 @@ def remove(db, ident):
     return {'action': 'deleted'}
 
 
+def detect(db, url):
+    if not http_url(url):
+        raise ValueError('URL d’origine HTTP(S) valide requise.')
+    try:
+        host = urlsplit(url).hostname.rstrip('.').encode('idna').decode('ascii').lower()
+    except UnicodeError as exc:
+        raise ValueError('Domaine de l’URL invalide.') from exc
+    matches = [(len(domain), row['id']) for row in rows(db) for domain in row['domains']
+               if host == domain or host.endswith('.' + domain)]
+    if not matches:
+        return ''
+    longest = max(length for length, ident in matches)
+    candidates = {ident for length, ident in matches if length == longest}
+    if len(candidates) != 1:
+        raise ValueError('Plusieurs partenaires correspondent à ce domaine. Choisissez-en un manuellement.')
+    return candidates.pop()
+
+
+def link_metadata(db, ident, destination):
+    row = db.execute('SELECT * FROM tracked_link_partners WHERE link_id=?', (ident,)).fetchone()
+    return {'partner_id': row['partner_id'] if row else '',
+            'original_url': (row['original_url'] if row else '') or destination}
+
+
+def list_tracked(db, start=None, end=None):
+    return [{**row, **link_metadata(db, row['id'], row['url'])} for row in tracked_links.list_links(db, start, end)]
+
+
+def preview_tracked(db, data, ident=None, url_valid=http_url):
+    origin = text_field(data, 'url', 2000, True)
+    if not http_url(origin):
+        raise ValueError('URL d’origine HTTP(S) valide requise.')
+    current = db.execute('SELECT * FROM tracked_links WHERE id=?', (ident,)).fetchone() if ident else None
+    if ident and not current:
+        raise ValueError('Lien introuvable.')
+    partner_id = detect(db, origin) if data.get('detect') is True else text_field(data, 'partner_id', 32)
+    partner = db.execute('SELECT * FROM affiliate_partners WHERE id=?', (partner_id,)).fetchone() if partner_id else None
+    if partner_id and not partner:
+        raise ValueError('Partenaire introuvable.')
+    metadata = link_metadata(db, ident, current['url']) if current else None
+    preserve = (current and data.get('apply_partner') is not True
+                and origin == metadata['original_url'] and partner_id == metadata['partner_id'])
+    final = current['url'] if preserve else build_url(partner['template'], partner['code'], origin) if partner else origin
+    if len(final) > 2000:
+        raise ValueError('La destination finale dépasse 2 000 caractères.')
+    if not url_valid(final):
+        raise ValueError('Destination finale HTTP(S) valide requise, extérieure à cette instance.')
+    return {'url': final, 'original_url': origin, 'partner_id': partner_id,
+            'previous_url': current['url'] if current else '', 'changed': bool(current and current['url'] != final)}
+
+
+def save_tracked(db, data, url_valid, now, ident=None):
+    current = db.execute('SELECT * FROM tracked_links WHERE id=?', (ident,)).fetchone() if ident else None
+    if 'partner_id' not in data:
+        # Legacy API and PulSe callers supply an explicit destination, never a rule.
+        result = (tracked_links.update_link(db, ident, data, url_valid, now) if ident
+                  else tracked_links.create_link(db, data, url_valid, now))
+        if current and current['url'] != result['url']:
+            db.execute('DELETE FROM tracked_link_partners WHERE link_id=?', (ident,))
+        return result
+    result = preview_tracked(db, data, ident, url_valid)
+    if data.get('expected_url') != result['url'] or (current and data.get('previous_url') != current['url']):
+        raise ValueError('L’aperçu ou la destination a changé. Vérifiez à nouveau l’URL finale avant d’enregistrer.')
+    if result['changed'] and data.get('confirm_destination') is not True:
+        raise ValueError('Confirmez explicitement le remplacement de la destination existante.')
+    fields = {**data, 'url': result['url']}
+    saved = (tracked_links.update_link(db, ident, fields, url_valid, now) if ident
+             else tracked_links.create_link(db, fields, url_valid, now))
+    db.execute('DELETE FROM tracked_link_partners WHERE link_id=?', (saved['id'],))
+    if result['partner_id']:
+        db.execute('INSERT INTO tracked_link_partners(link_id,partner_id,original_url) VALUES(?,?,?)',
+                   (saved['id'], result['partner_id'], result['original_url']))
+    return {**saved, **result, 'id': saved['id']}
+
+
 def merge_backup(db, tables):
     # A restore must not orphan links or discard partners created since the backup.
     incoming = {row['id'] for row in tables['affiliate_partners']}
     tables['affiliate_partners'].extend(dict(row) for row in db.execute('SELECT * FROM affiliate_partners') if row['id'] not in incoming)
-    associations = {row['link_id']: row['partner_id'] for row in tables['tracked_link_partners']}
+    associations = {row['link_id']: row for row in tables['tracked_link_partners']}
     for row in db.execute('SELECT * FROM tracked_link_partners'):
-        if row['link_id'] in associations and associations[row['link_id']] != row['partner_id']:
+        if row['link_id'] in associations and associations[row['link_id']]['partner_id'] != row['partner_id']:
             raise ValueError('Une association de partenaire existante ne peut pas être réattribuée par restauration.')
         if row['link_id'] not in associations:
             tables['tracked_link_partners'].append(dict(row))
+        else:
+            associations[row['link_id']]['original_url'] = row['original_url']
     links = {row['id'] for row in tables['tracked_links']}
     partners = {row['id'] for row in tables['affiliate_partners']}
     if any(row['link_id'] not in links or row['partner_id'] not in partners for row in tables['tracked_link_partners']):

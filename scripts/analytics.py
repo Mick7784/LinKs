@@ -604,6 +604,7 @@ def restore_backup(data,preview=False):
                 keys=[tuple(row.get(k) for k in primary) for row in rows if isinstance(row,dict)]
                 if len(keys)!=len(set(keys)):raise ValueError('Identifiants en double : '+table)
                 for row in rows:
+                    if table=='tracked_link_partners' and isinstance(row,dict):row.setdefault('original_url','')
                     if table=='content_blocks' and isinstance(row,dict) and 'promo_code' not in row:row['promo_code']=''
                     if table=='top_buttons' and isinstance(row,dict) and 'custom_icon' not in row:row['custom_icon']=''
                     if table in {'content_blocks','top_buttons'} and isinstance(row,dict):row.setdefault('retired',0)
@@ -617,9 +618,13 @@ def restore_backup(data,preview=False):
                         elif not isinstance(value,str) or len(value)>16384:raise ValueError('Texte invalide')
                     if table=='affiliate_partners':
                         if not re.fullmatch(r'[a-f0-9]{32}',row['id']):raise ValueError('Identifiant de partenaire invalide')
+                        if (row['id']==uuid.uuid5(uuid.NAMESPACE_URL,'links:affiliate-partner:sanyipace').hex
+                                and not any(setting['key']==affiliate_partners.SANYIPACE_MIGRATION for setting in tables['settings'])):
+                            row['domains']=json.dumps(affiliate_partners.corrected_sanyipace_domains(json.loads(row['domains'])))
                         affiliate_partners.partner_input({**row,'domains':json.loads(row['domains'])})
                     elif table=='tracked_link_partners':
                         if any(not re.fullmatch(r'[a-f0-9]{32}',row[key]) for key in ('link_id','partner_id')):raise ValueError('Association de partenaire invalide')
+                        if row['original_url'] and (len(row['original_url'])>2000 or not affiliate_partners.http_url(row['original_url'])):raise ValueError('URL d’origine invalide')
                     elif table=='content_blocks':
                         block_data(row,allow_legacy_image=True)
                         if any(row[k] not in (0,1) for k in ['active','draft','archived','retired']):raise ValueError('État invalide')
@@ -1280,7 +1285,7 @@ class Handler(BaseHTTPRequestHandler):
             if url.path=="/api/tracked-links":
                 with connection() as db:
                     q=parse_qs(url.query)
-                    return self.json(200,{"items":tracked_links.list_links(db,q.get("start",[None])[0],q.get("end",[None])[0])})
+                    return self.json(200,{"items":affiliate_partners.list_tracked(db,q.get("start",[None])[0],q.get("end",[None])[0])})
             if url.path=="/api/backup":return self.send(200,export_backup())
             if url.path=="/api/storage":return self.json(200,storage_state())
             if url.path=="/api/stats":
@@ -1349,7 +1354,13 @@ class Handler(BaseHTTPRequestHandler):
             if path=="/api/affiliate-partners":
                 with connection() as db:return self.json(201,affiliate_partners.save(db,data,now_iso()))
             if path=="/api/tracked-links":
-                with connection() as db:return self.json(201,tracked_links.create_link(db,data,story_url_valid,now_iso()))
+                with connection() as db:
+                    db.execute('BEGIN IMMEDIATE')
+                    return self.json(201,affiliate_partners.save_tracked(db,data,story_url_valid,now_iso()))
+            if path=="/api/tracked-links/preview":
+                ident=tracked_links.text_field(data,'link_id',32)
+                if ident and not tracked_links.IDENT.fullmatch(ident):raise ValueError('Identifiant de lien invalide')
+                with connection() as db:return self.json(200,affiliate_partners.preview_tracked(db,data,ident or None,story_url_valid))
             match=re.fullmatch(r"/api/tracked-links/([a-f0-9]{32})/token",path)
             if match:
                 with connection() as db:
@@ -1399,7 +1410,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(204) if changed else self.send(404)
             match=re.fullmatch(r"/api/tracked-links/([a-f0-9]{32})",path)
             if match:
-                with connection() as db:return self.json(200,tracked_links.update_link(db,match.group(1),data,story_url_valid,now_iso()))
+                with connection() as db:
+                    db.execute('BEGIN IMMEDIATE')
+                    return self.json(200,affiliate_partners.save_tracked(db,data,story_url_valid,now_iso(),match.group(1)))
             match=re.fullmatch(r"/api/tracking-sources/([a-f0-9]{32})",path)
             if match:
                 with connection() as db:return self.json(200,tracked_links.edit_source(db,match.group(1),data))

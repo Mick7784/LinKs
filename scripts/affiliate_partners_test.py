@@ -55,7 +55,7 @@ class PartnerTests(unittest.TestCase):
         with self.a.connection() as db:
             link = self.a.tracked_links.create_link(db, {'name': 'Existant', 'url': 'https://shop.example/direct?original=1'}, self.a.story_url_valid, self.a.now_iso())
             before = self.a.tracked_links.list_links(db)
-            db.execute('INSERT INTO tracked_link_partners VALUES(?,?)', (link['id'], ident))
+            db.execute('INSERT INTO tracked_link_partners(link_id,partner_id) VALUES(?,?)', (link['id'], ident))
         self.assertEqual(self.request(endpoint, method='DELETE')[0], 409)
         with self.a.connection() as db:
             with self.assertRaises(sqlite3.IntegrityError): db.execute('DELETE FROM affiliate_partners WHERE id=?', (ident,))
@@ -67,7 +67,7 @@ class PartnerTests(unittest.TestCase):
         with self.a.connection() as db:
             partner = partners.save(db, self.fields(), self.a.now_iso())
             link = self.a.tracked_links.create_link(db, {'name': 'Historique', 'url': 'https://shop.example/direct'}, self.a.story_url_valid, self.a.now_iso())
-            db.execute('INSERT INTO tracked_link_partners VALUES(?,?)', (link['id'], partner['id']))
+            db.execute('INSERT INTO tracked_link_partners(link_id,partner_id) VALUES(?,?)', (link['id'], partner['id']))
         backup = json.loads(self.a.export_backup())
         self.a.restore_backup(copy.deepcopy(backup))
         old = copy.deepcopy(backup)
@@ -79,6 +79,82 @@ class PartnerTests(unittest.TestCase):
         self.a.init()
         with self.a.connection() as db:
             self.assertTrue(any(row['id'] == partner['id'] for row in partners.rows(db)))
+
+    def test_sanyipace_upgrade_preserves_custom_fields_and_is_once_only(self):
+        with self.a.connection() as db:
+            row = next(row for row in partners.rows(db) if row['name'] == 'Sanyipace')
+            db.execute('UPDATE affiliate_partners SET name=?,code=?,template=?,domains=? WHERE id=?',
+                       ('Mon Sanyipace', 'PERSO', '{url}#{code}', json.dumps(['sanyipace.com', 'sanyipace.eu', 'personnel.example']), row['id']))
+            db.execute('DELETE FROM settings WHERE key=?', (partners.SANYIPACE_MIGRATION,))
+            partners.initialize(db)
+            upgraded = next(value for value in partners.rows(db) if value['id'] == row['id'])
+            self.assertEqual(upgraded['domains'], ['sanyipacetoilet.com', 'personnel.example'])
+            self.assertEqual((upgraded['name'], upgraded['code'], upgraded['template']), ('Mon Sanyipace', 'PERSO', '{url}#{code}'))
+            db.execute('UPDATE affiliate_partners SET domains=? WHERE id=?', (json.dumps(['sanyipace.eu', 'extra.example']), row['id']))
+            db.execute('DELETE FROM settings WHERE key=?', (partners.SANYIPACE_MIGRATION,))
+            partners.initialize(db)
+            self.assertEqual(next(value['domains'] for value in partners.rows(db) if value['id'] == row['id']), ['sanyipacetoilet.com', 'extra.example'])
+            db.execute('UPDATE affiliate_partners SET domains=? WHERE id=?', (json.dumps(['custom.example']), row['id']))
+            db.execute('DELETE FROM settings WHERE key=?', (partners.SANYIPACE_MIGRATION,))
+            partners.initialize(db)
+            self.assertEqual(next(value['domains'] for value in partners.rows(db) if value['id'] == row['id']), ['custom.example'])
+            db.execute('UPDATE affiliate_partners SET domains=? WHERE id=?', (json.dumps(['sanyipace.com', 'sanyipace.eu']), row['id']))
+            partners.initialize(db)
+            self.assertEqual(next(value['domains'] for value in partners.rows(db) if value['id'] == row['id']), ['sanyipace.com', 'sanyipace.eu'])
+
+    def test_detection_uses_domain_boundaries_and_longest_match(self):
+        with self.a.connection() as db:
+            reolink = next(row for row in partners.rows(db) if row['name'] == 'Reolink')
+            self.assertEqual(partners.detect(db, 'https://SHOP.Reolink.com/product'), reolink['id'])
+            for domain in ['notreolink.com', 'reolink.com.other.example', 'amazon.example']:
+                self.assertEqual(partners.detect(db, 'https://'+domain+'/p'), '')
+            specific = partners.save(db, self.fields(domains=['shop.reolink.com']), self.a.now_iso())
+            self.assertEqual(partners.detect(db, 'https://eu.shop.reolink.com/p'), specific['id'])
+
+    def test_generated_destination_snapshots_confirmation_and_preview_races(self):
+        admin = self.server(True)
+        reolink = next(row for row in json.loads(self.request(admin+'/api/affiliate-partners')[1])['items'] if row['name'] == 'Reolink')
+        fields = {'name': 'Caméra', 'url': 'https://shop.reolink.com/camera', 'partner_id': reolink['id'], 'apply_partner': True}
+        expected = fields['url']+'?aff=1404'
+        status, body = self.request(admin+'/api/tracked-links', {**fields, 'expected_url': expected})
+        self.assertEqual(status, 201, body)
+        ident = json.loads(body)['id']
+        endpoint = admin+'/api/tracked-links/'+ident
+        with self.a.connection() as db:
+            source = self.a.tracked_links.source_rows(db)[0]
+            token = self.a.tracked_links.token_link(db, ident, source['id'], 'https://links.example', self.a.now_iso())
+            db.execute('UPDATE tracked_tokens SET click_total=7 WHERE link_id=?', (ident,))
+            partners.save(db, {**reolink, 'code': 'NEW'}, self.a.now_iso(), reolink['id'])
+        unchanged = {**fields, 'name': 'Caméra renommée', 'apply_partner': False, 'expected_url': expected, 'previous_url': expected}
+        self.assertEqual(self.request(endpoint, unchanged, method='PUT')[0], 200)
+        current = next(row for row in json.loads(self.request(admin+'/api/tracked-links')[1])['items'] if row['id'] == ident)
+        self.assertEqual((current['url'], current['original_url'], current['clicks']), (expected, fields['url'], 7))
+        changed = {**fields, 'expected_url': fields['url']+'?aff=NEW', 'previous_url': expected}
+        self.assertEqual(self.request(endpoint, changed, method='PUT')[0], 400, 'A generated replacement requires confirmation')
+        self.assertEqual(self.request(endpoint, {**changed, 'confirm_destination': True}, method='PUT')[0], 200)
+        with self.a.connection() as db:
+            self.assertEqual(self.a.tracked_links.token_link(db, ident, source['id'], 'https://links.example', self.a.now_iso())['url'], token['url'])
+            self.assertEqual(db.execute('SELECT click_total FROM tracked_tokens WHERE link_id=?', (ident,)).fetchone()[0], 7)
+            partners.save(db, {**reolink, 'code': 'LATEST'}, self.a.now_iso(), reolink['id'])
+        stale = {**changed, 'previous_url': changed['expected_url'], 'confirm_destination': True}
+        self.assertEqual(self.request(endpoint, stale, method='PUT')[0], 400, 'A code changed since preview must not be silently applied')
+        direct = {**fields, 'partner_id': '', 'expected_url': fields['url'], 'previous_url': changed['expected_url'], 'confirm_destination': True}
+        self.assertEqual(self.request(endpoint, direct, method='PUT')[0], 200)
+        with self.a.connection() as db:
+            self.assertIsNone(db.execute('SELECT 1 FROM tracked_link_partners WHERE link_id=?', (ident,)).fetchone())
+
+    def test_old_partner_backup_schema_and_original_url_survive_restore(self):
+        with self.a.connection() as db:
+            partner = partners.rows(db)[0]
+            fields = {'name': 'Origine', 'url': 'https://product.example/raw', 'partner_id': partner['id'], 'apply_partner': True}
+            preview = partners.preview_tracked(db, fields)
+            saved = partners.save_tracked(db, {**fields, 'expected_url': preview['url']}, self.a.story_url_valid, self.a.now_iso())
+        snapshot = json.loads(self.a.export_backup())
+        old = copy.deepcopy(snapshot)
+        for row in old['tables']['tracked_link_partners']: row.pop('original_url')
+        self.a.restore_backup(old)
+        with self.a.connection() as db:
+            self.assertEqual(partners.link_metadata(db, saved['id'], saved['url'])['original_url'], fields['url'])
 
 
 if __name__ == '__main__': unittest.main()

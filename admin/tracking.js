@@ -24,7 +24,7 @@ function rowHTML(item){
 function render(){
  const status=get("tracked-status").value,category=get("tracked-category").value;
  const items=state.items.filter(row=>(status==="all"||status==="current"&&!row.archived||status==="active"&&!row.archived&&row.enabled||status==="disabled"&&!row.archived&&!row.enabled||status==="archived"&&row.archived)&&(!category||row.category===category));
- library.setRows(items.map(row=>({...row,total:row.clicks,details:[row.url,row.category,row.notes]})),{query:get("tracked-search").value,sort:"input"});
+ library.setRows(items.map(row=>({...row,total:row.clicks,details:[row.url,row.original_url,row.category,row.notes]})),{query:get("tracked-search").value,sort:"input"});
 }
 function renderCategories(){
  const select=get("tracked-category"),selected=select.value;
@@ -46,12 +46,33 @@ async function load(){
   renderCategories();render();renderSources();
  }catch(error){get("tracked-list").textContent=error.message;}
 }
-function openEditor(item){
+let linkPreviewRevision=0,linkPreview=null,manualPartner=false,reapplyPartner=false,savingTracked=false;
+async function previewTracked(detect=false){
+ const revision=++linkPreviewRevision,form=get("tracked-form"),link=get("tracked-final-link"),message=get("tracked-final-message"),button=form.querySelector('[type="submit"]');
+ linkPreview=null;link.hidden=true;link.removeAttribute("href");button.disabled=true;
+ if(!form.elements.url.value.trim()){message.textContent="Renseignez une URL d’origine pour afficher la destination finale.";return null}
+ message.textContent="Calcul de la destination finale…";
+ try{
+  const result=await api("/api/tracked-links/preview",{method:"POST",body:JSON.stringify({url:form.elements.url.value,partner_id:form.elements.partner_id.value,link_id:state.editing,detect,apply_partner:reapplyPartner})});
+  if(revision!==linkPreviewRevision||!get("tracked-dialog").open)return null;
+  if(detect)form.elements.partner_id.value=result.partner_id;
+  linkPreview=result;link.textContent=result.url;link.href=result.url;link.hidden=false;
+  message.textContent=state.editing&&!reapplyPartner?"Destination enregistrée conservée. Le recalcul utilise les règles actuelles et demande confirmation avant tout remplacement.":"URL réellement générée. Cliquez dessus pour la tester dans un nouvel onglet.";
+  get("tracked-partner-note").textContent=detect?(result.partner_id?"Partenaire détecté automatiquement. Vous pouvez en choisir un autre ou « Aucun ».":"Aucun partenaire détecté. L’URL peut être utilisée directement."):"Vous pouvez choisir un autre partenaire ou « Aucun ».";
+  button.disabled=savingTracked;return result;
+ }catch(error){if(revision===linkPreviewRevision)message.textContent=error.message;return null}
+}
+async function openEditor(item){
+ try{state.partners=(await api("/api/affiliate-partners")).items}catch(error){say(error.message,true);return}
  state.editing=item?.id||"";
  const form=get("tracked-form");form.reset();
  for(const key of ["name","url","category","notes"])form.elements[key].value=item?.[key]||"";
+ form.elements.url.value=item?.original_url||item?.url||"";
+ form.elements.partner_id.replaceChildren(new Option("Aucun",""),...state.partners.map(partner=>new Option(partner.name,partner.id)));
+ form.elements.partner_id.value=item?.partner_id||"";
+ manualPartner=false;reapplyPartner=false;savingTracked=false;get("tracked-recalculate").hidden=!item;
  get("tracked-dialog-title").textContent=item?"Modifier le lien suivi":"Créer un lien suivi";
- get("tracked-dialog").showModal();form.elements.name.focus();
+ get("tracked-dialog").showModal();previewTracked(!item);form.elements.name.focus();
 }
 async function copyTracked(row){
  const select=document.getElementById("source-"+row.id);if(!select?.value){say("Ajoute d’abord une source de publication.",true);return}
@@ -80,11 +101,18 @@ get("tracked-list").addEventListener("click",async event=>{
  }catch(error){say(error.message,true)}finally{button.disabled=false}
 });
 get("tracked-form").addEventListener("submit",async event=>{
- event.preventDefault();const form=event.currentTarget,button=form.querySelector('[type="submit"]');button.disabled=true;
- const fields=Object.fromEntries(new FormData(form));
- try{await api(state.editing?"/api/tracked-links/"+state.editing:"/api/tracked-links",{method:state.editing?"PUT":"POST",body:JSON.stringify(fields)});await load();close("tracked-dialog");say("Lien suivi enregistré.")}
- catch(error){say(error.message,true)}finally{button.disabled=false}
+ event.preventDefault();if(savingTracked)return;const form=event.currentTarget,button=form.querySelector('[type="submit"]');savingTracked=true;button.disabled=true;
+ try{
+  const preview=await previewTracked();if(!preview)return;
+  if(preview.changed&&!confirm(`Remplacer la destination existante ?\n\nActuelle : ${preview.previous_url}\n\nNouvelle : ${preview.url}\n\nLes URL courtes déjà publiées utiliseront cette nouvelle destination.`))return;
+  const fields={...Object.fromEntries(new FormData(form)),apply_partner:reapplyPartner,expected_url:preview.url,previous_url:preview.previous_url,confirm_destination:preview.changed};
+  await api(state.editing?"/api/tracked-links/"+state.editing:"/api/tracked-links",{method:state.editing?"PUT":"POST",body:JSON.stringify(fields)});await load();await loadPartners();close("tracked-dialog");say("Lien suivi enregistré.")
+ }catch(error){say(error.message,true);previewTracked()}finally{savingTracked=false;button.disabled=!linkPreview}
 });
+get("tracked-form").elements.url.addEventListener("input",()=>{reapplyPartner=true;previewTracked(!manualPartner)});
+get("tracked-partner").addEventListener("change",()=>{manualPartner=true;reapplyPartner=true;previewTracked()});
+get("tracked-recalculate").addEventListener("click",()=>{reapplyPartner=true;previewTracked()});
+get("tracked-dialog").addEventListener("close",()=>{++linkPreviewRevision;linkPreview=null});
 get("tracked-source-form").addEventListener("submit",async event=>{
  event.preventDefault();const form=event.currentTarget,button=form.querySelector('[type="submit"]');button.disabled=true;
  try{await api("/api/tracking-sources",{method:"POST",body:JSON.stringify({name:form.elements.name.value})});form.reset();await load();say("Source ajoutée.")}
