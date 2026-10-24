@@ -1,5 +1,11 @@
 # Changelog
 
+## V1.317
+
+### 🔧 Améliorations
+
+- Release V1.317 - correction affichage liens suivis privés
+
 ## V1.316
 
 ### ✨ Nouveautés
