@@ -2168,6 +2168,7 @@ a.brand:focus-visible{outline:2px solid var(--focus);outline-offset:4px}
 .tracked-editor .dialog-actions{display:flex;justify-content:flex-end;gap:8px}
 #partner-preview{overflow-wrap:anywhere}
 #tracked-final-link{overflow-wrap:anywhere}
+#tracked-reuse-destination,#tracked-reuse-url{overflow-wrap:anywhere}
 .tracked-new-source{display:flex;gap:8px;align-items:end}
 .tracked-new-source label{flex:1;min-width:0}
 .tracked-source-list{display:grid;gap:7px;max-height:42vh;overflow:auto}

@@ -302,6 +302,7 @@ $("theme-select").addEventListener("change",event=>{applyAdminTheme(event.target
 themeMedia.addEventListener("change",()=>{if($("theme-select").value==="system")applyAdminTheme("system")});
 
 const iconPaths={
+ globe:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a17 17 0 0 1 0 18 17 17 0 0 1 0-18Z"/>',
  dashboard:'<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
  links:'<path d="m10 13 4-4m-6 6-1 1a4 4 0 0 1-6-6l4-4a4 4 0 0 1 6 0m2 3 1-1a4 4 0 0 1 6 6l-4 4a4 4 0 0 1-6 0"/>',
  buttons:'<rect x="3" y="7" width="18" height="10" rx="3"/><path d="M8 12h8"/>',

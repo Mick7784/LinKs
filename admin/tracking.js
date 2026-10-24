@@ -3,7 +3,7 @@
 (()=>{"use strict";
 const get=id=>document.getElementById(id),safe=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const fmt=new Intl.NumberFormat("fr-FR");
-const state={sources:[],items:[],editing:"",partners:[],editingPartner:""};
+const state={sources:[],items:[],editing:"",partners:[],editingPartner:"",reusing:""};
 const close=which=>get(which)?.close();
 const library=StudioCollection.create(get("tracked-list"),{empty:"Aucun lien suivi à afficher. Créez un lien ou ajustez les filtres.",renderRow(row){const template=document.createElement("template");template.innerHTML=rowHTML(row);return template.content.firstElementChild}});
 function rowHTML(item){
@@ -43,20 +43,24 @@ async function load(){
  try{
   const [links,sources]=await Promise.all([api("/api/tracked-links"),api("/api/tracking-sources")]);
   state.items=links.items;state.sources=sources.items;
-  renderCategories();render();renderSources();
+  renderCategories();render();renderSources();if(get("tracked-reuse-dialog").open)renderReuseSources();
  }catch(error){get("tracked-list").textContent=error.message;}
 }
 let linkPreviewRevision=0,linkPreview=null,manualPartner=false,reapplyPartner=false,savingTracked=false;
+function renderDuplicates(matches=[]){
+ get("tracked-duplicates").hidden=!matches.length;
+ get("tracked-duplicate-list").innerHTML=matches.map(row=>`<article class="tracked-item"><div class="tracked-item-label"><strong>${safe(row.name)}</strong><small>${row.archived?"Archivé":!row.enabled?"Suspendu":"Actif"}</small></div><div class="profile-image-actions"><button type="button" data-open-duplicate="${safe(row.id)}">Ouvrir sa fiche</button><button type="button" data-reuse-duplicate="${safe(row.id)}">Réutiliser ses liens courts</button></div></article>`).join("");
+}
 async function previewTracked(detect=false){
  const revision=++linkPreviewRevision,form=get("tracked-form"),link=get("tracked-final-link"),message=get("tracked-final-message"),button=form.querySelector('[type="submit"]');
- linkPreview=null;link.hidden=true;link.removeAttribute("href");button.disabled=true;
+ linkPreview=null;link.hidden=true;link.removeAttribute("href");button.disabled=true;renderDuplicates();
  if(!form.elements.url.value.trim()){message.textContent="Renseignez une URL d’origine pour afficher la destination finale.";return null}
  message.textContent="Calcul de la destination finale…";
  try{
   const result=await api("/api/tracked-links/preview",{method:"POST",body:JSON.stringify({url:form.elements.url.value,partner_id:form.elements.partner_id.value,link_id:state.editing,detect,apply_partner:reapplyPartner})});
   if(revision!==linkPreviewRevision||!get("tracked-dialog").open)return null;
   if(detect)form.elements.partner_id.value=result.partner_id;
-  linkPreview=result;link.textContent=result.url;link.href=result.url;link.hidden=false;
+  linkPreview=result;link.textContent=result.url;link.href=result.url;link.hidden=false;renderDuplicates(result.duplicates);
   message.textContent=state.editing&&!reapplyPartner?"Destination enregistrée conservée. Le recalcul utilise les règles actuelles et demande confirmation avant tout remplacement.":"URL réellement générée. Cliquez dessus pour la tester dans un nouvel onglet.";
   get("tracked-partner-note").textContent=detect?(result.partner_id?"Partenaire détecté automatiquement. Vous pouvez en choisir un autre ou « Aucun ».":"Aucun partenaire détecté. L’URL peut être utilisée directement."):"Vous pouvez choisir un autre partenaire ou « Aucun ».";
   button.disabled=savingTracked;return result;
@@ -74,16 +78,17 @@ async function openEditor(item){
  get("tracked-dialog-title").textContent=item?"Modifier le lien suivi":"Créer un lien suivi";
  get("tracked-dialog").showModal();previewTracked(!item);form.elements.name.focus();
 }
-async function copyTracked(row){
- const select=document.getElementById("source-"+row.id);if(!select?.value){say("Ajoute d’abord une source de publication.",true);return}
- const response=await api("/api/tracked-links/"+row.id+"/token",{method:"POST",body:JSON.stringify({source_id:select.value})});
+async function copyTracked(row,sourceId){
+ const selected=sourceId||document.getElementById("source-"+row.id)?.value;if(!selected){say("Ajoute d’abord une source de publication.",true);return}
+ const response=await api("/api/tracked-links/"+row.id+"/token",{method:"POST",body:JSON.stringify({source_id:selected})});
  const link=response.url;
- try{await navigator.clipboard.writeText(link);say("Lien permanent copié · "+(state.sources.find(s=>s.id===select.value)?.name||""))}
+ try{await navigator.clipboard.writeText(link);say("Lien permanent copié · "+(state.sources.find(s=>s.id===selected)?.name||""))}
  catch{
    const input=document.createElement("textarea");input.value=link;input.style.position="fixed";input.style.opacity="0";document.body.append(input);input.select();let ok=false;try{ok=document.execCommand("copy")}catch{}input.remove();
    if(ok)say("Lien permanent copié");
    else window.prompt("Copier ce lien permanent",link);
  }
+ return link;
 }
 get("tracked-list").addEventListener("click",async event=>{
  const button=event.target.closest("button[data-tracked-action]");if(!button)return;
@@ -105,7 +110,8 @@ get("tracked-form").addEventListener("submit",async event=>{
  try{
   const preview=await previewTracked();if(!preview)return;
   if(preview.changed&&!confirm(`Remplacer la destination existante ?\n\nActuelle : ${preview.previous_url}\n\nNouvelle : ${preview.url}\n\nLes URL courtes déjà publiées utiliseront cette nouvelle destination.`))return;
-  const fields={...Object.fromEntries(new FormData(form)),apply_partner:reapplyPartner,expected_url:preview.url,previous_url:preview.previous_url,confirm_destination:preview.changed};
+  if(preview.duplicate_confirmation_required&&!confirm(`Créer exceptionnellement un doublon de destination ?\n\nDéjà utilisée par : ${preview.duplicates.map(row=>row.name).join(", ")}\n\n${preview.url}\n\nVous pouvez réutiliser leurs liens courts et sources. Continuer malgré ce doublon ?`))return;
+  const fields={...Object.fromEntries(new FormData(form)),apply_partner:reapplyPartner,expected_url:preview.url,previous_url:preview.previous_url,confirm_destination:preview.changed,allow_duplicate:preview.duplicate_confirmation_required,duplicate_ids:preview.duplicates.map(row=>row.id).sort()};
   await api(state.editing?"/api/tracked-links/"+state.editing:"/api/tracked-links",{method:state.editing?"PUT":"POST",body:JSON.stringify(fields)});await load();await loadPartners();close("tracked-dialog");say("Lien suivi enregistré.")
  }catch(error){say(error.message,true);previewTracked()}finally{savingTracked=false;button.disabled=!linkPreview}
 });
@@ -113,6 +119,40 @@ get("tracked-form").elements.url.addEventListener("input",()=>{reapplyPartner=tr
 get("tracked-partner").addEventListener("change",()=>{manualPartner=true;reapplyPartner=true;previewTracked()});
 get("tracked-recalculate").addEventListener("click",()=>{reapplyPartner=true;previewTracked()});
 get("tracked-dialog").addEventListener("close",()=>{++linkPreviewRevision;linkPreview=null});
+async function openDuplicate(id){
+ await load();const row=state.items.find(item=>item.id===id);if(!row){say("Lien introuvable.",true);return}
+ close("tracked-reuse-dialog");close("tracked-dialog");openEditor(row);
+}
+function renderReuseSources(){
+ const row=state.items.find(item=>item.id===state.reusing);if(!row)return;
+ const select=get("tracked-reuse-source"),selected=select.value;
+ const active=state.sources.filter(source=>source.active);
+ select.replaceChildren(...active.map(source=>new Option(source.name+(row.sources.some(value=>value.id===source.id)?" · lien existant":" · à ajouter"),source.id)));
+ if(active.some(source=>source.id===selected))select.value=selected;
+ if(!active.length)select.append(new Option("Aucune source active",""));
+ const usable=!row.archived&&row.enabled&&active.length>0;
+ select.disabled=!usable;get("tracked-reuse-copy").disabled=!usable;
+ get("tracked-reuse-copy").textContent=row.sources.some(source=>source.id===select.value)?"Copier le lien court existant":"Ajouter cette source et copier";
+ get("tracked-reuse-status").textContent=row.archived?"Lien archivé : ouvrez sa fiche puis restaurez-le dans la bibliothèque pour un nouveau partage.":!row.enabled?"Lien suspendu : réactivez-le dans la bibliothèque pour un nouveau partage.":!active.length?"Ajoutez une source de publication pour partager ce lien.":"Les sources marquées « à ajouter » seront rattachées à ce même lien.";
+}
+async function openReuse(id){
+ await load();const row=state.items.find(item=>item.id===id);if(!row){say("Lien introuvable.",true);return}
+ state.reusing=id;get("tracked-reuse-heading").textContent=row.name;
+ const destination=get("tracked-reuse-destination");destination.textContent=row.url;destination.href=row.url;
+ get("tracked-reuse-url").hidden=true;get("tracked-reuse-url").removeAttribute("href");
+ renderReuseSources();get("tracked-reuse-dialog").showModal();
+}
+get("tracked-duplicate-list").addEventListener("click",event=>{const open=event.target.closest("[data-open-duplicate]"),reuse=event.target.closest("[data-reuse-duplicate]");if(open)openDuplicate(open.dataset.openDuplicate);if(reuse)openReuse(reuse.dataset.reuseDuplicate)});
+get("tracked-reuse-source").addEventListener("change",()=>{get("tracked-reuse-url").hidden=true;renderReuseSources()});
+get("tracked-reuse-copy").addEventListener("click",async()=>{
+ const button=get("tracked-reuse-copy"),row=state.items.find(item=>item.id===state.reusing);if(!row)return;
+ button.disabled=true;
+ try{const url=await copyTracked(row,get("tracked-reuse-source").value);if(url){const output=get("tracked-reuse-url");output.textContent=url;output.href=url;output.hidden=false}await load()}
+ catch(error){say(error.message,true)}finally{renderReuseSources()}
+});
+get("tracked-reuse-manage").addEventListener("click",()=>{renderSources();get("tracked-sources-dialog").showModal()});
+get("tracked-reuse-edit").addEventListener("click",()=>openDuplicate(state.reusing));
+document.querySelectorAll("[data-close-reuse]").forEach(button=>button.addEventListener("click",()=>close("tracked-reuse-dialog")));
 get("tracked-source-form").addEventListener("submit",async event=>{
  event.preventDefault();const form=event.currentTarget,button=form.querySelector('[type="submit"]');button.disabled=true;
  try{await api("/api/tracking-sources",{method:"POST",body:JSON.stringify({name:form.elements.name.value})});form.reset();await load();say("Source ajoutée.")}

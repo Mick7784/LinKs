@@ -1396,6 +1396,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json(200,storage_state(action))
             if path=="/api/settings":return self.save_settings(data)
             return self.send(404)
+        except tracked_links.DuplicateDestination as exc:return self.json(409,{"error":str(exc),"duplicates":exc.matches})
         except (ValueError,TypeError,json.JSONDecodeError,binascii.Error,sqlite3.IntegrityError) as exc:return self.json(400,{"error":str(exc) or "Requête invalide"})
         except (OSError,sqlite3.OperationalError):return self.json(503,{"error":"Stockage indisponible. Les données n’ont pas été remplacées."})
     def do_PUT(self):
@@ -1424,6 +1425,7 @@ class Handler(BaseHTTPRequestHandler):
             match=re.fullmatch(r"/api/buttons/([\w-]+)",path)
             if match:return self.update_button(match.group(1),data)
             return self.send(404)
+        except tracked_links.DuplicateDestination as exc:return self.json(409,{"error":str(exc),"duplicates":exc.matches})
         except (ValueError,TypeError,json.JSONDecodeError) as exc:return self.json(400,{"error":str(exc) or "Requête invalide"})
     def do_DELETE(self):
         if self.server.admin and not self.authorized(mutation=True):return

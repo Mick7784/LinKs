@@ -48,6 +48,7 @@ jobs:
           python3 scripts/analytics_test.py
           python3 scripts/pulse_bridge_test.py
           python3 scripts/affiliate_partners_test.py
+          python3 scripts/tracked_duplicates_test.py
           python3 scripts/conservation_test.py
           python3 scripts/instance_test.py
           python3 scripts/release_version_test.py
@@ -63,6 +64,7 @@ jobs:
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/tracked-library-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/affiliate-partners-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/affiliate-detection-browser-test.cjs
+          NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/tracked-duplicates-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/calendar-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/settings-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/targeted-browser-test.cjs

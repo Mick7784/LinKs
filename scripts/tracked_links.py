@@ -7,6 +7,7 @@ import re
 import secrets
 import uuid
 import short_urls
+from urllib.parse import urlsplit
 from datetime import date
 
 TOKEN = re.compile(r"tk_[A-Za-z0-9_-]{16}")
@@ -17,6 +18,60 @@ DEFAULT_SOURCES = ("Instagram Story", "Instagram Bio", "YouTube Post",
 LEGACY_SOURCES = {"instagram":"Instagram Story","youtube":"YouTube Post",
                   "facebook":"Facebook","tiktok":"TikTok","discord":"Discord",
                   "instagram-story":"Autre / Direct","shared-unknown":"Autre / Direct"}
+
+
+class DuplicateDestination(ValueError):
+    def __init__(self, matches):
+        self.matches = matches
+        super().__init__('Cette destination existe déjà. Réutilisez le lien existant ou confirmez exceptionnellement le doublon.')
+
+
+def canonical_destination(url):
+    """Comparison only: never rewrite a stored or published affiliate destination.
+
+    Query keys may be reordered, but repeated values for one key keep their order.
+    All parameters, literal plus signs, fragments, schemes and path case survive.
+    """
+    parsed = urlsplit(url)
+    unreserved = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~'
+    def percent(value):
+        return re.sub(r'%([0-9a-fA-F]{2})', lambda match: chr(int(match[1], 16))
+                      if chr(int(match[1], 16)) in unreserved else '%' + match[1].upper(), value)
+    host = (parsed.hostname or '').encode('idna').decode('ascii').lower().rstrip('.')
+    port = parsed.port
+    if (parsed.scheme.lower(), port) in {('http', 80), ('https', 443)}:
+        port = None
+    groups = {}
+    if parsed.query:
+        for parameter in parsed.query.split('&'):
+            key, equals, value = parameter.partition('=')
+            groups.setdefault(percent(key), []).append((bool(equals), percent(value)))
+    query = tuple((key, tuple(values)) for key, values in sorted(groups.items()))
+    return (parsed.scheme.lower(), host, port, percent(parsed.path or '/'), query,
+            '?' in url.split('#', 1)[0], percent(parsed.fragment), '#' in url)
+
+
+def duplicate_destinations(db, url, exclude=None):
+    target = canonical_destination(url)
+    matches = []
+    for row in db.execute('SELECT id,name,url,archived,enabled FROM tracked_links WHERE id!=? ORDER BY created_at,id', (exclude or '',)):
+        try:
+            equivalent = canonical_destination(row['url']) == target
+        except (ValueError, UnicodeError):
+            equivalent = False
+        if equivalent:
+            matches.append(dict(row))
+    return matches
+
+
+def check_duplicate_destination(db, url, data, current=None):
+    matches = duplicate_destinations(db, url, current['id'] if current else None)
+    # Existing duplicates remain editable without repeatedly approving an unchanged destination.
+    required = bool(matches) and (not current or canonical_destination(current['url']) != canonical_destination(url))
+    if required and (data.get('allow_duplicate') is not True or
+                     data.get('duplicate_ids') != sorted(row['id'] for row in matches)):
+        raise DuplicateDestination(matches)
+    return matches, required
 
 
 def initialize(db):

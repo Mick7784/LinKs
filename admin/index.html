@@ -11,7 +11,7 @@
  <nav class="tabs" id="navigation-tabs" aria-label="Navigation du back-office">
  <button data-tab="dashboard" class="active"><span class="nav-icon" data-icon="dashboard" aria-hidden="true"></span><span>Tableau de bord</span></button>
  <button data-tab="statistics"><span class="nav-icon" data-icon="chart" aria-hidden="true"></span><span>Statistiques</span></button>
- <button data-tab="content"><span class="nav-icon" data-icon="links" aria-hidden="true"></span><span>Page publique</span></button>
+ <button data-tab="content"><span class="nav-icon" data-icon="globe" aria-hidden="true"></span><span>Page publique</span></button>
  <button data-tab="tracked-links"><span class="nav-icon" data-icon="links" aria-hidden="true"></span><span>Liens suivis</span></button>
  <button data-tab="buttons"><span class="nav-icon" data-icon="buttons" aria-hidden="true"></span><span>Réseaux &amp; raccourcis</span></button>
  <button data-tab="appearance"><span class="nav-icon" data-icon="settings" aria-hidden="true"></span><span>Apparence</span></button>
@@ -144,10 +144,23 @@
  <p id="tracked-partner-note" class="field-help">Le domaine permet de présélectionner un partenaire. Vous pouvez en choisir un autre ou « Aucun ».</p>
  <button type="button" id="tracked-recalculate" hidden>Recalculer avec la configuration actuelle</button>
  <section aria-labelledby="tracked-final-heading"><h3 id="tracked-final-heading">Destination finale</h3><p id="tracked-final-message" class="field-help" role="status" aria-live="polite"></p><a id="tracked-final-link" target="_blank" rel="noopener noreferrer" hidden></a></section>
+ <section id="tracked-duplicates" class="panel" aria-labelledby="tracked-duplicates-heading" hidden><h3 id="tracked-duplicates-heading">Destination déjà enregistrée</h3><p class="field-help">Réutilisez les URL courtes d’un lien existant et ajoutez les sources de publication manquantes. Un nouveau lien identique reste possible après confirmation explicite.</p><div id="tracked-duplicate-list" aria-live="polite"></div></section>
  <label>Catégorie (facultatif)<input name="category" maxlength="80" placeholder="Produit, accessoire, offre…"></label>
  <label>Notes (facultatif)<textarea name="notes" rows="2" maxlength="800"></textarea></label>
  <div class="dialog-actions"><button type="button" data-close-tracked>Annuler</button><button type="submit" class="primary">Enregistrer</button></div>
  </form>
+</dialog>
+<dialog id="tracked-reuse-dialog" class="tracked-dialog">
+ <div class="tracked-editor">
+  <header><h2 id="tracked-reuse-heading">Réutiliser le lien existant</h2><button type="button" class="icon-button" data-close-reuse aria-label="Fermer">×</button></header>
+  <p class="field-help">Chaque source utilise son URL courte permanente. Ajouter une source conserve le même lien et son historique.</p>
+  <a id="tracked-reuse-destination" target="_blank" rel="noopener noreferrer"></a>
+  <p id="tracked-reuse-status" class="field-help" role="status"></p>
+  <label>Source de publication<select id="tracked-reuse-source"></select></label>
+  <div class="profile-image-actions"><button type="button" id="tracked-reuse-copy" class="primary">Copier le lien court</button><button type="button" id="tracked-reuse-manage">Gérer les sources</button></div>
+  <a id="tracked-reuse-url" target="_blank" rel="noopener noreferrer" hidden></a>
+  <div class="dialog-actions"><button type="button" id="tracked-reuse-edit">Ouvrir sa fiche</button><button type="button" data-close-reuse>Revenir au lien en cours</button></div>
+ </div>
 </dialog>
 <dialog id="tracked-sources-dialog" class="tracked-dialog">
  <div class="tracked-editor"><header><h2>Sources de publication</h2><button type="button" class="icon-button" data-close-sources aria-label="Fermer">×</button></header>

@@ -190,14 +190,19 @@ def preview_tracked(db, data, ident=None, url_valid=http_url):
         raise ValueError('La destination finale dépasse 2 000 caractères.')
     if not url_valid(final):
         raise ValueError('Destination finale HTTP(S) valide requise, extérieure à cette instance.')
+    duplicates = tracked_links.duplicate_destinations(db, final, ident)
+    required = bool(duplicates) and (not current or tracked_links.canonical_destination(current['url']) != tracked_links.canonical_destination(final))
     return {'url': final, 'original_url': origin, 'partner_id': partner_id,
-            'previous_url': current['url'] if current else '', 'changed': bool(current and current['url'] != final)}
+            'previous_url': current['url'] if current else '', 'changed': bool(current and current['url'] != final),
+            'duplicates': duplicates, 'duplicate_confirmation_required': required}
 
 
 def save_tracked(db, data, url_valid, now, ident=None):
     current = db.execute('SELECT * FROM tracked_links WHERE id=?', (ident,)).fetchone() if ident else None
     if 'partner_id' not in data:
         # Legacy API and PulSe callers supply an explicit destination, never a rule.
+        fields = tracked_links.link_input(data, url_valid)
+        tracked_links.check_duplicate_destination(db, fields['url'], data, current)
         result = (tracked_links.update_link(db, ident, data, url_valid, now) if ident
                   else tracked_links.create_link(db, data, url_valid, now))
         if current and current['url'] != result['url']:
@@ -208,6 +213,7 @@ def save_tracked(db, data, url_valid, now, ident=None):
         raise ValueError('L’aperçu ou la destination a changé. Vérifiez à nouveau l’URL finale avant d’enregistrer.')
     if result['changed'] and data.get('confirm_destination') is not True:
         raise ValueError('Confirmez explicitement le remplacement de la destination existante.')
+    tracked_links.check_duplicate_destination(db, result['url'], data, current)
     fields = {**data, 'url': result['url']}
     saved = (tracked_links.update_link(db, ident, fields, url_valid, now) if ident
              else tracked_links.create_link(db, fields, url_valid, now))
