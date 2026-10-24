@@ -6,10 +6,17 @@ const fmt=new Intl.NumberFormat("fr-FR");
 const state={sources:[],items:[],editing:"",partners:[],editingPartner:"",reusing:""};
 const close=which=>get(which)?.close();
 const library=StudioCollection.create(get("tracked-list"),{empty:"Aucun lien suivi à afficher. Créez un lien ou ajustez les filtres.",renderRow(row){const template=document.createElement("template");template.innerHTML=rowHTML(row);return template.content.firstElementChild}});
+function sourceOptions(prefix="",published=null){
+ const available=state.sources.filter(source=>source.active);
+ return [["Plateformes",source=>source.platform],["Autres sources",source=>!source.platform&&!source.historical],["Historiques",source=>source.historical]].map(([label,include])=>{
+  const rows=available.filter(include);if(!rows.length)return "";
+  return `<optgroup label="${label}">${rows.map(source=>`<option value="${prefix+safe(source.id)}">${safe(source.name)}${published?(published.some(row=>row.id===source.id)?" · lien existant":" · à ajouter"):""}</option>`).join("")}</optgroup>`;
+ }).join("");
+}
 function rowHTML(item){
  const value=item.clicks;
  const usable=!item.archived&&item.enabled;
- const options=state.sources.filter(s=>s.active).map(s=>`<option value="${safe(s.id)}">${safe(s.name)}</option>`).join("");
+ const options=sourceOptions();
  const title=item.archived?"Archivé":!item.enabled?"Désactivé":"Actif";
  return `<article class="tracked-item${item.archived?" archived":""}" data-tracked-id="${safe(item.id)}">
  <div class="tracked-item-top"><button type="button" class="tracked-expand" data-open-statistics="shared" data-analysis-query="${safe(item.name)}" title="Voir les statistiques de ce lien"><span class="tracked-item-icon" aria-hidden="true">↗</span><span class="tracked-item-label"><strong>${safe(item.name)}</strong><small>${safe(item.category||"Lien suivi")} · ${fmt.format(value)} clic(s) · ${title}</small></span><span class="tracked-expander" aria-hidden="true">→</span></button>
@@ -31,13 +38,22 @@ function renderCategories(){
  select.replaceChildren(new Option("Toutes les catégories",""),...[...new Set(state.items.map(row=>row.category).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"fr")).map(value=>new Option(value,value)));
  select.value=[...select.options].some(option=>option.value===selected)?selected:"";
 }
-function renderSources(){
- get("tracked-source-list").innerHTML=state.sources.map(row=>`<div class="tracked-source-manager-row" data-source-id="${safe(row.id)}">
+const sourceLibrary=StudioCollection.create(get("tracked-source-list"),{empty:"Aucune source dans cette vue. Ajustez la recherche ou le filtre.",renderRow(row){
+ const node=document.createElement("div");node.className="tracked-source-manager-row";node.dataset.sourceId=row.id;
+ node.innerHTML=`
  <input value="${safe(row.name)}" aria-label="Nom de source" maxlength="100">
- <span class="tracked-source-counter">${fmt.format(row.clicks)} clic(s) · ${row.active?"Active":"Archivée"}</span>
+ <span class="tracked-source-counter">${row.platform?"Plateforme · ":row.historical?"Historique · ":""}${fmt.format(row.clicks)} clic(s) · ${row.active?"Active":"Archivée"}</span>
  <button type="button" data-source-action="rename" title="Renommer">Enregistrer</button>
- <button type="button" data-source-action="${row.active?"remove":"restore"}">${row.active?"Retirer":"Restaurer"}</button></div>`).join("")||'<p class="empty">Aucune source. Ajoutez-en une ci-dessus.</p>';
+ <button type="button" data-source-action="${row.active?"remove":"restore"}">${row.active?"Retirer":"Restaurer"}</button>`;return node;
+}});
+function renderSources(){
+ const scope=get("tracked-source-scope").value;
+ const rows=state.sources.filter(row=>scope==="all"||scope==="historical"&&row.historical||scope==="archived"&&!row.active||scope==="current"&&row.active&&!row.historical);
+ sourceLibrary.setRows(rows.map(row=>({...row,total:row.clicks,details:[row.platform||""]})),{sort:"input",query:get("tracked-source-search").value});
 }
+get("tracked-source-filters").addEventListener("submit",event=>event.preventDefault());
+get("tracked-source-search").addEventListener("input",renderSources);
+get("tracked-source-scope").addEventListener("change",renderSources);
 async function load(){
  if(!get("tracked-list"))return;
  try{
@@ -121,13 +137,14 @@ get("tracked-recalculate").addEventListener("click",()=>{reapplyPartner=true;pre
 get("tracked-dialog").addEventListener("close",()=>{++linkPreviewRevision;linkPreview=null});
 async function openDuplicate(id){
  await load();const row=state.items.find(item=>item.id===id);if(!row){say("Lien introuvable.",true);return}
+ get("tracked-status").value="all";get("tracked-category").value="";get("tracked-search").value=row.name;render();
  close("tracked-reuse-dialog");close("tracked-dialog");openEditor(row);
 }
 function renderReuseSources(){
  const row=state.items.find(item=>item.id===state.reusing);if(!row)return;
  const select=get("tracked-reuse-source"),selected=select.value;
  const active=state.sources.filter(source=>source.active);
- select.replaceChildren(...active.map(source=>new Option(source.name+(row.sources.some(value=>value.id===source.id)?" · lien existant":" · à ajouter"),source.id)));
+ select.innerHTML=sourceOptions("",row.sources);
  if(active.some(source=>source.id===selected))select.value=selected;
  if(!active.length)select.append(new Option("Aucune source active",""));
  const usable=!row.archived&&row.enabled&&active.length>0;
@@ -155,7 +172,7 @@ get("tracked-reuse-edit").addEventListener("click",()=>openDuplicate(state.reusi
 document.querySelectorAll("[data-close-reuse]").forEach(button=>button.addEventListener("click",()=>close("tracked-reuse-dialog")));
 get("tracked-source-form").addEventListener("submit",async event=>{
  event.preventDefault();const form=event.currentTarget,button=form.querySelector('[type="submit"]');button.disabled=true;
- try{await api("/api/tracking-sources",{method:"POST",body:JSON.stringify({name:form.elements.name.value})});form.reset();await load();say("Source ajoutée.")}
+ try{await api("/api/tracking-sources",{method:"POST",body:JSON.stringify({name:form.elements.name.value})});form.reset();get("tracked-source-scope").value="current";get("tracked-source-search").value="";await load();say("Source ajoutée.")}
  catch(error){say(error.message,true)}finally{button.disabled=false}
 });
 get("tracked-source-list").addEventListener("click",async event=>{
@@ -171,6 +188,7 @@ get("tracked-source-list").addEventListener("click",async event=>{
   if(action==="rename"){await api("/api/tracking-sources/"+row.id,{method:"PUT",body:JSON.stringify({name:holder.querySelector("input").value})})}
   else if(action==="remove"){await api("/api/tracking-sources/"+row.id,{method:"DELETE"})}
   else{await api("/api/tracking-sources/"+row.id+"/restore",{method:"POST",body:"{}"})}
+  if(action==="remove")get("tracked-source-scope").value="all";
   await load();say(action==="rename"?"Source renommée.":action==="remove"?"Source retirée selon son historique.":"Source restaurée.");
  }catch(error){say(error.message,true)}finally{button.disabled=false}
 });
@@ -184,12 +202,7 @@ document.querySelectorAll("[data-close-tracked]").forEach(button=>button.addEven
 document.querySelectorAll("[data-close-sources]").forEach(button=>button.addEventListener("click",()=>close("tracked-sources-dialog")));
 function campaignOptions(){
  if(!state.sources.length)return null;
- const preferred=["Instagram Story","YouTube Post","Facebook","TikTok"];
- const available=state.sources.filter(source=>source.active).sort((a,b)=>{
-   const ai=preferred.indexOf(a.name),bi=preferred.indexOf(b.name);
-   return (ai===-1?100:ai)-(bi===-1?100:bi)||a.name.localeCompare(b.name,"fr");
- });
- return available.map(source=>`<option value="${"src_"+source.id}">${safe(source.name)}</option>`).join("")+'<option value="">Autre / sans source identifiée</option>';
+ return sourceOptions("src_")+'<option value="">Autre / sans source identifiée</option>';
 }
 const partnerLibrary=StudioCollection.create(get("partner-list"),{empty:"Aucun partenaire configuré. Les liens affiliés directs restent utilisables.",renderRow(row){
  const article=document.createElement("article");article.className="tracked-item";article.dataset.partnerId=row.id;

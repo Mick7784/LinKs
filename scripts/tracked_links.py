@@ -6,6 +6,7 @@ the 400-day analytics retention window and mutable destination/source labels.
 import re
 import secrets
 import uuid
+import sqlite3
 import short_urls
 from urllib.parse import urlsplit
 from datetime import date
@@ -18,6 +19,9 @@ DEFAULT_SOURCES = ("Instagram Story", "Instagram Bio", "YouTube Post",
 LEGACY_SOURCES = {"instagram":"Instagram Story","youtube":"YouTube Post",
                   "facebook":"Facebook","tiktok":"TikTok","discord":"Discord",
                   "instagram-story":"Autre / Direct","shared-unknown":"Autre / Direct"}
+PLATFORMS = {'instagram': 'Instagram', 'youtube': 'YouTube', 'facebook': 'Facebook',
+             'tiktok': 'TikTok', 'discord': 'Discord', 'other': 'Autre / Direct'}
+SOURCE_KEYS = set(LEGACY_SOURCES) | {'platform:'+key for key in PLATFORMS}
 
 
 class DuplicateDestination(ValueError):
@@ -110,6 +114,42 @@ def initialize(db):
         for key,name in LEGACY_SOURCES.items():
             row=db.execute('SELECT id FROM tracking_sources WHERE name=?',(name,)).fetchone()
             db.execute('INSERT INTO tracking_source_keys VALUES(?,?)',(key,row['id'] if row else None))
+    # Add preferred platform identities without renaming, merging or reassigning history.
+    for platform, name in PLATFORMS.items():
+        key = 'platform:'+platform
+        if db.execute('SELECT 1 FROM tracking_source_keys WHERE key=?', (key,)).fetchone():
+            continue
+        row = db.execute('SELECT id FROM tracking_sources WHERE name=?', (name,)).fetchone()
+        ident = row['id'] if row else uuid.uuid4().hex
+        if not row:
+            db.execute("INSERT INTO tracking_sources VALUES(?,?,1,0,datetime('now'))", (ident, name))
+        db.execute('INSERT INTO tracking_source_keys VALUES(?,?)', (key, ident))
+
+
+def platform_source_ids(db, platform):
+    if db.execute("SELECT 1 FROM sqlite_master WHERE name='tracking_source_keys'").fetchone():
+        values = {row['key']: row['source_id'] for row in db.execute('SELECT * FROM tracking_source_keys')}
+        return list(dict.fromkeys(value for value in [values.get('platform:'+platform), values.get(platform)] if value))
+    # Compatibility with pre-migration read-only snapshots.
+    return [row['id'] for row in db.execute('SELECT id FROM tracking_sources WHERE name IN (?,?)',
+                                          (PLATFORMS.get(platform, ''), LEGACY_SOURCES.get(platform, '')))]
+
+
+def publication_source(db, ident, platform='instagram'):
+    candidates = platform_source_ids(db, platform)
+    if candidates:
+        slots = ','.join('?' for _ in candidates)
+        # Repeated PulSe retrievals keep the earliest already-published alias.
+        row = db.execute('''SELECT s.id FROM tracked_tokens t JOIN tracking_sources s ON s.id=t.source_id
+            WHERE t.link_id=? AND s.active=1 AND s.id IN ('''+slots+''') ORDER BY t.created_at,t.rowid LIMIT 1''', [ident, *candidates]).fetchone()
+        if row:
+            return row
+        preferred = db.execute('SELECT source_id FROM tracking_source_keys WHERE key=?', ('platform:'+platform,)).fetchone()
+        for source_id in ([preferred['source_id']] if preferred else candidates):
+            row = db.execute('SELECT id FROM tracking_sources WHERE id=? AND active=1', (source_id,)).fetchone()
+            if row:
+                return row
+    raise ValueError('Source '+PLATFORMS.get(platform, platform)+' indisponible. Réactivez-la dans la gestion des sources.')
 
 def text_field(data,key,limit,required=False):
     value=data.get(key,"")
@@ -122,19 +162,29 @@ def source_rows(db):
     rows=[dict(r) for r in db.execute("""SELECT s.*, (COALESCE(SUM(t.click_total),0)+s.story_click_total) AS clicks,
         COUNT(t.token) AS links FROM tracking_sources s LEFT JOIN tracked_tokens t ON t.source_id=s.id
         GROUP BY s.id ORDER BY s.created_at,s.name""")]
+    bindings = {row['source_id']: row['key'].split(':', 1)[1] for row in db.execute("SELECT * FROM tracking_source_keys WHERE key LIKE 'platform:%'") if row['source_id']}
+    legacy = {row['source_id'] for row in db.execute('SELECT * FROM tracking_source_keys') if row['key'] in LEGACY_SOURCES}
+    for row in rows:
+        row['platform'] = bindings.get(row['id'], '')
+        row['historical'] = not row['platform'] and (row['id'] in legacy or row['name'] in DEFAULT_SOURCES)
+    order = list(PLATFORMS)
+    rows.sort(key=lambda row: (0 if row['platform'] else 2 if row['historical'] else 1,
+                              order.index(row['platform']) if row['platform'] in order else 100, row['name'].casefold()))
     return rows
 
 def add_source(db,data,now):
     name=text_field(data,"name",100,True)
     ident=uuid.uuid4().hex
-    db.execute("INSERT INTO tracking_sources VALUES(?,?,1,0,?)",(ident,name,now))
+    try:db.execute("INSERT INTO tracking_sources VALUES(?,?,1,0,?)",(ident,name,now))
+    except sqlite3.IntegrityError as exc:raise ValueError('Une source porte déjà ce nom.') from exc
     return {"id":ident,"name":name,"active":True}
 
 def edit_source(db,ident,data):
     current=db.execute("SELECT * FROM tracking_sources WHERE id=?",(ident,)).fetchone()
     if not current:raise ValueError("Source introuvable")
     name=text_field(data,"name",100,True)
-    db.execute("UPDATE tracking_sources SET name=? WHERE id=?",(name,ident))
+    try:db.execute("UPDATE tracking_sources SET name=? WHERE id=?",(name,ident))
+    except sqlite3.IntegrityError as exc:raise ValueError('Une source porte déjà ce nom.') from exc
     return {"id":ident,"name":name}
 
 def remove_source(db,ident):

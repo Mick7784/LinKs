@@ -164,7 +164,8 @@
 </dialog>
 <dialog id="tracked-sources-dialog" class="tracked-dialog">
  <div class="tracked-editor"><header><h2>Sources de publication</h2><button type="button" class="icon-button" data-close-sources aria-label="Fermer">×</button></header>
- <p class="field-help">Ajoutez ou renommez librement vos emplacements de publication. Retirer une source déjà publiée l’archive sans invalider ses liens, même sans clic.</p>
+ <p class="field-help">Privilégiez une source par plateforme : Instagram, YouTube, Discord… Les anciennes variantes restent disponibles dans « Historiques ». Retirer une source publiée l’archive sans invalider ses URL ni son historique.</p>
+ <form id="tracked-source-filters" class="analysis-controls" role="search"><label>Rechercher une source<input id="tracked-source-search" type="search" placeholder="Plateforme ou nom…"></label><label>Afficher<select id="tracked-source-scope"><option value="current">Usage courant</option><option value="all">Toutes les sources</option><option value="historical">Historiques</option><option value="archived">Archivées</option></select></label></form>
  <form id="tracked-source-form" class="tracked-new-source"><label>Nouvelle source<input name="name" required maxlength="100" placeholder="Ex. LinkedIn, newsletter…"></label><button type="submit" class="primary">Ajouter</button></form>
  <div id="tracked-source-list" class="tracked-source-list"></div>
  <div class="dialog-actions"><button type="button" data-close-sources>Fermer</button></div>

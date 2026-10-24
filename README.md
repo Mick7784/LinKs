@@ -25,6 +25,15 @@ LinKs est une page de liens auto-hébergée, personnalisable et accompagnée d�
 - Jusqu’à trois offres simultanées, contrôle des chevauchements et proposition de créneau.
 - Duplication, archives et liens directs pour les Stories.
 
+### Liens suivis
+
+- Bibliothèque indépendante : recherche, filtres, création/édition, copie et ouverture des destinations.
+- Partenaires facultatifs avec modèles libres, détection par domaine et aperçu de l’URL finale. Les URL affiliées directes restent utilisables sans configuration.
+- Destinations publiées conservées jusqu’à confirmation explicite ; URL d’origine et associations sauvegardées.
+- Détection des doublons après tracking, réutilisation des liens courts et ajout de sources au même lien.
+- Suivi privilégié par plateforme (Instagram, YouTube, Discord, Facebook, TikTok). Les anciennes variantes restent accessibles dans les groupes et filtres historiques, sans fusion de leurs identifiants ni de leurs compteurs.
+- PulSe conserve la récupération des liens et les URL de ses Stories déjà partagées.
+
 ### Statistiques
 
 - Visites, clics, sources, impressions et CTR.
@@ -104,7 +113,7 @@ Une copie de code est une action, sans indication d’achat. Les compteurs histo
 
 ## Version actuelle
 
-Version du code : **V1.317**.
+Version du code : **V1.318**.
 
 L’image `ghcr.io/mick7784/links:latest` inclut les correctifs et améliorations du dashboard intégrés sur `main`. Elle est publiée pour **AMD64 et ARM64** ; une image `sha-<commit>` permet de sélectionner un build précis. Chaque publication validée réserve une version persistante et publie également un tag Docker numéroté.
 
