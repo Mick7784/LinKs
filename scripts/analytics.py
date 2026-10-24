@@ -13,6 +13,7 @@ import themes
 import images as user_images
 import storage
 import tracked_links
+import affiliate_partners
 import short_urls
 from urllib.request import urlopen
 
@@ -98,6 +99,7 @@ def init():
           created_at TEXT NOT NULL,deleted INTEGER NOT NULL DEFAULT 0)""")
         db.execute("CREATE TABLE IF NOT EXISTS footer_quotes(id TEXT PRIMARY KEY,text TEXT NOT NULL UNIQUE,active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),created_at TEXT NOT NULL)")
         tracked_links.initialize(db)
+        affiliate_partners.initialize(db)
         short_urls.initialize(db)
         instance.initialize(db,legacy,CONFIG,[DATA_DIR/"assets",STATIC/"assets"],DATA_DIR)
         db.execute("INSERT OR IGNORE INTO settings VALUES('app.instance_id',?)",(uuid.uuid4().hex,))
@@ -490,7 +492,8 @@ LEGACY_BACKUP_TABLES=('content_blocks','top_buttons','settings','counts','story_
 TRACKING_BACKUP_TABLES=('tracking_sources','tracked_links','tracked_tokens')
 SHORT_BACKUP_TABLES=('short_aliases',)
 SOURCE_BACKUP_TABLES=('tracking_source_keys',)
-BACKUP_TABLES=LEGACY_BACKUP_TABLES+TRACKING_BACKUP_TABLES+SHORT_BACKUP_TABLES+SOURCE_BACKUP_TABLES
+PARTNER_BACKUP_TABLES=('affiliate_partners','tracked_link_partners')
+BACKUP_TABLES=LEGACY_BACKUP_TABLES+TRACKING_BACKUP_TABLES+SHORT_BACKUP_TABLES+SOURCE_BACKUP_TABLES+PARTNER_BACKUP_TABLES
 BACKUP_LIMIT=64*1024*1024
 UPLOAD_NAME=re.compile(r'[a-f0-9-]{36}\.(jpg|png|webp|gif)')
 
@@ -558,6 +561,11 @@ def restore_backup(data,preview=False):
         with connection() as db:tables['short_aliases']=[dict(r) for r in db.execute('SELECT * FROM short_aliases')]
     if 'tracking_source_keys' not in tables:
         tables['tracking_source_keys']=[]
+    missing_partners=set(PARTNER_BACKUP_TABLES)-set(tables)
+    if missing_partners:
+        if missing_partners!=set(PARTNER_BACKUP_TABLES):raise ValueError('Sauvegarde de partenaires incomplète')
+        with connection() as db:
+            for table in PARTNER_BACKUP_TABLES:tables[table]=[dict(row) for row in db.execute('SELECT * FROM '+table)]
     if set(tables)!=set(BACKUP_TABLES):raise ValueError('Sauvegarde incomplète')
     assets=data.get('assets',{})
     if not isinstance(assets,dict):raise ValueError('Assets invalides')
@@ -607,7 +615,12 @@ def restore_backup(data,preview=False):
                         elif column['type']=='INTEGER':
                             if type(value) is not int or not 0<=value<2**53:raise ValueError('Compteur ou position invalide')
                         elif not isinstance(value,str) or len(value)>16384:raise ValueError('Texte invalide')
-                    if table=='content_blocks':
+                    if table=='affiliate_partners':
+                        if not re.fullmatch(r'[a-f0-9]{32}',row['id']):raise ValueError('Identifiant de partenaire invalide')
+                        affiliate_partners.partner_input({**row,'domains':json.loads(row['domains'])})
+                    elif table=='tracked_link_partners':
+                        if any(not re.fullmatch(r'[a-f0-9]{32}',row[key]) for key in ('link_id','partner_id')):raise ValueError('Association de partenaire invalide')
+                    elif table=='content_blocks':
                         block_data(row,allow_legacy_image=True)
                         if any(row[k] not in (0,1) for k in ['active','draft','archived','retired']):raise ValueError('État invalide')
                     elif table=='top_buttons':
@@ -738,6 +751,7 @@ def restore_backup(data,preview=False):
                 if (old['day'],old['source'],old['kind'],old['link']) not in old_keys:tables['counts'].append(dict(old))
             tracked_tokens={r['token'] for r in tables['tracked_tokens']}
             if any(r['kind']=='tracked' and r['link'].split(':')[1] not in tracked_tokens for r in tables['counts']):raise ValueError('Lien suivi manquant')
+            affiliate_partners.merge_backup(db,tables)
             # Short codes are never recycled or reassigned after restore.
             aliases={r['code']:r for r in tables['short_aliases']}
             for old in db.execute('SELECT * FROM short_aliases'):
@@ -808,6 +822,8 @@ def restore_backup(data,preview=False):
                 return summary
             # Backup the current SQLite state only after validation, before replacing rows.
             restore_safety(db)
+            for table in reversed(PARTNER_BACKUP_TABLES):
+                db.execute('DELETE FROM '+table)
             for table in SOURCE_BACKUP_TABLES+SHORT_BACKUP_TABLES:
                 db.execute('DELETE FROM '+table)
             for table in reversed(TRACKING_BACKUP_TABLES):
@@ -816,7 +832,7 @@ def restore_backup(data,preview=False):
                 db.execute('DELETE FROM '+table)
                 columns=[c['name'] for c in db.execute('PRAGMA table_info('+table+')')]
                 db.executemany('INSERT INTO '+table+' ('+','.join(columns)+') VALUES ('+','.join('?' for _ in columns)+')',[[row[c] for c in columns] for row in tables[table]])
-            for table in TRACKING_BACKUP_TABLES+SHORT_BACKUP_TABLES+SOURCE_BACKUP_TABLES:
+            for table in TRACKING_BACKUP_TABLES+SHORT_BACKUP_TABLES+SOURCE_BACKUP_TABLES+PARTNER_BACKUP_TABLES:
                 columns=[c['name'] for c in db.execute('PRAGMA table_info('+table+')')]
                 db.executemany('INSERT INTO '+table+' ('+','.join(columns)+') VALUES ('+','.join('?' for _ in columns)+')',[[row[c] for c in columns] for row in tables[table]])
             db.execute("INSERT OR REPLACE INTO settings VALUES('content.initialized','1')")
@@ -1259,6 +1275,8 @@ class Handler(BaseHTTPRequestHandler):
             if url.path=="/api/quotes":return self.json(200,{"items":quote_list()})
             if url.path=="/api/tracking-sources":
                 with connection() as db:return self.json(200,{"items":tracked_links.source_rows(db)})
+            if url.path=="/api/affiliate-partners":
+                with connection() as db:return self.json(200,{"items":affiliate_partners.rows(db)})
             if url.path=="/api/tracked-links":
                 with connection() as db:
                     q=parse_qs(url.query)
@@ -1325,6 +1343,11 @@ class Handler(BaseHTTPRequestHandler):
             if path=="/api/promotions/replace":return self.replace_promotion(data)
             if path=="/api/tracking-sources":
                 with connection() as db:return self.json(201,tracked_links.add_source(db,data,now_iso()))
+            if path=="/api/affiliate-partners/preview":
+                fields=affiliate_partners.partner_input(data)
+                return self.json(200,{"url":affiliate_partners.build_url(fields['template'],fields['code'],data.get('test_url',''))})
+            if path=="/api/affiliate-partners":
+                with connection() as db:return self.json(201,affiliate_partners.save(db,data,now_iso()))
             if path=="/api/tracked-links":
                 with connection() as db:return self.json(201,tracked_links.create_link(db,data,story_url_valid,now_iso()))
             match=re.fullmatch(r"/api/tracked-links/([a-f0-9]{32})/token",path)
@@ -1380,6 +1403,9 @@ class Handler(BaseHTTPRequestHandler):
             match=re.fullmatch(r"/api/tracking-sources/([a-f0-9]{32})",path)
             if match:
                 with connection() as db:return self.json(200,tracked_links.edit_source(db,match.group(1),data))
+            match=re.fullmatch(r"/api/affiliate-partners/([a-f0-9]{32})",path)
+            if match:
+                with connection() as db:return self.json(200,affiliate_partners.save(db,data,now_iso(),match.group(1)))
             match=re.fullmatch(r"/api/content/([\w-]+)",path)
             if match:return self.update_content(match.group(1),data)
             match=re.fullmatch(r"/api/buttons/([\w-]+)",path)
@@ -1390,6 +1416,11 @@ class Handler(BaseHTTPRequestHandler):
         if self.server.admin and not self.authorized(mutation=True):return
         if not self.server.admin:return self.send(404)
         path=urlsplit(self.path).path
+        match=re.fullmatch(r"/api/affiliate-partners/([a-f0-9]{32})",path)
+        if match:
+            try:
+                with connection() as db:return self.json(200,affiliate_partners.remove(db,match.group(1)))
+            except ValueError as exc:return self.json(409,{"error":str(exc)})
         match=re.fullmatch(r"/api/tracking-sources/([a-f0-9]{32})",path)
         if match:
             try:

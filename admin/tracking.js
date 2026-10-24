@@ -3,7 +3,7 @@
 (()=>{"use strict";
 const get=id=>document.getElementById(id),safe=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const fmt=new Intl.NumberFormat("fr-FR");
-const state={sources:[],items:[],editing:""};
+const state={sources:[],items:[],editing:"",partners:[],editingPartner:""};
 const close=which=>get(which)?.close();
 const library=StudioCollection.create(get("tracked-list"),{empty:"Aucun lien suivi à afficher. Créez un lien ou ajustez les filtres.",renderRow(row){const template=document.createElement("template");template.innerHTML=rowHTML(row);return template.content.firstElementChild}});
 function rowHTML(item){
@@ -123,5 +123,53 @@ function campaignOptions(){
  });
  return available.map(source=>`<option value="${"src_"+source.id}">${safe(source.name)}</option>`).join("")+'<option value="">Autre / sans source identifiée</option>';
 }
-window.LinksTracking={load,campaignOptions};
+const partnerLibrary=StudioCollection.create(get("partner-list"),{empty:"Aucun partenaire configuré. Les liens affiliés directs restent utilisables.",renderRow(row){
+ const article=document.createElement("article");article.className="tracked-item";article.dataset.partnerId=row.id;
+ article.innerHTML=`<div class="tracked-item-top"><div class="tracked-item-label"><strong>${safe(row.name)}</strong><small>Code : ${safe(row.code||"Non renseigné")} · ${safe(row.domains.join(", ")||"Aucun domaine")}</small><small>${safe(row.template)}</small></div><div class="tracked-item-actions"><button type="button" data-partner-action="edit">Modifier</button><button type="button" data-partner-action="delete" ${row.links?'disabled title="Ce partenaire est associé à des liens"':''}>Supprimer</button></div></div>`;
+ return article;
+}});
+async function loadPartners(){
+ try{const result=await api("/api/affiliate-partners");state.partners=result.items;partnerLibrary.setRows(state.partners.map(row=>({...row,total:0})),{sort:"name"})}
+ catch(error){get("partner-list").textContent=error.message}
+}
+let previewRevision=0,previewTimer;
+function previewPartner(){
+ const revision=++previewRevision;clearTimeout(previewTimer);
+ const link=get("partner-preview-link"),output=get("partner-preview"),form=get("partner-form");
+ link.hidden=true;link.removeAttribute("href");
+ const fields=Object.fromEntries(new FormData(form));
+ if(!fields.name.trim()||!fields.template.trim()||!fields.test_url.trim()){output.textContent="Renseignez le nom, le modèle et une URL de test pour afficher l’aperçu.";return}
+ output.textContent="Préparation de l’aperçu…";
+ previewTimer=setTimeout(async()=>{
+  try{const result=await api("/api/affiliate-partners/preview",{method:"POST",body:JSON.stringify(fields)});if(revision!==previewRevision)return;output.textContent=result.url;link.href=result.url;link.hidden=false}
+  catch(error){if(revision===previewRevision)output.textContent=error.message}
+ },180);
+}
+function openPartner(partner){
+ state.editingPartner=partner?.id||"";const form=get("partner-form");form.reset();
+ for(const key of ["name","code","template"])form.elements[key].value=partner?.[key]||(key==="template"?"{url}?ref={code}":"");
+ form.elements.domains.value=(partner?.domains||[]).join("\n");
+ form.elements.test_url.value=partner?.domains?.length?"https://"+partner.domains[0]+"/":"https://example.com/produit";
+ get("partner-dialog-title").textContent=partner?"Modifier le partenaire":"Ajouter un partenaire";
+ get("partner-dialog").showModal();previewPartner();form.elements.name.focus();
+}
+get("partner-add").addEventListener("click",()=>openPartner());
+get("partner-form").addEventListener("input",previewPartner);
+get("partner-form").addEventListener("submit",async event=>{
+ event.preventDefault();const form=event.currentTarget,button=form.querySelector('[type="submit"]');button.disabled=true;
+ try{await api("/api/affiliate-partners"+(state.editingPartner?"/"+state.editingPartner:""),{method:state.editingPartner?"PUT":"POST",body:JSON.stringify(Object.fromEntries(new FormData(form)))});await loadPartners();close("partner-dialog");say("Partenaire enregistré.")}
+ catch(error){say(error.message,true)}finally{button.disabled=false}
+});
+get("partner-list").addEventListener("click",async event=>{
+ const button=event.target.closest("[data-partner-action]");if(!button)return;
+ const row=state.partners.find(partner=>partner.id===button.closest("[data-partner-id]")?.dataset.partnerId);if(!row)return;
+ if(button.dataset.partnerAction==="edit"){openPartner(row);return}
+ if(!confirm(`Supprimer le partenaire « ${row.name} » ?`))return;
+ button.disabled=true;
+ try{await api("/api/affiliate-partners/"+row.id,{method:"DELETE"});await loadPartners();say("Partenaire supprimé.")}
+ catch(error){say(error.message,true)}finally{button.disabled=false}
+});
+get("partner-dialog").addEventListener("close",()=>{++previewRevision;clearTimeout(previewTimer)});
+document.querySelectorAll("[data-close-partner]").forEach(button=>button.addEventListener("click",()=>close("partner-dialog")));
+window.LinksTracking={load,campaignOptions,loadPartners};
 })();
