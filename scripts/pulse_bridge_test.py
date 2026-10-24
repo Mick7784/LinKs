@@ -123,10 +123,10 @@ class PulseBridgeTests(unittest.TestCase):
         @contextmanager
         def conn():
             yield db
-        with patch.object(analytics,"connection",conn), patch.object(analytics,"story_link",return_value={"url":"https://links.example/test"}) as called:
+        with patch.object(analytics,"connection",conn), patch.object(analytics,"pulse_campaign_story_link",return_value={"url":"https://links.example/test"}) as called:
             result=analytics.pulse_story_link({"type":"campaign","id":"featured1"})
             self.assertEqual(result["url"],"https://links.example/test")
-            called.assert_called_once_with("featured1","instagram")
+            called.assert_called_once_with("featured1")
             for ident in ("classic1","disabled1","unknown"):
                 with self.assertRaises(ValueError):
                     analytics.pulse_story_link({"type":"campaign","id":ident})

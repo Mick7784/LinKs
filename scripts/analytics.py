@@ -13,6 +13,7 @@ import themes
 import images as user_images
 import storage
 import tracked_links
+import affiliate_partners
 import short_urls
 from urllib.request import urlopen
 
@@ -98,6 +99,7 @@ def init():
           created_at TEXT NOT NULL,deleted INTEGER NOT NULL DEFAULT 0)""")
         db.execute("CREATE TABLE IF NOT EXISTS footer_quotes(id TEXT PRIMARY KEY,text TEXT NOT NULL UNIQUE,active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),created_at TEXT NOT NULL)")
         tracked_links.initialize(db)
+        affiliate_partners.initialize(db)
         short_urls.initialize(db)
         instance.initialize(db,legacy,CONFIG,[DATA_DIR/"assets",STATIC/"assets"],DATA_DIR)
         db.execute("INSERT OR IGNORE INTO settings VALUES('app.instance_id',?)",(uuid.uuid4().hex,))
@@ -490,7 +492,8 @@ LEGACY_BACKUP_TABLES=('content_blocks','top_buttons','settings','counts','story_
 TRACKING_BACKUP_TABLES=('tracking_sources','tracked_links','tracked_tokens')
 SHORT_BACKUP_TABLES=('short_aliases',)
 SOURCE_BACKUP_TABLES=('tracking_source_keys',)
-BACKUP_TABLES=LEGACY_BACKUP_TABLES+TRACKING_BACKUP_TABLES+SHORT_BACKUP_TABLES+SOURCE_BACKUP_TABLES
+PARTNER_BACKUP_TABLES=('affiliate_partners','tracked_link_partners')
+BACKUP_TABLES=LEGACY_BACKUP_TABLES+TRACKING_BACKUP_TABLES+SHORT_BACKUP_TABLES+SOURCE_BACKUP_TABLES+PARTNER_BACKUP_TABLES
 BACKUP_LIMIT=64*1024*1024
 UPLOAD_NAME=re.compile(r'[a-f0-9-]{36}\.(jpg|png|webp|gif)')
 
@@ -558,6 +561,11 @@ def restore_backup(data,preview=False):
         with connection() as db:tables['short_aliases']=[dict(r) for r in db.execute('SELECT * FROM short_aliases')]
     if 'tracking_source_keys' not in tables:
         tables['tracking_source_keys']=[]
+    missing_partners=set(PARTNER_BACKUP_TABLES)-set(tables)
+    if missing_partners:
+        if missing_partners!=set(PARTNER_BACKUP_TABLES):raise ValueError('Sauvegarde de partenaires incomplète')
+        with connection() as db:
+            for table in PARTNER_BACKUP_TABLES:tables[table]=[dict(row) for row in db.execute('SELECT * FROM '+table)]
     if set(tables)!=set(BACKUP_TABLES):raise ValueError('Sauvegarde incomplète')
     assets=data.get('assets',{})
     if not isinstance(assets,dict):raise ValueError('Assets invalides')
@@ -596,6 +604,7 @@ def restore_backup(data,preview=False):
                 keys=[tuple(row.get(k) for k in primary) for row in rows if isinstance(row,dict)]
                 if len(keys)!=len(set(keys)):raise ValueError('Identifiants en double : '+table)
                 for row in rows:
+                    if table=='tracked_link_partners' and isinstance(row,dict):row.setdefault('original_url','')
                     if table=='content_blocks' and isinstance(row,dict) and 'promo_code' not in row:row['promo_code']=''
                     if table=='top_buttons' and isinstance(row,dict) and 'custom_icon' not in row:row['custom_icon']=''
                     if table in {'content_blocks','top_buttons'} and isinstance(row,dict):row.setdefault('retired',0)
@@ -607,7 +616,16 @@ def restore_backup(data,preview=False):
                         elif column['type']=='INTEGER':
                             if type(value) is not int or not 0<=value<2**53:raise ValueError('Compteur ou position invalide')
                         elif not isinstance(value,str) or len(value)>16384:raise ValueError('Texte invalide')
-                    if table=='content_blocks':
+                    if table=='affiliate_partners':
+                        if not re.fullmatch(r'[a-f0-9]{32}',row['id']):raise ValueError('Identifiant de partenaire invalide')
+                        if (row['id']==uuid.uuid5(uuid.NAMESPACE_URL,'links:affiliate-partner:sanyipace').hex
+                                and not any(setting['key']==affiliate_partners.SANYIPACE_MIGRATION for setting in tables['settings'])):
+                            row['domains']=json.dumps(affiliate_partners.corrected_sanyipace_domains(json.loads(row['domains'])))
+                        affiliate_partners.partner_input({**row,'domains':json.loads(row['domains'])})
+                    elif table=='tracked_link_partners':
+                        if any(not re.fullmatch(r'[a-f0-9]{32}',row[key]) for key in ('link_id','partner_id')):raise ValueError('Association de partenaire invalide')
+                        if row['original_url'] and (len(row['original_url'])>2000 or not affiliate_partners.http_url(row['original_url'])):raise ValueError('URL d’origine invalide')
+                    elif table=='content_blocks':
                         block_data(row,allow_legacy_image=True)
                         if any(row[k] not in (0,1) for k in ['active','draft','archived','retired']):raise ValueError('État invalide')
                     elif table=='top_buttons':
@@ -628,7 +646,7 @@ def restore_backup(data,preview=False):
                     elif table=='tracking_sources':
                         if not tracked_links.IDENT.fullmatch(row['id']) or not row['name'].strip() or len(row['name'])>100 or row['active'] not in (0,1):raise ValueError('Source suivie invalide')
                     elif table=='tracking_source_keys':
-                        if row['key'] not in tracked_links.LEGACY_SOURCES or row['source_id'] is not None and not tracked_links.IDENT.fullmatch(row['source_id']):raise ValueError('Identité de source invalide')
+                        if row['key'] not in tracked_links.SOURCE_KEYS or row['source_id'] is not None and not tracked_links.IDENT.fullmatch(row['source_id']):raise ValueError('Identité de source invalide')
                     elif table=='tracked_links':
                         if not tracked_links.IDENT.fullmatch(row['id']) or not row['name'].strip() or len(row['name'])>160 or not story_url_valid(row['url']) or row['archived'] not in (0,1) or row['enabled'] not in (0,1):raise ValueError('Lien suivi invalide')
                     elif table=='tracked_tokens':
@@ -738,6 +756,7 @@ def restore_backup(data,preview=False):
                 if (old['day'],old['source'],old['kind'],old['link']) not in old_keys:tables['counts'].append(dict(old))
             tracked_tokens={r['token'] for r in tables['tracked_tokens']}
             if any(r['kind']=='tracked' and r['link'].split(':')[1] not in tracked_tokens for r in tables['counts']):raise ValueError('Lien suivi manquant')
+            affiliate_partners.merge_backup(db,tables)
             # Short codes are never recycled or reassigned after restore.
             aliases={r['code']:r for r in tables['short_aliases']}
             for old in db.execute('SELECT * FROM short_aliases'):
@@ -808,6 +827,8 @@ def restore_backup(data,preview=False):
                 return summary
             # Backup the current SQLite state only after validation, before replacing rows.
             restore_safety(db)
+            for table in reversed(PARTNER_BACKUP_TABLES):
+                db.execute('DELETE FROM '+table)
             for table in SOURCE_BACKUP_TABLES+SHORT_BACKUP_TABLES:
                 db.execute('DELETE FROM '+table)
             for table in reversed(TRACKING_BACKUP_TABLES):
@@ -816,7 +837,7 @@ def restore_backup(data,preview=False):
                 db.execute('DELETE FROM '+table)
                 columns=[c['name'] for c in db.execute('PRAGMA table_info('+table+')')]
                 db.executemany('INSERT INTO '+table+' ('+','.join(columns)+') VALUES ('+','.join('?' for _ in columns)+')',[[row[c] for c in columns] for row in tables[table]])
-            for table in TRACKING_BACKUP_TABLES+SHORT_BACKUP_TABLES+SOURCE_BACKUP_TABLES:
+            for table in TRACKING_BACKUP_TABLES+SHORT_BACKUP_TABLES+SOURCE_BACKUP_TABLES+PARTNER_BACKUP_TABLES:
                 columns=[c['name'] for c in db.execute('PRAGMA table_info('+table+')')]
                 db.executemany('INSERT INTO '+table+' ('+','.join(columns)+') VALUES ('+','.join('?' for _ in columns)+')',[[row[c] for c in columns] for row in tables[table]])
             db.execute("INSERT OR REPLACE INTO settings VALUES('content.initialized','1')")
@@ -960,12 +981,13 @@ def pulse_stats(period=7):
         story_clicks=db.execute("""SELECT COALESCE(SUM(total),0) FROM counts
                WHERE day BETWEEN ? AND ? AND kind='story'""",
                (first.isoformat(),today.isoformat())).fetchone()[0]
+        instagram_ids=tracked_links.platform_source_ids(db,'instagram')
         independent_story_clicks=db.execute("""SELECT COALESCE(SUM(c.total),0)
                FROM counts c JOIN tracked_tokens t ON substr(c.link,9,length(t.token))=t.token
                JOIN tracking_sources s ON t.source_id=s.id
                WHERE c.day BETWEEN ? AND ? AND c.kind='tracked'
-                 AND s.name='Instagram Story'""",
-               (first.isoformat(),today.isoformat())).fetchone()[0]
+                 AND s.id IN ("""+','.join('?' for _ in instagram_ids or [''])+")",
+               (first.isoformat(),today.isoformat(),*(instagram_ids or ['']))).fetchone()[0]
     days=[{"date":(first+timedelta(days=i)).isoformat(),
            "clicks":daily.get((first+timedelta(days=i)).isoformat(),0)} for i in range(period)]
     return {"today":days[-1]["clicks"],"last7":sum(d["clicks"] for d in days[-7:]),
@@ -989,8 +1011,7 @@ def pulse_youtube_story_link(video_id):
     ident=uuid.uuid5(uuid.NAMESPACE_URL,"pulse-youtube:"+video_id).hex
     with connection() as db:
         db.execute("BEGIN IMMEDIATE")
-        source=db.execute("SELECT id FROM tracking_sources WHERE name='Instagram Story' AND active=1").fetchone()
-        if not source:raise ValueError("Source Instagram Story indisponible")
+        source=tracked_links.publication_source(db,ident)
         existing=db.execute("SELECT url FROM tracked_links WHERE id=?",(ident,)).fetchone()
         if existing and existing["url"]!=destination:
             raise ValueError("La destination vidéo a été modifiée dans LinKs")
@@ -1000,6 +1021,19 @@ def pulse_youtube_story_link(video_id):
             db.execute("INSERT INTO tracked_links VALUES(?,?,?,?,?,0,1,?,?)",
                        (ident,title,destination,"YouTube","Créé depuis PulSe pour une vidéo précise",now_iso(),now_iso()))
         return tracked_links.token_link(db,ident,source["id"],ORIGIN,now_iso())
+
+
+def pulse_campaign_story_link(ident):
+    with connection() as db:
+        item=db.execute('SELECT url FROM content_blocks WHERE id=?',(ident,)).fetchone()
+        if not item or not story_url_valid(item['url']):raise ValueError('URL partenaire HTTP(S) valide requise')
+        story=db.execute('SELECT token FROM story_links WHERE promotion_id=?',(ident,)).fetchone()
+        if story:
+            channels=['instagram',*('tracked:'+value for value in tracked_links.platform_source_ids(db,'instagram'))]
+            alias=db.execute('SELECT code FROM short_aliases WHERE target_token=? AND revoked=0 AND source IN ('+','.join('?' for _ in channels)+') ORDER BY created_at,rowid LIMIT 1',[story['token'],*channels]).fetchone()
+            if alias:return {'url':ORIGIN+'/'+alias['code'],'code':alias['code']}
+        source=tracked_links.publication_source(db,ident)
+    return story_link(ident,'src_'+source['id'])
 
 
 def pulse_story_link(data):
@@ -1016,12 +1050,10 @@ def pulse_story_link(data):
             if not row or status_of(row)!="Actif":
                 raise ValueError("Promotion non active ou introuvable")
         # Reuse the same stable campaign Story redirect as the existing back office.
-        return story_link(ident,"instagram")
+        return pulse_campaign_story_link(ident)
     with connection() as db:
         db.execute("BEGIN IMMEDIATE")
-        source=db.execute("""SELECT id FROM tracking_sources
-                             WHERE name='Instagram Story' AND active=1""").fetchone()
-        if not source:raise ValueError("Source Instagram Story indisponible")
+        source=tracked_links.publication_source(db,ident)
         # Only independent, currently shareable links can be published.
         return tracked_links.token_link(db,ident,source["id"],ORIGIN,now_iso())
 
@@ -1259,10 +1291,12 @@ class Handler(BaseHTTPRequestHandler):
             if url.path=="/api/quotes":return self.json(200,{"items":quote_list()})
             if url.path=="/api/tracking-sources":
                 with connection() as db:return self.json(200,{"items":tracked_links.source_rows(db)})
+            if url.path=="/api/affiliate-partners":
+                with connection() as db:return self.json(200,{"items":affiliate_partners.rows(db)})
             if url.path=="/api/tracked-links":
                 with connection() as db:
                     q=parse_qs(url.query)
-                    return self.json(200,{"items":tracked_links.list_links(db,q.get("start",[None])[0],q.get("end",[None])[0])})
+                    return self.json(200,{"items":affiliate_partners.list_tracked(db,q.get("start",[None])[0],q.get("end",[None])[0])})
             if url.path=="/api/backup":return self.send(200,export_backup())
             if url.path=="/api/storage":return self.json(200,storage_state())
             if url.path=="/api/stats":
@@ -1325,8 +1359,19 @@ class Handler(BaseHTTPRequestHandler):
             if path=="/api/promotions/replace":return self.replace_promotion(data)
             if path=="/api/tracking-sources":
                 with connection() as db:return self.json(201,tracked_links.add_source(db,data,now_iso()))
+            if path=="/api/affiliate-partners/preview":
+                fields=affiliate_partners.partner_input(data)
+                return self.json(200,{"url":affiliate_partners.build_url(fields['template'],fields['code'],data.get('test_url',''))})
+            if path=="/api/affiliate-partners":
+                with connection() as db:return self.json(201,affiliate_partners.save(db,data,now_iso()))
             if path=="/api/tracked-links":
-                with connection() as db:return self.json(201,tracked_links.create_link(db,data,story_url_valid,now_iso()))
+                with connection() as db:
+                    db.execute('BEGIN IMMEDIATE')
+                    return self.json(201,affiliate_partners.save_tracked(db,data,story_url_valid,now_iso()))
+            if path=="/api/tracked-links/preview":
+                ident=tracked_links.text_field(data,'link_id',32)
+                if ident and not tracked_links.IDENT.fullmatch(ident):raise ValueError('Identifiant de lien invalide')
+                with connection() as db:return self.json(200,affiliate_partners.preview_tracked(db,data,ident or None,story_url_valid))
             match=re.fullmatch(r"/api/tracked-links/([a-f0-9]{32})/token",path)
             if match:
                 with connection() as db:
@@ -1362,6 +1407,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json(200,storage_state(action))
             if path=="/api/settings":return self.save_settings(data)
             return self.send(404)
+        except tracked_links.DuplicateDestination as exc:return self.json(409,{"error":str(exc),"duplicates":exc.matches})
         except (ValueError,TypeError,json.JSONDecodeError,binascii.Error,sqlite3.IntegrityError) as exc:return self.json(400,{"error":str(exc) or "Requête invalide"})
         except (OSError,sqlite3.OperationalError):return self.json(503,{"error":"Stockage indisponible. Les données n’ont pas été remplacées."})
     def do_PUT(self):
@@ -1376,20 +1422,31 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(204) if changed else self.send(404)
             match=re.fullmatch(r"/api/tracked-links/([a-f0-9]{32})",path)
             if match:
-                with connection() as db:return self.json(200,tracked_links.update_link(db,match.group(1),data,story_url_valid,now_iso()))
+                with connection() as db:
+                    db.execute('BEGIN IMMEDIATE')
+                    return self.json(200,affiliate_partners.save_tracked(db,data,story_url_valid,now_iso(),match.group(1)))
             match=re.fullmatch(r"/api/tracking-sources/([a-f0-9]{32})",path)
             if match:
                 with connection() as db:return self.json(200,tracked_links.edit_source(db,match.group(1),data))
+            match=re.fullmatch(r"/api/affiliate-partners/([a-f0-9]{32})",path)
+            if match:
+                with connection() as db:return self.json(200,affiliate_partners.save(db,data,now_iso(),match.group(1)))
             match=re.fullmatch(r"/api/content/([\w-]+)",path)
             if match:return self.update_content(match.group(1),data)
             match=re.fullmatch(r"/api/buttons/([\w-]+)",path)
             if match:return self.update_button(match.group(1),data)
             return self.send(404)
+        except tracked_links.DuplicateDestination as exc:return self.json(409,{"error":str(exc),"duplicates":exc.matches})
         except (ValueError,TypeError,json.JSONDecodeError) as exc:return self.json(400,{"error":str(exc) or "Requête invalide"})
     def do_DELETE(self):
         if self.server.admin and not self.authorized(mutation=True):return
         if not self.server.admin:return self.send(404)
         path=urlsplit(self.path).path
+        match=re.fullmatch(r"/api/affiliate-partners/([a-f0-9]{32})",path)
+        if match:
+            try:
+                with connection() as db:return self.json(200,affiliate_partners.remove(db,match.group(1)))
+            except ValueError as exc:return self.json(409,{"error":str(exc)})
         match=re.fullmatch(r"/api/tracking-sources/([a-f0-9]{32})",path)
         if match:
             try:

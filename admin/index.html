@@ -11,7 +11,8 @@
  <nav class="tabs" id="navigation-tabs" aria-label="Navigation du back-office">
  <button data-tab="dashboard" class="active"><span class="nav-icon" data-icon="dashboard" aria-hidden="true"></span><span>Tableau de bord</span></button>
  <button data-tab="statistics"><span class="nav-icon" data-icon="chart" aria-hidden="true"></span><span>Statistiques</span></button>
- <button data-tab="content"><span class="nav-icon" data-icon="links" aria-hidden="true"></span><span>Liens &amp; campagnes</span></button>
+ <button data-tab="content"><span class="nav-icon" data-icon="globe" aria-hidden="true"></span><span>Page publique</span></button>
+ <button data-tab="tracked-links"><span class="nav-icon" data-icon="links" aria-hidden="true"></span><span>Liens suivis</span></button>
  <button data-tab="buttons"><span class="nav-icon" data-icon="buttons" aria-hidden="true"></span><span>Réseaux &amp; raccourcis</span></button>
  <button data-tab="appearance"><span class="nav-icon" data-icon="settings" aria-hidden="true"></span><span>Apparence</span></button>
  <button data-tab="archives"><span class="nav-icon" data-icon="archive" aria-hidden="true"></span><span>Archives</span></button>
@@ -55,15 +56,28 @@
  <div id="analysis-grid" class="analysis-grid"><div class="analysis-column"><section class="panel stories-card" data-analysis="shared"><div class="panel-title"><h3>Liens partagés · toutes plateformes</h3><span class="engagement-total"><strong id="story-total">—</strong> ouvertures</span></div><p class="engagement-note" hidden><strong id="story-promos">—</strong> promotion(s)</p><p class="panel-helper">Ouvertures de liens partagés. Les provenances historiques incertaines restent identifiées.</p><div id="story-list" aria-live="polite"></div><button type="button" class="analysis-more" data-analysis-detail="shared">Voir toute l’analyse →</button></section><section class="panel" data-analysis="public"><h3>Liens publics · clics sur la page LinKs</h3><div id="top-links"></div><button type="button" class="analysis-more" data-analysis-detail="public">Voir toute l’analyse →</button></section><section class="panel" data-analysis="copies"><div class="panel-title"><h3>Codes promo copiés</h3><span class="engagement-total"><strong id="promo-copy-total">—</strong> copies</span></div><div id="promo-copy-list" aria-live="polite"></div><button type="button" class="analysis-more" data-analysis-detail="copies">Voir toute l’analyse →</button></section></div><div class="analysis-column"><section class="panel" data-analysis="campaigns"><h3>Toutes les campagnes · période sélectionnée</h3><p class="panel-helper">Clics publics et ouvertures partagées comparés séparément. Archives et historiques conservés.</p><div id="campaign-details" aria-label="Campagnes"></div><button type="button" class="analysis-more" data-analysis-detail="campaigns">Voir toute l’analyse →</button></section><section class="panel" data-analysis="sources"><h3>Sources</h3><p class="kpi-note">Visites de la page et ouvertures de liens partagés, sans double comptage.</p><div id="sources"></div><button type="button" class="analysis-more" data-analysis-detail="sources">Voir toute l’analyse →</button></section></div></div>
 </section>
 <section class="view" id="content">
- <div class="section-head"><div><h2>Liens &amp; campagnes</h2><p>Organisez les sections dans l’administration et les éléments de chacune. Cet ordre ne change pas celui des sections publiques.</p></div><div class="profile-image-actions"><button class="primary" data-action="new-block">Ajouter un lien</button><button data-action="new-campaign">Créer une campagne</button><button type="button" data-action="new-tracked" class="tracked-add-button">Créer un lien suivi</button></div></div>
+ <div class="section-head"><div><h2>Page publique</h2><p>Organisez les sections dans l’administration et les éléments de chacune. Cet ordre ne change pas celui des sections publiques.</p></div><div class="profile-image-actions"><button class="primary" data-action="new-block">Ajouter un lien</button><button data-action="new-campaign">Créer une campagne</button></div></div>
  <section class="panel planning-panel"><div class="panel-title"><h3>Planning des promotions</h3><div class="timeline-controls"><button type="button" id="agenda-month" aria-pressed="true">Mois</button><button type="button" id="agenda-week" aria-pressed="false">Semaine</button><button type="button" id="agenda-today">Aujourd’hui</button><button type="button" id="timeline-prev" aria-label="Période précédente">←</button><strong id="timeline-month"></strong><button type="button" id="timeline-next" aria-label="Période suivante">→</button><button type="button" data-open-content>Gérer</button></div></div><div id="promo-planning"></div></section>
  <div id="content-list" class="sortable-list"></div>
- <section class="content-section tracked-section" aria-labelledby="tracked-heading">
-  <header class="content-section-header"><div><h3 id="tracked-heading">Liens suivis · privés</h3><small>Liens partagés uniquement, jamais affichés sur la page publique</small></div>
-  <div class="tracked-toolbar"><button type="button" id="tracked-manage-sources">Gérer les sources</button><label class="tracked-archived-toggle"><input id="tracked-show-archived" type="checkbox"> Archivés</label></div></header>
-  <div class="section-items" id="tracked-list"><p class="empty">Aucun lien suivi.</p></div>
- </section>
 
+</section>
+<section class="view" id="tracked-links">
+ <div class="section-head"><div><h1>Liens suivis</h1><p>Un espace dédié à vos liens suivis et affiliés, indépendant de la page publique.</p></div><button type="button" class="primary" data-action="new-tracked">Créer un lien suivi</button></div>
+ <section class="panel" id="tracked-links-library" aria-labelledby="tracked-links-library-heading">
+  <div class="panel-title"><h3 id="tracked-links-library-heading">Bibliothèque de liens</h3><button type="button" id="tracked-manage-sources">Gérer les sources</button></div>
+  <p class="panel-helper">Choisissez une source pour copier un lien permanent. Ouvrir permet de consulter directement sa destination.</p>
+  <form id="tracked-filters" class="analysis-controls" role="search" aria-label="Filtrer les liens suivis">
+   <label>Recherche<input id="tracked-search" type="search" placeholder="Nom, destination, catégorie, notes…"></label>
+   <label>État<select id="tracked-status"><option value="current">Non archivés</option><option value="all">Tous les états</option><option value="active">Actifs</option><option value="disabled">Suspendus</option><option value="archived">Archivés</option></select></label>
+   <label>Catégorie<select id="tracked-category"><option value="">Toutes les catégories</option></select></label>
+  </form>
+  <div id="tracked-list" aria-label="Liens suivis" aria-live="polite"><p class="empty">Chargement des liens suivis…</p></div>
+ </section>
+ <section class="panel" id="tracked-links-partners" aria-labelledby="tracked-links-partners-heading">
+  <div class="panel-title"><h3 id="tracked-links-partners-heading">Partenaires</h3><button type="button" id="partner-add">Ajouter un partenaire</button></div>
+  <p class="panel-helper">Facultatif : les URL affiliées fournies directement par Amazon, Awin, Impact ou un autre réseau restent utilisables sans configuration. Les changements de règles ne modifient jamais les destinations déjà enregistrées.</p>
+  <div id="partner-list" aria-label="Partenaires affiliés" aria-live="polite"><p class="empty">Chargement des partenaires…</p></div>
+ </section>
 </section>
 <section class="view" id="buttons">
  <div class="section-head"><div><h2>Réseaux &amp; raccourcis</h2><p>Réseaux, contact et ancres affichés sous le profil.</p></div><button class="primary" data-action="new-button">Ajouter un bouton</button></div>
@@ -106,20 +120,52 @@
 </div></div></section>
 <footer><span id="admin-timezone"></span> · Historique conservé · rapports par période</footer>
 </main></div>
+<dialog id="partner-dialog" class="tracked-dialog">
+ <form id="partner-form" class="tracked-editor">
+  <header><h2 id="partner-dialog-title">Ajouter un partenaire</h2><button type="button" class="icon-button" data-close-partner aria-label="Fermer">×</button></header>
+  <label>Nom du partenaire<input name="name" required maxlength="100"></label>
+  <label>Code affilié<input name="code" maxlength="500"></label>
+  <label>Domaines associés<textarea name="domains" rows="2" placeholder="boutique.fr&#10;boutique.com"></textarea></label>
+  <p class="field-help">Un domaine par ligne, sans https:// ni chemin. La détection inclut ses sous-domaines.</p>
+  <label>Modèle d’URL<textarea name="template" required maxlength="4000" rows="3" placeholder="{url}?ref={code}"></textarea></label>
+  <p class="field-help">Variables : {url} et {code}. Remplacement tel quel, sans ajout ni encodage automatique. Vous pouvez utiliser des paramètres, un chemin, un fragment ou une URL complète.</p>
+  <label>URL de test<input name="test_url" type="url" maxlength="2000" placeholder="https://boutique.fr/produit"></label>
+  <section aria-labelledby="partner-preview-heading"><h3 id="partner-preview-heading">Aperçu de l’URL finale</h3><p id="partner-preview" class="field-help" role="status" aria-live="polite"></p><a id="partner-preview-link" target="_blank" rel="noopener noreferrer" hidden>Vérifier l’URL dans un nouvel onglet ↗</a></section>
+  <div class="dialog-actions"><button type="button" data-close-partner>Annuler</button><button type="submit" class="primary">Enregistrer</button></div>
+ </form>
+</dialog>
 <dialog id="tracked-dialog" class="tracked-dialog">
  <form id="tracked-form" class="tracked-editor">
  <header><h2 id="tracked-dialog-title">Créer un lien suivi</h2><button type="button" class="icon-button" data-close-tracked aria-label="Fermer">×</button></header>
  <p class="field-help">Ce lien ne sera pas visible sur la page publique. Son URL de partage restera identique si vous changez sa destination.</p>
  <label>Nom interne<input name="name" required maxlength="160" placeholder="Ex. UGREEN Nexode 200W"></label>
- <label>URL de destination<input name="url" required type="url" maxlength="2000" placeholder="https://…"></label>
+ <label>URL d’origine<input name="url" required type="url" maxlength="2000" placeholder="https://…"></label>
+ <label>Partenaire (facultatif)<select id="tracked-partner" name="partner_id"><option value="">Aucun</option></select></label>
+ <p id="tracked-partner-note" class="field-help">Le domaine permet de présélectionner un partenaire. Vous pouvez en choisir un autre ou « Aucun ».</p>
+ <button type="button" id="tracked-recalculate" hidden>Recalculer avec la configuration actuelle</button>
+ <section aria-labelledby="tracked-final-heading"><h3 id="tracked-final-heading">Destination finale</h3><p id="tracked-final-message" class="field-help" role="status" aria-live="polite"></p><a id="tracked-final-link" target="_blank" rel="noopener noreferrer" hidden></a></section>
+ <section id="tracked-duplicates" class="panel" aria-labelledby="tracked-duplicates-heading" hidden><h3 id="tracked-duplicates-heading">Destination déjà enregistrée</h3><p class="field-help">Réutilisez les URL courtes d’un lien existant et ajoutez les sources de publication manquantes. Un nouveau lien identique reste possible après confirmation explicite.</p><div id="tracked-duplicate-list" aria-live="polite"></div></section>
  <label>Catégorie (facultatif)<input name="category" maxlength="80" placeholder="Produit, accessoire, offre…"></label>
  <label>Notes (facultatif)<textarea name="notes" rows="2" maxlength="800"></textarea></label>
  <div class="dialog-actions"><button type="button" data-close-tracked>Annuler</button><button type="submit" class="primary">Enregistrer</button></div>
  </form>
 </dialog>
+<dialog id="tracked-reuse-dialog" class="tracked-dialog">
+ <div class="tracked-editor">
+  <header><h2 id="tracked-reuse-heading">Réutiliser le lien existant</h2><button type="button" class="icon-button" data-close-reuse aria-label="Fermer">×</button></header>
+  <p class="field-help">Chaque source utilise son URL courte permanente. Ajouter une source conserve le même lien et son historique.</p>
+  <a id="tracked-reuse-destination" target="_blank" rel="noopener noreferrer"></a>
+  <p id="tracked-reuse-status" class="field-help" role="status"></p>
+  <label>Source de publication<select id="tracked-reuse-source"></select></label>
+  <div class="profile-image-actions"><button type="button" id="tracked-reuse-copy" class="primary">Copier le lien court</button><button type="button" id="tracked-reuse-manage">Gérer les sources</button></div>
+  <a id="tracked-reuse-url" target="_blank" rel="noopener noreferrer" hidden></a>
+  <div class="dialog-actions"><button type="button" id="tracked-reuse-edit">Ouvrir sa fiche</button><button type="button" data-close-reuse>Revenir au lien en cours</button></div>
+ </div>
+</dialog>
 <dialog id="tracked-sources-dialog" class="tracked-dialog">
  <div class="tracked-editor"><header><h2>Sources de publication</h2><button type="button" class="icon-button" data-close-sources aria-label="Fermer">×</button></header>
- <p class="field-help">Ajoutez ou renommez librement vos emplacements de publication. Retirer une source déjà publiée l’archive sans invalider ses liens, même sans clic.</p>
+ <p class="field-help">Privilégiez une source par plateforme : Instagram, YouTube, Discord… Les anciennes variantes restent disponibles dans « Historiques ». Retirer une source publiée l’archive sans invalider ses URL ni son historique.</p>
+ <form id="tracked-source-filters" class="analysis-controls" role="search"><label>Rechercher une source<input id="tracked-source-search" type="search" placeholder="Plateforme ou nom…"></label><label>Afficher<select id="tracked-source-scope"><option value="current">Usage courant</option><option value="all">Toutes les sources</option><option value="historical">Historiques</option><option value="archived">Archivées</option></select></label></form>
  <form id="tracked-source-form" class="tracked-new-source"><label>Nouvelle source<input name="name" required maxlength="100" placeholder="Ex. LinkedIn, newsletter…"></label><button type="submit" class="primary">Ajouter</button></form>
  <div id="tracked-source-list" class="tracked-source-list"></div>
  <div class="dialog-actions"><button type="button" data-close-sources>Fermer</button></div>

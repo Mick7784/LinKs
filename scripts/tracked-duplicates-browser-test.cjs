@@ -1,0 +1,46 @@
+// Final-URL duplicates, reuse of stable source aliases and explicit exceptions.
+const {chromium}=require('playwright'),assert=require('node:assert/strict');
+const {spawn,execFileSync}=require('node:child_process');
+const {mkdtempSync,rmSync}=require('node:fs'),{tmpdir}=require('node:os'),{join,resolve}=require('node:path');
+(async()=>{
+ const temp=mkdtempSync(join(tmpdir(),'links-duplicates-')),python=process.env.PYTHON_PATH||'python3',origin='http://127.0.0.1:8081',db=join(temp,'stats.db');
+ execFileSync(python,[resolve(__dirname,'fixtures.py'),db]);
+ const server=spawn(python,[resolve(__dirname,'analytics.py')],{env:{...process.env,ANALYTICS_DB:db,UPLOAD_DIR:join(temp,'uploads')},stdio:'ignore'});
+ let browser;
+ const api=async(path,data,method=data?'POST':'GET')=>{const response=await fetch(origin+path,{method,headers:{'Content-Type':'application/json','X-Links-Request':'1'},body:data?JSON.stringify(data):undefined});assert(response.ok,await response.clone().text());return response.json()};
+ try{
+  for(let i=0;i<100;i++){try{if((await fetch(origin+'/healthz')).ok)break}catch{}await new Promise(r=>setTimeout(r,100));}
+  const partner=(await api('/api/affiliate-partners')).items.find(row=>row.name==='Reolink');
+  await api('/api/affiliate-partners/'+partner.id,{...partner,template:'https://shop.reolink.com/p?aff={code}&x=1'},'PUT');
+  const existing=await api('/api/tracked-links',{name:'Caméra existante',url:'https://shop.reolink.com/p?x=1&aff=1404'});
+  const other=await api('/api/tracked-links',{name:'Autre lien',url:'https://other.example/p'});
+  const sources=(await api('/api/tracking-sources')).items,oldToken=await api(`/api/tracked-links/${existing.id}/token`,{source_id:sources[0].id});
+  execFileSync(python,['-c',"import sqlite3,sys;db=sqlite3.connect(sys.argv[1]);db.execute('UPDATE tracked_tokens SET click_total=7 WHERE link_id=?',(sys.argv[2],));db.commit()",db,existing.id]);
+  browser=await chromium.launch({headless:true,executablePath:process.env.CHROMIUM_PATH});
+  const context=await browser.newContext({viewport:{width:1440,height:1000}});
+  await context.addInitScript(()=>Object.defineProperty(navigator,'clipboard',{value:{writeText:async value=>{window.copiedLink=value}}}));
+  const page=await context.newPage(),errors=[],confirmations=[];let approveDuplicate=false;
+  page.on('pageerror',error=>errors.push(error.message));page.on('dialog',dialog=>{confirmations.push(dialog.message());return /doublon de destination/.test(dialog.message())&&!approveDuplicate?dialog.dismiss():dialog.accept()});
+  await page.goto(origin);await page.locator('#chart svg').waitFor();assert.equal(await page.locator('[data-tab="content"] [data-icon]').getAttribute('data-icon'),'globe');assert.equal(await page.locator('[data-tab="tracked-links"] [data-icon]').getAttribute('data-icon'),'links');
+  await page.click('[data-tab="tracked-links"]');await page.locator(`[data-tracked-id="${existing.id}"]`).waitFor();
+  const createDraft=async name=>{await page.click('[data-action="new-tracked"]');await page.fill('#tracked-form [name="name"]',name);await page.fill('#tracked-form [name="url"]','https://shop.reolink.com/original');await page.locator('#tracked-duplicates').waitFor();};
+  await createDraft('Nouveau brouillon');assert.match(await page.locator('#tracked-duplicate-list').textContent(),/Caméra existante/);
+  assert.equal(await page.locator('#tracked-final-link').getAttribute('href'),'https://shop.reolink.com/p?aff=1404&x=1');
+  for(const width of [1440,390,320]){await page.setViewportSize({width,height:900});for(const theme of ['light','dark']){await page.selectOption('#theme-select',theme);assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));if(process.env.UI_SCREENSHOTS&&width!==320){await page.waitForTimeout(200);await page.screenshot({path:join(process.env.UI_SCREENSHOTS,`duplicates-${width}-${theme}.png`),fullPage:true});}}}
+  await page.locator(`[data-reuse-duplicate="${existing.id}"]`).click();await page.locator('#tracked-reuse-dialog').waitFor();await page.selectOption('#tracked-reuse-source',sources[0].id);assert.match(await page.locator('#tracked-reuse-copy').textContent(),/existant/);await page.click('#tracked-reuse-copy');await page.waitForFunction(url=>window.copiedLink===url,oldToken.url);assert.equal(await page.locator('#tracked-reuse-url').getAttribute('href'),oldToken.url);
+  await page.selectOption('#tracked-reuse-source',sources[1].id);assert.match(await page.locator('#tracked-reuse-copy').textContent(),/Ajouter cette source/);await page.click('#tracked-reuse-copy');await page.waitForFunction(old=>window.copiedLink&&window.copiedLink!==old,oldToken.url);
+  await page.click('#tracked-reuse-manage');await page.fill('#tracked-source-form [name="name"]','Canal manquant');await page.click('#tracked-source-form [type="submit"]');await page.locator('#tracked-source-list input[value="Canal manquant"]').waitFor();await page.locator('[data-close-sources]').first().click();
+  const addedSource=(await api('/api/tracking-sources')).items.find(row=>row.name==='Canal manquant');await page.selectOption('#tracked-reuse-source',addedSource.id);await page.click('#tracked-reuse-copy');await page.waitForFunction(()=>document.getElementById('tracked-reuse-copy').textContent.includes('existant'));
+  let rows=(await api('/api/tracked-links')).items;assert.equal(rows.length,2);const reused=rows.find(row=>row.id===existing.id);assert.equal(reused.sources.length,3);assert.equal(reused.clicks,7);assert.equal(reused.url,existing.url);assert.equal((await api(`/api/tracked-links/${existing.id}/token`,{source_id:sources[0].id})).url,oldToken.url);
+  await page.locator('[data-close-reuse]').last().click();assert.equal(await page.inputValue('#tracked-form [name="name"]'),'Nouveau brouillon');await page.locator(`[data-open-duplicate="${existing.id}"]`).click();await page.waitForFunction(()=>document.querySelector('#tracked-form [name="name"]').value==='Caméra existante');assert.equal(await page.inputValue('#tracked-form [name="url"]'),existing.url);assert(await page.locator('#tracked-duplicates').isHidden());await page.locator('[data-close-tracked]').first().click();
+  await page.setViewportSize({width:1440,height:1000});await createDraft('Doublon confirmé');await page.click('#tracked-form [type="submit"]');await page.waitForFunction(()=>!document.querySelector('#tracked-form [type="submit"]').disabled);assert(await page.locator('#tracked-dialog').isVisible());assert.equal((await api('/api/tracked-links')).items.length,2);assert(confirmations.at(-1).includes('Caméra existante'));
+  approveDuplicate=true;await page.click('#tracked-form [type="submit"]');await page.locator('#tracked-dialog').waitFor({state:'hidden'});assert.equal((await api('/api/tracked-links')).items.length,3);
+  await page.fill('#tracked-search','');await page.locator(`[data-tracked-id="${other.id}"] [data-tracked-action="edit"]`).click();await page.fill('#tracked-form [name="url"]','https://shop.reolink.com/edit');await page.waitForFunction(()=>document.querySelectorAll('#tracked-duplicate-list [data-open-duplicate]').length===2);approveDuplicate=false;await page.click('#tracked-form [type="submit"]');await page.waitForFunction(()=>!document.querySelector('#tracked-form [type="submit"]').disabled);assert.equal((await api('/api/tracked-links')).items.find(row=>row.id===other.id).url,other.url);await page.locator('[data-close-tracked]').first().click();
+  // A concurrent creation after the final preview is blocked by the save transaction.
+  await page.click('[data-action="new-tracked"]');await page.fill('#tracked-form [name="name"]','Race sauvegarde');const raceUrl='https://race.example/p?ref=KEEP';await page.fill('#tracked-form [name="url"]',raceUrl);await page.waitForFunction(url=>document.getElementById('tracked-final-link').getAttribute('href')===url,raceUrl);
+  let injected=false;await page.route('**/api/tracked-links',async route=>{if(!injected&&route.request().method()==='POST'){injected=true;await api('/api/tracked-links',{name:'Créé simultanément',url:raceUrl})}await route.continue()});
+  await page.click('#tracked-form [type="submit"]');await page.locator('#tracked-duplicate-list').filter({hasText:'Créé simultanément'}).waitFor();await page.waitForFunction(()=>!document.querySelector('#tracked-form [type="submit"]').disabled);await page.unroute('**/api/tracked-links');assert(await page.locator('#tracked-dialog').isVisible());assert.equal((await api('/api/tracked-links')).items.filter(row=>row.url===raceUrl).length,1);assert.match(await page.locator('#tracked-form [data-dialog-feedback]').textContent(),/destination existe déjà/);
+  await page.locator('[data-close-tracked]').first().click();assert.deepEqual(errors,[]);
+  console.log('PASS: final affiliate equivalence, immediate warning/open record, stable source URL reuse/new sources, preserved draft/counters, explicit duplicate/cancel, modification checks and save-time race, globe/chain icons, responsive themes.');
+ }finally{await browser?.close();const exited=new Promise(resolve=>server.once('exit',resolve));server.kill();await exited;rmSync(temp,{recursive:true,force:true});}
+})().catch(error=>{console.error(error);process.exitCode=1});
