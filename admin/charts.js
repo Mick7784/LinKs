@@ -1,9 +1,9 @@
 "use strict";
 (function(){
 const fmt=new Intl.NumberFormat("fr-FR"),esc=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-function ranking(series,max){
- const root=document.createElement("div");root.className="ranking-bars";
- series.forEach((entry,index)=>{const line=document.createElement("div"),track=document.createElement("span"),bar=document.createElement("i");line.className="ranking-series"+(entry.tone?" tone-"+tone(entry.tone):"");line.title=entry.label+" : "+fmt.format(entry.value);line.setAttribute("role","img");line.setAttribute("aria-label",entry.label+" : "+fmt.format(entry.value));track.className="ranking-track";bar.style.width=Math.min(100,Math.max(0,entry.value/Math.max(max,1)*100))+"%";bar.className=index?"ranking-secondary":"ranking-primary";track.append(bar);line.append(track);if(series.length>1){const caption=document.createElement("small");caption.textContent=entry.label+" · "+fmt.format(entry.value);line.append(caption)}root.append(line)});
+function ranking(series,max,{comparison=false}={}){
+ const root=document.createElement("div");root.className="ranking-bars"+(comparison?" is-comparison":"");
+ series.forEach((entry,index)=>{const line=document.createElement("div"),track=document.createElement("span"),bar=document.createElement("i");line.className="ranking-series"+(entry.tone?" tone-"+tone(entry.tone):"");if(entry.key)line.dataset.seriesKey=entry.key;line.title=entry.label+" : "+fmt.format(entry.value);line.setAttribute("role","img");line.setAttribute("aria-label",entry.label+" : "+fmt.format(entry.value));track.className="ranking-track";bar.style.width=Math.min(100,Math.max(0,entry.value/Math.max(max,1)*100))+"%";bar.className=index?"ranking-secondary":"ranking-primary";track.append(bar);line.append(track);if(series.length>1||comparison){const caption=document.createElement("small");caption.textContent=entry.label+" · "+fmt.format(entry.value);line.append(caption)}root.append(line)});
  return root;
 }
 function donut(root,items,{preview=false,query="",sort="input"}={}){
@@ -73,33 +73,36 @@ function timeSeries(root,detail,days,series,{mode='line',active=()=>true}={}){
   const grid=Array.from({length:5},(_,i)=>{const value=i*step,at=y(value);return `<line class="time-grid" x1="${left}" x2="${right}" y1="${at}" y2="${at}"/><text class="time-axis" x="${left-10}" y="${at+4}" text-anchor="end">${esc(axisFmt.format(value))}</text>`}).join('');
   const crossesYear=days.length>1&&days[0][0].slice(0,4)!==days[days.length-1][0].slice(0,4);
   const axisDate=day=>crossesYear?new Intl.DateTimeFormat('fr-FR',{day:'numeric',month:'short',year:'2-digit',timeZone:'UTC'}).format(new Date(day+'T12:00:00Z')):dayLabel(day);
-  const labels=days.map((row,i)=>i===0||i===days.length-1||i%stride===0&&days.length-1-i>=stride*.65?`<text class="time-axis" text-anchor="middle" x="${x(i)}" y="${bottom+27}">${esc(axisDate(row[0]))}</text>`:'').join('');
+  const labels=days.map((row,i)=>i===0||i===days.length-1||i%stride===0&&days.length-1-i>=stride*.65?`<text class="time-axis time-date" text-anchor="${i===0?'start':i===days.length-1?'end':'middle'}" x="${i===0?left+3:i===days.length-1?right-3:x(i)}" y="${bottom+27}">${esc(axisDate(row[0]))}</text>`:'').join('');
   let marks='';
   if(mode==='line')for(let j=0;j<visible.length;j++){
    const s=visible[j],parts=[];let current=[];
    values.forEach((row,i)=>{if(row[j]===null){if(current.length)parts.push(current);current=[]}else current.push([x(i),y(row[j])])});if(current.length)parts.push(current);
-   marks+=parts.map(points=>`<polyline class="time-line tone-${tone(s.tone)}${s.dashed?' is-dashed':''}" points="${points.map(p=>p.join(',')).join(' ')}"/>${points.length===1?`<circle class="time-point tone-${tone(s.tone)}" cx="${points[0][0]}" cy="${points[0][1]}" r="4"/>`:''}`).join('');
+   marks+=parts.map(points=>`<polyline class="time-line tone-${tone(s.tone)}${s.dashed?' is-dashed':''}" data-series-key="${esc(s.key)}" points="${points.map(p=>p.join(',')).join(' ')}"/>${points.length===1?`<circle class="time-point tone-${tone(s.tone)}" data-series-key="${esc(s.key)}" cx="${points[0][0]}" cy="${points[0][1]}" r="4"/>`:''}`).join('');
   }
-  if(mode==='bars')values.forEach((row,i)=>row.forEach((value,j)=>{if(value===null)return;const barWidth=Math.min(24,(slot-6)/Math.max(1,visible.length)),s=visible[j];marks+=`<rect class="daily-bar tone-${tone(s.tone)}${s.dashed?' is-dashed':''}" x="${x(i)+(j-visible.length/2)*barWidth}" y="${y(value)}" width="${Math.max(1,barWidth-2)}" height="${value/max*height}" rx="2"/>`;}));
+  if(mode==='bars')values.forEach((row,i)=>row.forEach((value,j)=>{if(value===null)return;const barWidth=Math.min(24,(slot-6)/Math.max(1,visible.length)),s=visible[j];marks+=`<rect class="daily-bar tone-${tone(s.tone)}${s.dashed?' is-dashed':''}" data-series-key="${esc(s.key)}" x="${x(i)+(j-visible.length/2)*barWidth}" y="${y(value)}" width="${Math.max(1,barWidth-2)}" height="${value/max*height}" rx="2"/>`;}));
   const hits=days.map((row,i)=>`<g class="chart-bucket" data-bucket="${i}" tabindex="${i===0?'0':'-1'}" role="button" aria-label="${esc(dayLabel(row[0],true)+', '+visible.map((s,j)=>s.label+' : '+(values[i][j]===null?'non disponible':fmt.format(values[i][j]))).join(', '))}"><rect class="time-hit" x="${left+i*slot}" y="${top}" width="${slot}" height="${height}"/></g>`).join('');
   viewport.innerHTML=`<svg class="time-svg" width="${width}" height="${bottom+48}" viewBox="0 0 ${width} ${bottom+48}" role="group" aria-label="${esc(series.map(s=>s.label).join(' et '))} par jour">${grid}${labels}${marks}${hits}<g class="time-cursor" hidden><line y1="${top}" y2="${bottom}"/><g class="time-cursor-points"></g></g></svg>`;
   if(!visible.length||!peak){const empty=document.createElement('p');empty.className='time-empty';empty.textContent=!visible.length?'Activez une série pour afficher le graphique.':days.length&&values.flat().some(value=>value!==null)?'Aucune activité mesurée sur cette période.':'Aucune donnée disponible sur cette période.';viewport.append(empty)}
   const frame=document.createElement('div');frame.className='time-frame';frame.append(viewport);
   if(mode==='bars'){const axis=document.createElement('div');axis.className='time-fixed-axis';axis.setAttribute('aria-hidden','true');axis.innerHTML=`<svg width="${left}" height="${bottom+48}" viewBox="0 0 ${left} ${bottom+48}"><rect class="time-axis-backdrop" width="${left}" height="${bottom+48}"/>${Array.from({length:5},(_,i)=>`<text class="time-axis" x="${left-10}" y="${y(i*step)+4}" text-anchor="end">${esc(axisFmt.format(i*step))}</text>`).join('')}</svg>`;frame.append(axis)}
   root.append(frame);
+  // Hide date labels partly covered by the fixed axis while scrolling daily bars.
+  const fitDates=()=>{if(mode==='bars')viewport.querySelectorAll('.time-date').forEach(label=>{const box=label.getBBox();label.style.visibility=box.x-viewport.scrollLeft<left||box.x+box.width-viewport.scrollLeft>outerWidth?'hidden':''})};
+  viewport.onscroll=fitDates;
   const tooltip=document.createElement('div');tooltip.className='chart-tooltip time-tooltip';tooltip.hidden=true;tooltip.setAttribute('role','tooltip');root.append(tooltip);
-  const inspector=document.createElement('div');inspector.className='time-inspector';inspector.setAttribute('role','status');inspector.setAttribute('aria-live','polite');root.append(inspector);
+  const inspector=document.createElement('div');inspector.className='time-inspector';inspector.setAttribute('role','status');inspector.setAttribute('aria-live','polite');const reading=document.createElement('div');reading.className='time-reading';reading.append(inspector);root.append(reading);
   const navigation=document.createElement('div');navigation.className='time-navigation';
-  const previous=document.createElement('button'),next=document.createElement('button'),slider=document.createElement('input');previous.type=next.type='button';previous.textContent='←';next.textContent='→';previous.setAttribute('aria-label','Jour précédent');next.setAttribute('aria-label','Jour suivant');slider.type='range';slider.min='0';slider.max=String(Math.max(0,days.length-1));slider.step='1';slider.setAttribute('aria-label','Jour à examiner');navigation.append(previous,slider,next);root.append(navigation);
+  const previous=document.createElement('button'),next=document.createElement('button'),slider=document.createElement('input');previous.type=next.type='button';previous.textContent='←';next.textContent='→';previous.setAttribute('aria-label','Jour précédent');next.setAttribute('aria-label','Jour suivant');slider.type='range';slider.min='0';slider.max=String(Math.max(0,days.length-1));slider.step='1';slider.setAttribute('aria-label','Jour à examiner');navigation.append(previous,slider,next);reading.append(navigation);
   const show=(index,{pointer=false,focus=false}={})=>{
    if(!days.length)return;index=Math.max(0,Math.min(days.length-1,index));state.selected=days[index][0];slider.value=String(index);slider.setAttribute('aria-valuetext',dayLabel(days[index][0],true));previous.disabled=index===0;next.disabled=index===days.length-1;
    const title=dayLabel(days[index][0],true),numbers=visible.map((s,j)=>({s,text:s.label+' : '+(values[index][j]===null?'Non disponible':fmt.format(values[index][j]))}));
-   inspector.replaceChildren();const heading=document.createElement('strong');heading.textContent=title;inspector.append(heading);for(const {s,text} of numbers){const value=document.createElement('span');value.className='inspector-value tone-'+tone(s.tone);value.textContent=text;inspector.append(value)}
+   inspector.replaceChildren();const heading=document.createElement('strong');heading.textContent=title;inspector.append(heading);for(const {s,text} of numbers){const value=document.createElement('span');value.className='inspector-value tone-'+tone(s.tone);value.dataset.seriesKey=s.key;value.textContent=text;inspector.append(value)}
    if(!visible.length){const text=document.createElement('span');text.textContent='Aucune série affichée.';inspector.append(text)}
    const description=title+' · '+numbers.map(x=>x.text).join(' · ');if(detail)detail.textContent=description;
    tooltip.innerHTML=`<strong>${esc(title)}</strong>${numbers.map(({text})=>`<span>${esc(text)}</span>`).join('')}`;tooltip.hidden=!pointer||!visible.length;
    tooltip.style.left=Math.max(0,Math.min(outerWidth-240,x(index)-viewport.scrollLeft-100))+'px';
-   const cursor=viewport.querySelector('.time-cursor');cursor.removeAttribute('hidden');cursor.querySelector('line').setAttribute('x1',x(index));cursor.querySelector('line').setAttribute('x2',x(index));cursor.querySelector('.time-cursor-points').innerHTML=mode==='line'?numbers.map(({s},j)=>values[index][j]===null?'':`<circle class="time-point tone-${tone(s.tone)}" cx="${x(index)}" cy="${y(values[index][j])}" r="4"/>`).join(''):'';
+   const cursor=viewport.querySelector('.time-cursor');cursor.removeAttribute('hidden');cursor.querySelector('line').setAttribute('x1',x(index));cursor.querySelector('line').setAttribute('x2',x(index));cursor.querySelector('.time-cursor-points').innerHTML=mode==='line'?numbers.map(({s},j)=>values[index][j]===null?'':`<circle class="time-point tone-${tone(s.tone)}" data-series-key="${esc(s.key)}" cx="${x(index)}" cy="${y(values[index][j])}" r="4"/>`).join(''):'';
    viewport.querySelectorAll('.chart-bucket').forEach((n,i)=>{n.classList.toggle('selected',i===index);n.tabIndex=i===index?0:-1});
    if(focus){viewport.querySelector(`[data-bucket="${index}"]`)?.focus();if(mode==='bars')viewport.scrollLeft=Math.max(0,x(index)-outerWidth/2)}
   };
@@ -110,22 +113,52 @@ function timeSeries(root,detail,days,series,{mode='line',active=()=>true}={}){
   slider.oninput=()=>show(Number(slider.value),{focus:false});previous.onclick=()=>show(Number(slider.value)-1,{focus:mode==='bars'});next.onclick=()=>show(Number(slider.value)+1,{focus:mode==='bars'});
   slider.disabled=previous.disabled=next.disabled=!days.length;
   if(days.length){const selected=days.findIndex(row=>row[0]===state.selected),index=selected>=0?selected:days.length-1;show(index);if(mode==='bars')viewport.scrollLeft=Math.max(0,x(index)-outerWidth/2)}else inspector.textContent='Aucune date disponible.';
+  fitDates();
  };
  state.draw();
 }
-const sourceBlues=['#3B82F6','#4885DD','#377EC9','#627EC6','#4E81D6','#4688B9'];
-function sourceColor(key){let hash=0;for(const char of String(key))hash=(hash*31+char.codePointAt(0))>>>0;return sourceBlues[hash%sourceBlues.length]}
-function distribution(root,items,{query='',sort='input'}={}){
- const total=items.reduce((sum,row)=>sum+row[1],0),positive=items.filter(row=>row[1]>0),ring=positive.length>=2&&positive.length<=6;
+// Category identity determines colour and texture, never row order or volume.
+const sourceSlots={site:0,youtube:3,instagram:1,facebook:2,mail:4,newsletter:6,qr:5,tiktok:7,discord:6,other:4};
+function sourceHash(key){let hash=0;for(const char of String(key))hash=(hash*31+char.codePointAt(0))>>>0;return hash}
+function sourceColor(key){if(key==='unknown')return 'var(--chart-category-unknown)';return 'var(--chart-category-'+(Object.hasOwn(sourceSlots,key)?sourceSlots[key]:sourceHash(key)%8)+')'}
+function sourceTexture(key){return Math.floor(sourceHash(key)/8)%4}
+let distributionId=0;
+function distribution(root,items,{query='',sort='input',category='source',onSelect=()=>{}}={}){
+ root.classList.add('source-distribution');
+ const total=items.reduce((sum,row)=>sum+row[1],0),positive=items.filter(row=>row[1]>0),ring=positive.length>=2&&positive.length<=6&&positive.every(row=>String(row[0]).length<=42);
  if(!total){root.innerHTML='<p class="empty">Aucune visite ou ouverture mesurée pour cette période et cette source.</p>';return}
- root.innerHTML=`<div class="source-overview"><strong class="source-total">${fmt.format(total)}</strong><span>visites et ouvertures · ${fmt.format(positive.length)} source(s)</span></div><div class="sources-layout"><div class="donut-wrap" ${ring?'':'hidden'}></div><div class="source-list"></div></div><p class="source-inspector" role="status" aria-live="polite">${ring?'Survolez ou touchez une source pour examiner sa part.':'Répartition par source · barres proportionnelles au total.'}</p>`;
+ root.innerHTML=`<div class="source-overview"><strong class="source-total">${fmt.format(total)}</strong><span>visites et ouvertures · ${fmt.format(positive.length)} ${esc(category)}(s)</span></div><div class="sources-layout"><div class="donut-wrap" ${ring?'':'hidden'}></div><div class="source-list"></div></div><p class="source-inspector" role="status" aria-live="polite">${ring?'Choisissez un segment ou sa légende pour lire ses valeurs.':'Répartition par '+esc(category)+' · barres proportionnelles au total.'}</p>`;
  const pct=value=>value>0&&value/total*100<.1?'<0,1 %':(value/total*100).toLocaleString('fr-FR',{maximumFractionDigits:1})+' %';
- const select=(key,name,value)=>{root.querySelector('.source-inspector').textContent=name+' : '+fmt.format(value)+' visites et ouvertures · '+pct(value);root.querySelectorAll('.donut-segment').forEach(n=>n.classList.toggle('selected',n.dataset.sourceKey===key))};
- if(ring){let offset=0;const circumference=2*Math.PI*66;root.querySelector('.donut-wrap').innerHTML=`<svg viewBox="0 0 180 180" role="group" aria-label="Répartition des visites et ouvertures par source">${positive.map(([name,value,key=name])=>{const length=value/total*circumference,result=`<circle class="donut-segment" data-source-key="${esc(key)}" tabindex="0" role="button" aria-label="${esc(name+' : '+fmt.format(value)+' · '+pct(value))}" cx="90" cy="90" r="66" fill="none" stroke="${sourceColor(key)}" stroke-width="24" stroke-dasharray="${length} ${circumference-length}" stroke-dashoffset="${-offset}" transform="rotate(-90 90 90)"/>`;offset+=length;return result}).join('')}<text class="donut-total" x="90" y="90" text-anchor="middle">${fmt.format(total)}</text></svg>`;
-  for(const node of root.querySelectorAll('.donut-segment')){const row=positive.find(item=>String(item[2]??item[0])===node.dataset.sourceKey),show=()=>select(node.dataset.sourceKey,row[0],row[1]);node.onpointerenter=node.onclick=node.onfocus=show;node.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();show()}}}
+ const select=(key,name,value,activate=false)=>{
+  root.querySelector('.source-inspector').textContent=name+' : '+fmt.format(value)+' visites et ouvertures · '+pct(value);
+  root.querySelectorAll('[data-source-key]').forEach(n=>{const selected=n.dataset.sourceKey===key;n.classList.toggle('selected',selected);n.setAttribute('aria-pressed',String(selected))});
+  if(ring){root.querySelector('.donut-total').textContent=fmt.format(value);root.querySelector('.donut-caption').textContent=pct(value)}
+  onSelect({key,name,value,activate});
+ };
+ if(ring){
+  let offset=0;const circumference=2*Math.PI*66,uid='source-ring-'+(++distributionId);
+  const defs=positive.map(([name,value,key=name],index)=>{const color=sourceColor(key),texture=sourceTexture(key),mark=texture===1?'<path d="M-2 2 2-2M0 8 8 0M6 10 10 6"/>':texture===2?'<circle cx="4" cy="4" r="1.5"/>':texture===3?'<path d="M0 4H8M4 0V8"/>':'';return `<pattern id="${uid}-${index}" width="8" height="8" patternUnits="userSpaceOnUse"><rect width="8" height="8" fill="${color}"/><g class="source-texture">${mark}</g></pattern>`}).join('');
+  const markers=[];
+  const segments=positive.map(([name,value,key=name],index)=>{
+   const length=value/total*circumference,angle=(offset+length/2)/circumference*2*Math.PI-Math.PI/2;
+   if(value/total>=.08){const x=90+66*Math.cos(angle),y=90+66*Math.sin(angle);markers.push(`<g class="source-segment-number" aria-hidden="true"><circle cx="${x}" cy="${y}" r="10"/><text x="${x}" y="${y+4}" text-anchor="middle">${index+1}</text></g>`)}
+   const result=`<circle class="donut-segment" data-source-key="${esc(key)}" data-source-color="${esc(sourceColor(key))}" tabindex="0" role="button" aria-pressed="false" aria-label="${esc(name+' : '+fmt.format(value)+' · '+pct(value))}" cx="90" cy="90" r="66" fill="none" stroke="url(#${uid}-${index})" stroke-width="24" stroke-dasharray="${length} ${circumference-length}" stroke-dashoffset="${-offset}" transform="rotate(-90 90 90)"><title>${esc(name+' : '+fmt.format(value)+' · '+pct(value))}</title></circle>`;offset+=length;return result;
+  }).join('');
+  root.querySelector('.donut-wrap').innerHTML=`<svg viewBox="0 0 180 180" role="group" aria-label="Répartition des visites et ouvertures par ${esc(category)}"><defs>${defs}</defs>${segments}${markers.join('')}<text class="donut-total" x="90" y="87" text-anchor="middle">${fmt.format(total)}</text><text class="donut-caption" x="90" y="107" text-anchor="middle">Total</text></svg>`;
+  const nodes=[...root.querySelectorAll('.donut-segment')];
+  nodes.forEach((node,index)=>{
+   const row=positive[index],show=()=>select(node.dataset.sourceKey,row[0],row[1]);node.onpointerenter=node.onfocus=show;node.onclick=()=>select(node.dataset.sourceKey,row[0],row[1],true);
+   node.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();select(node.dataset.sourceKey,row[0],row[1],true)}else if(['ArrowLeft','ArrowRight','Home','End'].includes(event.key)){event.preventDefault();nodes[event.key==='Home'?0:event.key==='End'?nodes.length-1:(index+(event.key==='ArrowLeft'?-1:1)+nodes.length)%nodes.length].focus()}};
+  });
  }
- const rows=positive.map(([name,value,key=name])=>({name,total:value,key:String(key),details:[]}));
- StudioCollection.create(root.querySelector('.source-list'),{pageSize:20,renderRow:item=>{const node=document.createElement('div');node.className='source-row source-stat-row';node.tabIndex=0;node.setAttribute('role','button');node.setAttribute('aria-label',item.name+' : '+fmt.format(item.total)+' · '+pct(item.total));node.innerHTML=`<span class="source-dot"></span><span class="source-name">${esc(item.name)}</span><strong>${fmt.format(item.total)}</strong><small>${pct(item.total)}</small>${ring?'':'<span class="source-share-track"><i></i></span>'}`;node.querySelector('.source-dot').style.backgroundColor=sourceColor(item.key);const bar=node.querySelector('i');if(bar){bar.style.width=(item.total/total*100)+'%';bar.style.backgroundColor=sourceColor(item.key)}node.onpointerenter=node.onfocus=node.onclick=()=>select(item.key,item.name,item.total);node.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();select(item.key,item.name,item.total)}};return node}}).setRows(rows,{sort,query});
+ const rows=positive.map(([name,value,key=name,details=[]],index)=>({name,total:value,key:String(key),number:index+1,details}));
+ StudioCollection.create(root.querySelector('.source-list'),{pageSize:20,renderRow:item=>{
+  const node=document.createElement('div');node.className='source-row source-stat-row';node.dataset.sourceKey=item.key;node.tabIndex=0;node.setAttribute('role','button');node.setAttribute('aria-pressed','false');node.setAttribute('aria-label',item.name+' : '+fmt.format(item.total)+' · '+pct(item.total));
+  node.innerHTML=`<span class="source-dot${ring?' source-number':''}" aria-hidden="true">${ring?item.number:''}</span><span class="source-name">${esc(item.name)}</span><strong>${fmt.format(item.total)}</strong><small>${pct(item.total)}</small>${ring?'':'<span class="source-share-track"><i></i></span>'}`;
+  node.style.setProperty('--source-color',sourceColor(item.key));node.dataset.sourceTexture=String(sourceTexture(item.key));
+  const bar=node.querySelector('i');if(bar)bar.style.width=(item.total/total*100)+'%';
+  node.onpointerenter=node.onfocus=()=>select(item.key,item.name,item.total);node.onclick=()=>select(item.key,item.name,item.total,true);node.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();select(item.key,item.name,item.total,true)}};return node;
+ }}).setRows(rows,{sort,query});
 }
 (typeof window==='undefined'?globalThis:window).StudioCharts={donut,ranking,timeline,timeSeries,distribution,plotModel,sourceColor};
 })();

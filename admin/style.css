@@ -2574,3 +2574,159 @@ main:has(> #statistics.active) { max-width: none; width: 100%; }
   #statistics #filters > .statistics-filter-field:last-child { flex: 1.25 1 0; }
   #statistics #filters select { min-height: 44px; padding-inline: 8px; font-size: .8rem; }
 }
+
+/* Readability refinement, using the validated palette and page structure. */
+#statistics .statistics-section h3 { font-size: 1.15rem; }
+#statistics .statistics-kpis .kpi-label { font-size: .9rem; min-height: 42px; }
+/* Flex titles must shrink beside their icon, including wider system fonts. */
+#statistics .statistics-kpis .kpi-label > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+#statistics .statistics-kpis .kpi-label [data-icon] { flex-shrink: 0; }
+#statistics .statistics-kpis strong { font-size: clamp(2.1rem, 2.8vw, 3rem); }
+#statistics .statistics-kpis strong.is-long-number { font-size: clamp(1.5rem, 2vw, 2.2rem); }
+#statistics .statistics-kpis small, #statistics .kpi-note,
+#statistics .panel-helper, #statistics .statistics-color-key,
+#statistics .statistics-chart-control, #statistics #campaign-metric-control,
+#statistics .source-overview > span, #statistics .source-inspector { font-size: .9rem; line-height: 1.6; }
+#statistics button, #statistics select, #statistics input,
+#statistics .statistics-sections-nav a, #statistics .collection-pagination { font-size: .9rem; }
+#statistics .collection-rows { display: block; }
+#statistics .collection-rows .engagement-row {
+  grid-template-columns: minmax(180px, 1fr) minmax(140px, 1.6fr) minmax(100px, max-content);
+  grid-template-areas: "name bars value" "details details details";
+  gap: 8px 24px; align-items: center; padding: 20px 0;
+  border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent;
+}
+#statistics .engagement-row:last-child { border-bottom: 0; }
+#statistics #promo-copy-list .engagement-row { grid-template-columns: minmax(0, 1fr) max-content; grid-template-areas: "name value" "details details"; }
+#statistics .source-row small { font-size: .85rem; }
+#statistics .engagement-copy { grid-area: name; }
+#statistics .engagement-copy > strong { font-size: 1rem; line-height: 1.55; }
+#statistics .engagement-value { grid-area: value; text-align: right; max-width: 180px; }
+#statistics .engagement-value strong { font-size: 1.6rem; line-height: 1.2; font-variant-numeric: tabular-nums; }
+#statistics .engagement-value small, #statistics .ranking-series small { font-size: .9rem; line-height: 1.5; }
+#statistics .ranking-bars { grid-area: bars; min-width: 0; margin: 0; }
+#statistics .ranking-track { height: 14px; border-radius: 4px; }
+#statistics .statistics-entity-shortcut { min-height: 44px; padding: 6px 0; border-color: transparent; background: transparent; font-size: .9rem; }
+#statistics .statistics-entity-shortcut:hover { background: var(--hover); }
+#statistics .collection-rows .engagement-details { grid-area: details; width: 100%; margin: 0; }
+#statistics .collection-rows details > summary { width: fit-content; max-width: 100%; min-height: 44px; padding: 10px 0; font-size: .9rem; color: var(--accent); }
+#statistics .collection-rows details > small { font-size: .95rem; line-height: 1.8; margin: 0 0 8px; }
+#statistics .engagement-source-list { margin-bottom: 8px; }
+#statistics .engagement-source-name, #statistics .source-stat-row { font-size: .95rem; }
+#statistics .engagement-source-figures strong { font-size: 1.05rem; }
+#statistics .engagement-source-figures small, #statistics .source-provenance-note { font-size: .85rem; }
+#statistics .time-legend .series-toggle { font-size: .95rem; }
+#statistics .time-axis { font-size: 14px; }
+#statistics .time-tooltip { font-size: .95rem; }
+#statistics .time-reading { display: grid; grid-template-columns: minmax(0, 1fr) minmax(170px, 220px); align-items: center; gap: 12px 20px; padding-top: 14px; border-top: 1px solid var(--line); }
+#statistics .time-inspector { display: flex; flex-wrap: wrap; gap: 8px 20px; margin: 0; padding: 0; background: transparent; border: 0; font-size: .95rem; line-height: 1.6; }
+#statistics .time-inspector > strong { flex-basis: 100%; font-size: 1rem; }
+#statistics .time-navigation { margin: 0; gap: 8px; }
+@media (max-width: 1100px) {
+  #statistics .collection-rows .engagement-row { grid-template-columns: minmax(150px, 1fr) minmax(100px, 1.2fr) minmax(80px, max-content); gap: 8px 16px; }
+  #statistics .time-reading { grid-template-columns: 1fr; }
+  #statistics .time-navigation { max-width: 440px; width: 100%; }
+}
+@media (max-width: 760px) {
+  #statistics .statistics-kpis article { padding: 16px 12px; }
+  #statistics .statistics-kpis strong { font-size: 2.1rem; }
+  #statistics .statistics-kpis strong.is-long-number { font-size: 1.5rem; }
+  #statistics .collection-rows .engagement-row { grid-template-columns: minmax(0, 1fr) minmax(75px, max-content); grid-template-areas: "name value" "bars bars" "details details"; padding: 18px 0; gap: 10px 12px; }
+  #statistics .engagement-value { max-width: 110px; }
+  #statistics .engagement-value strong { font-size: 1.4rem; }
+  #statistics .time-inspector { gap: 8px 16px; }
+}
+
+@media (max-width: 380px) {
+  /* Keep full KPI words and numbers readable beside the icon on narrow phones. */
+  #statistics .statistics-kpis { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Chart colours supplement the existing activity families, with redundant
+   line styles, point shapes, textures and numbered source legends. */
+#statistics {
+  --chart-clicks: #2455B5;
+  --chart-category-0: #086B88; --chart-category-1: #7041AC;
+  --chart-category-2: #2455B5; --chart-category-3: #A52C60;
+  --chart-category-4: #167269; --chart-category-5: #8A5B0D;
+  --chart-category-6: #4F46A5; --chart-category-7: #8D398B;
+}
+:root[data-theme="dark"] #statistics {
+  --chart-clicks: #86B3FF;
+  --chart-category-0: #62D9EC; --chart-category-1: #C1A0F7;
+  --chart-category-2: #86B3FF; --chart-category-3: #F19BBF;
+  --chart-category-4: #67D5BC; --chart-category-5: #EAC477;
+  --chart-category-6: #9FAAF6; --chart-category-7: #DFA5DE;
+}
+#statistics [data-series-key="public-clicks"],
+#statistics [data-series-key="campaign-clicks"] { --series-color: var(--chart-clicks); }
+#statistics .time-line[data-series-key="campaign-openings"] { stroke-dasharray: 2 6; }
+#statistics .time-legend [data-series-key="campaign-openings"]::before { border-top-style: dotted; }
+#statistics .inspector-value[data-series-key="public-clicks"]::before,
+#statistics .inspector-value[data-series-key="campaign-clicks"]::before { border-radius: 0; transform: rotate(45deg); }
+#statistics .is-comparison .ranking-track { height: 2px; margin: 10px 8px; overflow: visible; }
+#statistics .is-comparison .ranking-track i { position: relative; }
+#statistics .is-comparison .ranking-track i::after { content: ""; position: absolute; right: -6px; top: 50%; width: 12px; height: 12px; border-radius: 50%; background: var(--series-color); border: 2px solid var(--surface); transform: translateY(-50%); }
+#statistics .is-comparison [data-series-key="campaign-clicks"] .ranking-track i::after { border-radius: 0; transform: translateY(-50%) rotate(45deg); }
+#statistics .is-comparison .ranking-series small { color: var(--text); }
+#statistics .source-distribution .sources-layout:has(.donut-wrap:not([hidden])) { grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); align-items: center; gap: 16px; }
+#statistics .source-distribution .donut-wrap { width: 220px; max-width: 100%; }
+#statistics .source-distribution .donut-wrap svg { width: 100%; height: auto; }
+#statistics .source-distribution .source-stat-row { grid-template-columns: 12px minmax(0, 1fr) max-content 54px; }
+#statistics .source-distribution:has(.donut-wrap:not([hidden])) .source-stat-row { grid-template-columns: 28px minmax(0, 1fr) max-content 54px; }
+#statistics .source-stat-row .source-dot { background: var(--source-color); }
+#statistics .source-stat-row .source-number { display: grid; place-items: center; width: 26px; height: 26px; border: 2px solid var(--source-color); background: var(--surface); color: var(--text); font-size: .85rem; font-weight: 700; border-radius: 5px; }
+#statistics .source-stat-row.selected { background: var(--raised); box-shadow: inset 3px 0 var(--source-color); }
+#statistics .source-share-track i { background-color: var(--source-color); background-image: var(--source-texture, none); }
+#statistics [data-source-texture="1"] { --source-texture: repeating-linear-gradient(135deg, transparent 0 4px, var(--surface) 4px 6px); }
+#statistics [data-source-texture="2"] { --source-texture: radial-gradient(var(--surface) 1px, transparent 1.5px); }
+#statistics [data-source-texture="2"] .source-share-track i { background-size: 8px 8px; }
+#statistics [data-source-texture="3"] { --source-texture: repeating-linear-gradient(90deg, transparent 0 5px, var(--surface) 5px 7px); }
+#statistics .source-texture { stroke: var(--surface); stroke-width: 1.5; fill: var(--surface); }
+#statistics .source-segment-number { pointer-events: none; }
+#statistics .source-segment-number circle { fill: var(--surface); stroke: var(--text); stroke-width: 1; }
+#statistics .source-segment-number text { fill: var(--text); font-size: 12px; font-weight: 700; }
+#statistics .source-distribution .donut-segment:focus-visible { outline: none; stroke-width: 36px; }
+#statistics .source-distribution .donut-caption { font-size: 13px; }
+@media (max-width: 380px) {
+  #statistics .source-distribution .source-stat-row { gap: 7px; grid-template-columns: 10px minmax(0, 1fr) max-content 48px; }
+  #statistics .source-distribution:has(.donut-wrap:not([hidden])) .source-stat-row { grid-template-columns: 26px minmax(0, 1fr) max-content 48px; }
+}
+
+#statistics #campaign-series-controls .series-toggle::before { width: 10px; height: 10px; flex: 0 0 10px; border: 0; border-radius: 50%; background: var(--series-color); }
+#statistics #campaign-series-controls [data-series-key="campaign-clicks"]::before { border-radius: 0; transform: rotate(45deg); }
+#statistics .source-inspector { overflow-wrap: anywhere; }
+
+#statistics .partner-attribution-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 20px 0; }
+#statistics .partner-attribution-summary > div { padding: 14px; border: 1px solid var(--line); border-radius: 8px; min-width: 0; background: var(--raised); }
+#statistics .partner-attribution-summary dt { font-size: .95rem; line-height: 1.5; color: var(--muted); overflow-wrap: anywhere; }
+#statistics .partner-attribution-summary dd { margin: 8px 0 0; font-size: 1.8rem; font-weight: 650; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+#statistics .partner-unattributed { border-top: 1px solid var(--line); margin-top: 18px; }
+#statistics .partner-unattributed > summary { min-height: 44px; padding: 14px 0; cursor: pointer; color: var(--accent); font-size: 1rem; }
+#statistics .partner-unattributed > section { margin: 16px 0; }
+#statistics .partner-unattributed h4 { margin: 0 0 8px; font-size: 1rem; }
+@media (max-width: 760px) { #statistics .partner-attribution-summary { grid-template-columns: minmax(0, 1fr); gap: 10px; } }
+
+/* Closed explanatory sections have no visible transition to animate. */
+#statistics .partner-unattributed:not([open]) > section,
+#statistics .partner-unattributed:not([open]) > section * { transition: none; animation: none; }
+
+#statistics { --chart-category-unknown: #596A80; }
+:root[data-theme="dark"] #statistics { --chart-category-unknown: #AEBBCD; }
+#statistics [data-analysis="sources"] > .panel-title { flex-wrap: wrap; align-items: start; }
+#statistics .platform-source-details { border-top: 1px solid var(--line); margin-top: 18px; }
+#statistics .platform-source-details > summary { min-height: 44px; padding: 12px 0; color: var(--accent); cursor: pointer; font-size: .95rem; }
+#statistics .platform-source-group { border-bottom: 1px solid var(--line); min-width: 0; padding: 8px 0; }
+#statistics .platform-source-group > summary { display: list-item; min-height: 44px; padding: 10px 0; cursor: pointer; font-size: .95rem; overflow-wrap: anywhere; }
+#statistics .platform-source-group > summary .engagement-source-figures { display: inline-flex; margin-left: 12px; }
+#statistics .platform-source-group .panel-helper { font-size: .85rem; }
+#statistics .platform-source-group .engagement-source-list { margin: 10px 0; }
+#statistics .source-filter-shortcut { grid-column: 1 / -1; justify-self: start; min-height: 44px; padding: 8px; font-size: .9rem; }
+#statistics .platform-source-group:not([open]) > :not(summary),
+#statistics .platform-source-group:not([open]) > :not(summary) *,
+#statistics .platform-source-details:not([open]) > div * { transition: none; animation: none; }
+
+#statistics .platform-source-details[hidden] * { transition: none; animation: none; }
+
+#statistics .source-origin-note { grid-column: 1 / -1; color: var(--muted); font-size: .8rem; }
+#statistics .platform-member-list .collection-rows { display: grid; grid-template-columns: minmax(0, 1fr); gap: .45rem; }
