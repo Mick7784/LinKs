@@ -2578,6 +2578,9 @@ main:has(> #statistics.active) { max-width: none; width: 100%; }
 /* Readability refinement, using the validated palette and page structure. */
 #statistics .statistics-section h3 { font-size: 1.15rem; }
 #statistics .statistics-kpis .kpi-label { font-size: .9rem; min-height: 42px; }
+/* Flex titles must shrink beside their icon, including wider system fonts. */
+#statistics .statistics-kpis .kpi-label > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+#statistics .statistics-kpis .kpi-label [data-icon] { flex-shrink: 0; }
 #statistics .statistics-kpis strong { font-size: clamp(2.1rem, 2.8vw, 3rem); }
 #statistics .statistics-kpis strong.is-long-number { font-size: clamp(1.5rem, 2vw, 2.2rem); }
 #statistics .statistics-kpis small, #statistics .kpi-note,

@@ -102,8 +102,21 @@ db.executemany('INSERT INTO counts VALUES(?,?,?,?,?)',[(day,source,'tracked','tr
    const dimensions=await page.locator('#statistics').evaluate(root=>{
     const bounds=root.getBoundingClientRect();
     return {client:root.clientWidth,scroll:root.scrollWidth,overflow:[...root.querySelectorAll('*')].filter(n=>n.getClientRects().length&&!n.closest('svg,.time-viewport')).flatMap(n=>{const r=n.getBoundingClientRect();return r.right>bounds.right+1||r.left<bounds.left-1?[{element:n.tagName+'#'+n.id+'.'+n.className,text:n.textContent.slice(0,90),left:r.left,right:r.right,width:r.width,client:n.clientWidth,scroll:n.scrollWidth,minWidth:getComputedStyle(n).minWidth,grid:getComputedStyle(n).gridTemplateColumns}]:[]})};
-   });console.log('statistics dimensions',width,theme,JSON.stringify(dimensions));
+   });
    assert(await page.locator('#statistics').evaluate(e=>e.scrollWidth<=e.clientWidth),`statistics overflow ${width} ${theme}: ${JSON.stringify(dimensions)}`);assert(await page.locator('#statistics .engagement-source-item').evaluateAll(nodes=>nodes.every(n=>n.scrollWidth<=n.clientWidth)),'source details fit inside cards');
+   const checkKpiLabels=async context=>{
+    const overflow=await page.locator('#statistics .statistics-kpis .kpi-label').evaluateAll(labels=>labels.flatMap(label=>{
+     const bounds=label.getBoundingClientRect();
+     return label.scrollWidth>label.clientWidth||[...label.children].some(child=>{const r=child.getBoundingClientRect();return r.left<bounds.left-1||r.right>bounds.right+1})?[{label:label.textContent,client:label.clientWidth,scroll:label.scrollWidth}]:[];
+    }));assert.deepEqual(overflow,[],`KPI title/icon overflow ${context}`);
+   };
+   await checkKpiLabels(`${width} ${theme}`);
+   if(width===320){
+    // Reproduce the wider fallback-font metrics that exposed the Linux overflow.
+    const font=await page.evaluate(()=>{const saved=document.documentElement.style.fontFamily;document.documentElement.style.fontFamily='Arial, sans-serif';return saved});
+    try{await checkKpiLabels(`${width} ${theme} Arial`);assert(await page.locator('#statistics').evaluate(e=>e.scrollWidth<=e.clientWidth),`statistics overflow ${width} ${theme} Arial`)}
+    finally{await page.evaluate(saved=>document.documentElement.style.fontFamily=saved,font)}
+   }
    const layout=await page.locator('#top-links').evaluate(node=>{
     const rows=[...node.querySelectorAll('.engagement-row')],bars=rows.map(row=>row.querySelector('.ranking-bars').getBoundingClientRect());
     return {singleColumn:getComputedStyle(node.querySelector('.collection-rows')).display==='block',titleSize:parseFloat(getComputedStyle(rows[0].querySelector('.engagement-copy > strong')).fontSize),aligned:bars.every(bar=>Math.abs(bar.left-bars[0].left)<1&&Math.abs(bar.width-bars[0].width)<1),contained:rows.every(row=>row.scrollWidth<=row.clientWidth)};
