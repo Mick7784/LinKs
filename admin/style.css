@@ -49,6 +49,10 @@
   --clicks-start: #8B5CF6;
   --clicks-end: #8B5CF6;
   --focus: #0E7490;
+  --stats-public: #086B88;
+  --stats-tracked: #7041AC;
+  --stats-sources: #2455B5;
+  --stats-campaigns: #A52C60;
   background: var(--bg);
   color: var(--text);
 }
@@ -82,6 +86,10 @@
   --danger: #f1a1ab;
   --danger-bg: #442d36;
   --focus: #67E8F9;
+  --stats-public: #62D9EC;
+  --stats-tracked: #C1A0F7;
+  --stats-sources: #86B3FF;
+  --stats-campaigns: #F19BBF;
 }
 * {
   box-sizing: border-box;
@@ -2379,8 +2387,9 @@ main:has(> #statistics.active) { max-width: none; width: 100%; }
   background: var(--surface); display: flex; flex-direction: column;
   border-top: 3px solid var(--accent);
 }
-.statistics-kpis article:nth-child(2), .statistics-kpis article:nth-child(5) { border-top-color: var(--studio-blue); }
-.statistics-kpis article:nth-child(4), .statistics-kpis article:nth-child(6) { border-top-color: var(--purple); }
+.statistics-kpis article { border-top-color: var(--stats-public); }
+.statistics-kpis article:nth-child(3) { border-top-color: var(--stats-tracked); }
+.statistics-kpis article:nth-child(4), .statistics-kpis article:nth-child(6) { border-top-color: var(--stats-campaigns); }
 .statistics-kpis .kpi-label { font-size: .78rem; min-height: 36px; line-height: 1.45; letter-spacing: .02em; }
 .statistics-kpis strong { display: block; margin: 12px 0 8px; font-size: clamp(1.8rem, 2.6vw, 2.7rem); line-height: 1.1; letter-spacing: -.03em; overflow-wrap: anywhere; }
 .statistics-kpis small { font-size: .75rem; line-height: 1.5; }
@@ -2394,7 +2403,7 @@ main:has(> #statistics.active) { max-width: none; width: 100%; }
 #statistics #chart-detail { min-height: 22px; font-size: .8rem; }
 #statistics .sources-layout { grid-template-columns: 1fr; gap: 12px; }
 #statistics .donut-wrap { width: 170px; max-width: 100%; margin: auto; }
-#statistics .source-list .collection-rows { max-height: 245px; overflow: auto; scrollbar-gutter: stable; }
+#statistics .source-list .collection-rows { max-height: 360px; overflow: auto; scrollbar-gutter: stable; }
 #statistics .source-row { cursor: default; font-size: .82rem; }
 #statistics .source-name { white-space: normal; overflow-wrap: anywhere; }
 .statistics-campaign-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 22px; align-items: start; }
@@ -2446,4 +2455,71 @@ main:has(> #statistics.active) { max-width: none; width: 100%; }
   #statistics .collection-rows .engagement-row { padding: 14px; }
   .statistics-chart-control, #campaign-metric-control { width: 100%; }
   .statistics-chart-control select, #campaign-metric-control select { max-width: none; }
+}
+
+/* Semantic colours identify the activity, independently of sort order. */
+.tone-public { --series-color: var(--stats-public); }
+.tone-tracked { --series-color: var(--stats-tracked); }
+.tone-sources { --series-color: var(--stats-sources); }
+.tone-campaigns { --series-color: var(--stats-campaigns); }
+.statistics-color-key { display: flex; flex-wrap: wrap; gap: 10px 22px; margin-top: 16px; color: var(--muted); font-size: .8rem; }
+.statistics-color-key span, .inspector-value { display: inline-flex; align-items: center; gap: 8px; }
+.statistics-color-key span::before, .inspector-value::before { content: ""; width: 9px; height: 9px; flex: none; border-radius: 50%; background: var(--series-color); }
+#statistics .statistics-time-chart { position: relative; min-width: 0; }
+.time-legend { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.time-legend .series-toggle { min-height: 44px; padding: 9px 12px; gap: 9px; font-size: .8rem; text-align: left; }
+.time-legend .series-toggle::before { content: ""; width: 18px; flex: 0 0 18px; border-top: 3px solid var(--series-color); }
+.time-legend .series-toggle.is-dashed::before { border-top-style: dashed; }
+.time-legend .series-toggle[aria-pressed="true"] { background: var(--raised); color: var(--text); border-color: var(--series-color); }
+.time-legend .series-toggle[aria-pressed="false"] { background: var(--surface); color: var(--muted); border-color: var(--control-line); }
+.time-legend .series-toggle[aria-pressed="false"]::before { opacity: .35; }
+.time-legend .series-toggle:hover { background: var(--hover); }
+.time-frame { position: relative; min-width: 0; }
+.time-fixed-axis { position: absolute; top: 0; left: 0; pointer-events: none; }
+#statistics .statistics-time-chart .time-fixed-axis svg { display: block; width: auto; height: auto; }
+.time-axis-backdrop { fill: var(--surface); }
+.time-viewport { position: relative; overflow-x: auto; max-width: 100%; overscroll-behavior-x: contain; }
+#statistics .statistics-time-chart .time-svg { display: block; max-width: none; width: auto; height: auto; overflow: hidden; }
+#statistics .time-axis { font-family: inherit; font-size: 12px; fill: var(--muted); }
+.time-grid { stroke: var(--line); stroke-width: 1; }
+.time-line { fill: none; stroke: var(--series-color); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.time-line.is-dashed { stroke-dasharray: 7 5; }
+.time-point { fill: var(--series-color); stroke: var(--surface); stroke-width: 2; }
+.daily-bar { fill: var(--series-color); }
+.daily-bar.is-dashed { fill: var(--raised); stroke: var(--series-color); stroke-width: 1.5; }
+.time-hit { fill: transparent; }
+.chart-bucket:hover .time-hit, .chart-bucket.selected .time-hit { fill: var(--accent-soft); fill-opacity: .35; }
+.chart-bucket:focus-visible .time-hit { stroke: var(--focus); stroke-width: 2; }
+.time-cursor { pointer-events: none; }
+.time-cursor > line { stroke: var(--muted); stroke-dasharray: 3 4; stroke-width: 1; }
+.time-empty { position: absolute; top: 30%; left: 65px; margin: 0; max-width: calc(100% - 85px); padding: 16px; border-radius: 8px; background: var(--surface); font-size: .85rem; }
+.time-tooltip { top: 65px; width: min(240px, calc(100% - 16px)); min-width: 0; font-size: .8rem; line-height: 1.5; overflow-wrap: anywhere; }
+.time-inspector { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 20px; padding: 16px; margin-top: 10px; background: var(--raised); border: 1px solid var(--line); border-radius: 8px; font-size: .85rem; font-variant-numeric: tabular-nums; }
+.time-inspector > strong { grid-column: 1 / -1; font-size: .9rem; }
+.time-navigation { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; gap: 12px; align-items: center; margin-top: 12px; }
+.time-navigation button { min-height: 44px; padding: 8px; }
+.time-navigation input[type="range"] { width: 100%; min-height: 44px; padding: 0; border: 0; background: transparent; accent-color: var(--focus); }
+#statistics #chart-detail { margin-top: 12px; line-height: 1.6; }
+#statistics .ranking-series[class*="tone-"] .ranking-track i { background: var(--series-color); }
+#statistics .ranking-series:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; border-radius: 4px; }
+#statistics .ranking-track { height: 9px; }
+#statistics .statistics-partner-panel, #statistics .statistics-daily-panel { margin-top: 22px; margin-bottom: 22px; }
+#statistics .source-overview { display: grid; gap: 6px; margin-bottom: 18px; }
+#statistics .source-overview strong { font-size: 2rem; line-height: 1.1; color: var(--text); font-variant-numeric: tabular-nums; }
+#statistics .source-overview > span, .source-inspector { font-size: .8rem; color: var(--muted); line-height: 1.6; }
+#statistics .source-stat-row { position: relative; padding: 12px 4px; gap: 8px; min-height: 44px; }
+.source-share-track { grid-column: 2 / -1; height: 7px; overflow: hidden; background: var(--raised); border-radius: 4px; }
+.source-share-track i { display: block; height: 100%; border-radius: 4px; }
+.source-stat-row:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; border-radius: 4px; }
+.source-stat-row:hover { background: var(--hover); }
+#statistics .source-inspector { min-height: 42px; margin: 14px 0 0; }
+#statistics .sources-layout:has(.donut-wrap[hidden]) { grid-template-columns: 1fr; }
+#statistics .donut-segment { cursor: pointer; }
+#statistics .donut-segment.selected, #statistics .donut-segment:focus-visible { stroke-width: 30px; outline: none; }
+@media (max-width: 760px) {
+  .time-legend .series-toggle { flex: 1 1 100%; }
+  .time-inspector { grid-template-columns: 1fr; padding: 12px; font-size: .8rem; }
+  .time-navigation { gap: 8px; }
+  #statistics .source-stat-row { font-size: .78rem; }
+  .time-empty { left: 56px; padding: 10px; }
 }

@@ -4,7 +4,7 @@ const names={"direct-inconnu":"Direct / inconnu","autre-site":"Autre site","autr
 let csrf="",adminTimezone="UTC";
 const state={content:[],buttons:[],archives:[],settings:{},chart:[]};
 const reportCache=new Map();
-async function reportApi(path){const entry=reportCache.get(path);if(entry&&Date.now()-entry.at<15000)return entry.promise;const value={at:Date.now(),promise:api(path)};if(!reportCache.has(path)&&reportCache.size>=4)reportCache.delete(reportCache.keys().next().value);reportCache.set(path,value);try{return await value.promise}catch(error){if(reportCache.get(path)===value)reportCache.delete(path);throw error}}
+async function reportApi(path){const entry=reportCache.get(path);if(entry&&Date.now()-entry.at<15000)return entry.promise;const value={at:Date.now(),promise:api(path)};if(!reportCache.has(path)&&reportCache.size>=6)reportCache.delete(reportCache.keys().next().value);reportCache.set(path,value);try{return await value.promise}catch(error){if(reportCache.get(path)===value)reportCache.delete(path);throw error}}
 const api=async(path,options={})=>{const response=await fetch(path,{cache:"no-store",...options,headers:{"Content-Type":"application/json","X-Links-Request":"1","X-Links-CSRF":csrf,...(options.headers||{})}});if(response.status===401){location.href="/login";throw new Error("Connexion requise.")}if(!response.ok){let message="Une erreur est survenue.";try{message=(await response.json()).error||message}catch{}throw new Error(message)}if(options.method&&options.method!=="GET")reportCache.clear();return response.status===204?null:response.json()};
 const say=(message,error=false)=>{const dialog=[...document.querySelectorAll("dialog[open]")].at(-1);if(dialog){let feedback=dialog.querySelector("[data-dialog-feedback]");if(!feedback){feedback=document.createElement("p");feedback.dataset.dialogFeedback="";feedback.className="editor-feedback";feedback.setAttribute("role","alert");(dialog.querySelector("form")||dialog).prepend(feedback)}feedback.hidden=false;feedback.textContent=message;feedback.classList.toggle("notice-error",error)}const node=$("notice");node.textContent=message;node.classList.toggle("notice-error",error);clearTimeout(say.timer);say.timer=setTimeout(()=>node.textContent="",4000)};
 const esc=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -31,6 +31,8 @@ function dates(){
  const days=Number($("period").value),end=new Intl.DateTimeFormat("en-CA",{timeZone:adminTimezone,year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date()),start=new Date(end+"T12:00:00Z");start.setUTCDate(start.getUTCDate()-days+1);return {start:start.toISOString().slice(0,10),end}}
 
 const analyticCollections=new Map(),analyticRows=new Map();
+let latestTrackedRows=[],partnerReportRows=null,partnerPending=false;
+const hiddenCampaignSeries=new Set();
 let campaignRows=[],sourceRows=[],analysisDays={},renderedData=null,renderedSource="";
 const analysisScope=()=>$("analysis-scope").value;
 function readableSourceName({key,label}){
@@ -60,7 +62,7 @@ function metricRows(id,items,empty){
   analyticCollections.set(id,StudioCollection.create(node,{empty,renderRow:(item,context)=>{
    const row=document.createElement("div");row.className="engagement-row";
    row.innerHTML=`<div class="engagement-copy"><strong>${esc(item.name)}</strong></div><div class="engagement-value"><strong>${fmt.format(item.total)}</strong><small>${esc(item.unit)}</small></div>`;
-   const visual=item.series||([{label:item.unit,value:item.total}]);
+   const visual=item.series||([{label:item.unit,value:item.total,tone:id==="top-links"?"public":id==="tracked-stat-list"||id==="partner-stat-list"?"tracked":"campaigns"}]);
    if(id!=="promo-copy-list")row.append(StudioCharts.ranking(visual,item.series?context.seriesMax:context.max));
    if(!context.preview&&item.details.length){
      const details=document.createElement("details"),summary=document.createElement("summary");summary.textContent="Détails";details.append(summary);
@@ -81,21 +83,47 @@ function metricRows(id,items,empty){
 }
 function drawCampaignRanking(){
  const metric=$("campaign-metric").value,units={clicks:"clics publics",shared:"ouvertures partagées",impressions:"impressions",copies:"copies de codes"};
- metricRows("campaign-details",campaignRows.map(row=>({...row,total:row.metrics[metric]||0,unit:units[metric]})),"Aucune campagne sur cette période.");
+ metricRows("campaign-details",campaignRows.map(row=>({...row,total:row.metrics[metric]||0,unit:units[metric],series:row.series.map((entry,index)=>({...entry,tone:index?"campaigns":"public"})).filter((entry,index)=>!hiddenCampaignSeries.has(index))})),"Aucune campagne sur cette période.");
 }
-function drawSources(){const options=collectionOptions();StudioCharts.donut($("sources"),sourceRows,{preview:options.preview,query:options.query,sort:options.preview?"input":options.sort})}
+function drawSources(){const options=collectionOptions();if(options.preview)StudioCharts.donut($("sources"),sourceRows,{preview:true});else StudioCharts.distribution($("sources"),sourceRows,{query:options.query,sort:options.sort})}
 
+function statisticsSeries(scope){
+ if(scope==="tracked")return [{key:"tracked-openings",label:"Ouvertures de liens suivis",index:2,tone:"tracked"}];
+ if(scope==="shared")return [{key:"tracked-openings",label:"Ouvertures de liens suivis",index:1,tone:"tracked"},{key:"campaign-openings",label:"Ouvertures de campagnes partagées",index:2,tone:"campaigns"}];
+ if(scope==="campaigns")return [{key:"campaign-clicks",label:"Clics publics des campagnes",index:1,tone:"public",dashed:true},{key:"campaign-openings",label:"Ouvertures de campagnes partagées",index:2,tone:"campaigns"}];
+ if(scope==="copies")return [{key:"copies",label:"Copies de codes promo",index:2,tone:"campaigns"}];
+ return [{key:"visits",label:"Visites de la page",index:1,tone:"public"},{key:"public-clicks",label:"Clics publics",index:2,tone:"public",dashed:true}];
+}
+async function loadPartnerRanking(){
+ const rows=latestTrackedRows;if(partnerReportRows===rows)return;partnerReportRows=rows;
+ const note=$("partner-stat-note");note.textContent="Ouvertures de la période, selon les associations actuelles des liens.";
+ if(!rows.length){partnerPending=false;metricRows("partner-stat-list",[],"Aucune ouverture associée à un partenaire sur cette période.");return}
+ partnerPending=true;analyticRows.set("partner-stat-list",[]);const loading=document.createElement("p");loading.className="empty";loading.textContent="Chargement des associations partenaires…";$("partner-stat-list").replaceChildren(loading);
+ try{
+  const [links,partners]=await Promise.all([reportApi("/api/tracked-links"),reportApi("/api/affiliate-partners")]);
+  if(rows!==latestTrackedRows)return;if(!$("statistics").classList.contains("active")){partnerReportRows=null;partnerPending=false;return}
+  const names=new Map(partners.items.map(row=>[row.id,row.name])),bindings=new Map(links.items.map(row=>[row.id,row.partner_id])),totals=new Map();let unassigned=0;
+  for(const row of rows){const id=bindings.get(row.link_id);if(!names.has(id)){unassigned+=row.total;continue}totals.set(id,(totals.get(id)||0)+row.total)}
+  partnerPending=false;metricRows("partner-stat-list",[...totals].map(([id,total])=>({name:names.get(id),total,unit:"ouvertures",details:[]})),"Aucune ouverture associée à un partenaire sur cette période.");
+  if(unassigned)note.textContent="Associations actuelles des liens. "+fmt.format(unassigned)+" ouverture(s) sans association partenaire disponible, exclues de ce classement.";
+ }catch{if(rows!==latestTrackedRows)return;partnerReportRows=null;partnerPending=false;note.textContent="Associations partenaires indisponibles. Les ouvertures des liens restent visibles ci-dessus.";metricRows("partner-stat-list",[],"Aucune ouverture associée à un partenaire sur cette période.")}
+}
+$("campaign-series-controls").querySelectorAll("button").forEach((button,index)=>button.addEventListener("click",()=>{hiddenCampaignSeries.has(index)?hiddenCampaignSeries.delete(index):hiddenCampaignSeries.add(index);button.setAttribute("aria-pressed",String(!hiddenCampaignSeries.has(index)));$("campaign-series-empty").hidden=hiddenCampaignSeries.size!==2;drawCampaignRanking()}));
 function syncAnalysis(){
  const statistics=$("statistics").classList.contains("active"),scope=analysisScope();
- $("analysis-empty").hidden=sourceRows.some(row=>row[1]>0)||[...analyticRows.values()].some(rows=>rows.some(row=>row.total>0||row.series?.some(entry=>entry.value>0)));
+ $("analysis-empty").hidden=sourceRows.some(row=>row[1]>0)||[...analyticRows].filter(([id])=>id!=="partner-stat-list").some(([,rows])=>rows.some(row=>row.total>0||row.series?.some(entry=>entry.value>0)));
  $("analysis-history").hidden=false;
  (statistics?$("statistics-chart"):$("dashboard-chart")).append($("traffic-chart"));
- const labels=scope==="shared"?["","Ouvertures partagées"]:scope==="copies"?["","Copies de codes"]:scope==="campaigns"?["Clics publics","Ouvertures partagées"]:["Visites","Clics publics"];
- $("analysis-history-legend").replaceChildren(...labels.filter(Boolean).map((label,index)=>{const node=document.createElement("span");node.className=index===0&&labels[0]?"legend-visits":"legend-clicks";node.textContent=label;return node}));
- if(analysisDays.public)chart(statistics?(analysisDays[scope]||analysisDays.public):analysisDays.public,statistics?labels:undefined);
+ if(!statistics)$("public-daily-chart").replaceChildren();
+ if(analysisDays.public){
+  const series=statisticsSeries(scope),days=scope==="shared"?analysisDays.sharedSplit:analysisDays[scope];
+  chart(statistics?(days||analysisDays.public):analysisDays.public,statistics?series.map(row=>row.label):undefined);
+  if(statistics){StudioCharts.timeSeries($("public-daily-chart"),null,analysisDays.public,statisticsSeries("public"),{mode:"bars",active:()=>$("statistics").classList.contains("active")});loadPartnerRanking()}
+ }
+
 }
 function filterAnalysis(){
- for(const [id,collection] of analyticCollections){if(id!=="campaign-details"){const options=collectionOptions(),rows=analyticRows.get(id)||[];collection.setRows(options.preview?rows.filter(row=>row.total>0):rows,options)}}
+ for(const [id,collection] of analyticCollections){if(id!=="campaign-details"&&!(id==="partner-stat-list"&&partnerPending)){const options=collectionOptions(),rows=analyticRows.get(id)||[];collection.setRows(options.preview?rows.filter(row=>row.total>0):rows,options)}}
  drawCampaignRanking();drawSources();syncAnalysis();
 }
 $("analysis-controls").onsubmit=event=>event.preventDefault();
@@ -110,7 +138,7 @@ document.addEventListener("click",event=>{const button=event.target.closest("[da
  focusStatisticsSection(({shared:"statistics-tracked",public:"statistics-public",campaigns:"statistics-campaigns",copies:"statistics-campaigns"})[scope]||"statistics-overview");
 }});
 let chartRenderedWidth=0;
-function chart(days,labels=["Visites","Clics publics"]){if(state.chart===days&&state.chartLabels?.join("|")===labels.join("|")&&chartRenderedWidth===$("chart").clientWidth&&$("chart").children.length)return;state.chart=days;state.chartLabels=labels;chartRenderedWidth=$("chart").clientWidth;StudioCharts.timeline($("chart"),$("chart-detail"),days,labels)}
+function chart(days,labels=["Visites","Clics publics"]){const statistics=$("statistics").classList.contains("active"),kind=statistics?"studio:"+analysisScope():"dashboard";$("chart-detail").hidden=statistics;if(state.chart===days&&state.chartKind===kind&&state.chartLabels?.join("|")===labels.join("|")&&chartRenderedWidth===$("chart").clientWidth&&$("chart").children.length)return;state.chart=days;state.chartKind=kind;state.chartLabels=labels;chartRenderedWidth=$("chart").clientWidth;if(statistics)StudioCharts.timeSeries($("chart"),$("chart-detail"),days,statisticsSeries(analysisScope()),{active:()=>$("statistics").classList.contains("active")});else StudioCharts.timeline($("chart"),$("chart-detail"),days,labels)}
 
 let statsRequest=0;
 async function loadStats(force=false){if(force===true)reportCache.clear();const request=++statsRequest;let range;
@@ -125,12 +153,12 @@ async function loadStats(force=false){if(force===true)reportCache.clear();const 
  const sources=[...new Set([...data.rows.map(x=>x.source),...stories.map(x=>x.source),...tracked.map(x=>x.source),...(data.promo_code_copies||[]).map(x=>x.source),...(data.campaign_metrics||[]).map(x=>x.source)])].sort();
  $("source").replaceChildren(new Option("Toutes les sources",""),...sources.map(x=>new Option(sourceName(x),x)));if(sources.includes(previous))$("source").value=previous;
  const source=$("source").value,rows=data.rows.filter(x=>!source||x.source===source),storyRows=stories.filter(x=>!source||x.source===source),trackedRows=tracked.filter(x=>!source||x.source===source),days=new Map(),bySource=new Map(),byLink=new Map(),linkSources=new Map(),labels=new Map(),byStory=new Map();
- const sharedDays=new Map(),copyDays=new Map(),campaignDays=new Map();
+ const sharedDays=new Map(),copyDays=new Map(),campaignDays=new Map(),trackedDays=new Map();
  const addDay=(map,day,total,index=1)=>{const pair=map.get(day)||[0,0];pair[index]+=total;map.set(day,pair)};
  for(let d=new Date(range.start+"T12:00Z");d<=new Date(range.end+"T12:00Z");d.setUTCDate(d.getUTCDate()+1))days.set(d.toISOString().slice(0,10),[0,0]);
  let views=0,clicks=0,storyClicks=0;
  for(const row of rows){labels.set(row.link,row.label||row.link);const pair=days.get(row.day);if(!pair)continue;if(row.kind==="view"){views+=row.total;pair[0]+=row.total;bySource.set(row.source,(bySource.get(row.source)||0)+row.total)}else if(row.kind==="click"){clicks+=row.total;pair[1]+=row.total;byLink.set(row.link,(byLink.get(row.link)||0)+row.total);const sources=linkSources.get(row.link)||new Map();sources.set(row.source,(sources.get(row.source)||0)+row.total);linkSources.set(row.link,sources)}}
- for(const row of trackedRows){addDay(sharedDays,row.day,row.total);storyClicks+=row.total;const key="tracked:"+row.link_id,item=byStory.get(key)||{label:row.label+" · Lien suivi",total:0,sources:new Map()};item.total+=row.total;item.sources.set(row.source,(item.sources.get(row.source)||0)+row.total);byStory.set(key,item);bySource.set(row.source,(bySource.get(row.source)||0)+row.total)}
+ for(const row of trackedRows){addDay(trackedDays,row.day,row.total);addDay(sharedDays,row.day,row.total);storyClicks+=row.total;const key="tracked:"+row.link_id,item=byStory.get(key)||{label:row.label+" · Lien suivi",total:0,sources:new Map()};item.total+=row.total;item.sources.set(row.source,(item.sources.get(row.source)||0)+row.total);byStory.set(key,item);bySource.set(row.source,(bySource.get(row.source)||0)+row.total)}
  for(const row of storyRows){addDay(sharedDays,row.day,row.total);addDay(campaignDays,row.day,row.total);storyClicks+=row.total;const item=byStory.get(row.promotion_id)||{label:row.label,total:0,sources:new Map()};item.total+=row.total;item.sources.set(row.source,(item.sources.get(row.source)||0)+row.total);byStory.set(row.promotion_id,item);bySource.set(row.source,(bySource.get(row.source)||0)+row.total)}
  $("views").textContent=fmt.format(views);$("clicks").textContent=fmt.format(clicks);$("ratio").textContent=views?(clicks*100/views).toLocaleString("fr-FR",{maximumFractionDigits:1})+" %":"—";
  $("story-clicks").textContent=fmt.format(storyClicks);$("story-promos").textContent=fmt.format(byStory.size);
@@ -155,11 +183,11 @@ async function loadStats(force=false){if(force===true)reportCache.clear();const 
  metricRows("promo-copy-list",[...copyStats.values()].sort((a,b)=>b.total-a.total).map(value=>{const impressions=campaignStats.get(value.id)?.impressions||0;return {name:value.name+" · "+value.code,total:value.total,unit:"copies",details:[...(impressions?["Taux de copie : "+(value.total*100/impressions).toLocaleString("fr-FR",{maximumFractionDigits:1})+" %"]:[])]}}),"Aucun code copié sur cette période.");
  await loadCampaigns(campaignStats,request);if(request!==statsRequest)return;
  const campaignIds=new Set(campaignRows.map(row=>row.id));for(const row of data.campaign_metrics||[])if(row.kind==="click"&&campaignIds.has(row.id)&&(!source||row.source===source))addDay(campaignDays,row.day,row.total,0);
- analysisDays.public=[...days].map(([day,value])=>[day,...value]);for(const [scope,map] of [["shared",sharedDays],["copies",copyDays],["campaigns",campaignDays]])analysisDays[scope]=[...days.keys()].map(day=>[day,...(map.get(day)||[0,0])]);const sorted=map=>[...map].sort((a,b)=>b[1]-a[1]);metricRows("top-links",sorted(byLink).map(([key,value])=>{
+ analysisDays.public=[...days].map(([day,value])=>[day,...value]);for(const [scope,map] of [["shared",sharedDays],["copies",copyDays],["campaigns",campaignDays],["tracked",trackedDays]])analysisDays[scope]=[...days.keys()].map(day=>[day,...(map.get(day)||[0,0])]);analysisDays.sharedSplit=[...days.keys()].map(day=>[day,trackedDays.get(day)?.[1]||0,campaignDays.get(day)?.[1]||0]);const sorted=map=>[...map].sort((a,b)=>b[1]-a[1]);metricRows("top-links",sorted(byLink).map(([key,value])=>{
    const sourceBreakdown=[...linkSources.get(key)].sort((a,b)=>b[1]-a[1]).map(([source,total])=>({key:source,label:sourceName(source),total}));
    return {name:labels.get(key)||key,total:value,unit:"clics publics",sourceBreakdown,details:sourceBreakdown.map(({label,total})=>label+" : "+fmt.format(total))};
   }),"Aucun clic public sur cette période.");
- sourceRows=sorted(bySource).map(([key,value])=>[sourceName(key),value]);
+ sourceRows=sorted(bySource).map(([key,value])=>[sourceName(key),value,key]);latestTrackedRows=trackedRows;
  drawSources();syncAnalysis();renderedData=data;renderedSource=source;
 
  }catch(error){say(error.message,true)}}
