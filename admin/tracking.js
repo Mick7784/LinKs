@@ -252,5 +252,10 @@ get("partner-list").addEventListener("click",async event=>{
 });
 get("partner-dialog").addEventListener("close",()=>{++previewRevision;clearTimeout(previewTimer)});
 document.querySelectorAll("[data-close-partner]").forEach(button=>button.addEventListener("click",()=>close("partner-dialog")));
-window.LinksTracking={load,campaignOptions,loadPartners};
+async function openEntity(type,id){
+ const result=await api(type==="partner"?"/api/affiliate-partners":"/api/tracked-links"),item=result.items.find(row=>row.id===id);
+ if(!item)throw Error("Cette fiche n’est plus disponible.");
+ if(type==="partner")openPartner(item);else await openEditor(item);
+}
+window.LinksTracking={load,campaignOptions,loadPartners,openEntity};
 })();

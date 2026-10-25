@@ -190,6 +190,18 @@ def metric_aliases(db):
     existing={"block:"+r[0] for r in db.execute("SELECT id FROM content_blocks")}|{"button:"+r[0] for r in db.execute("SELECT id FROM top_buttons")}
     return {name:key for name,key in saved.items() if key in existing}
 
+def source_labels(db):
+    """Display metadata only; never rewrite event keys or infer an identity from a name."""
+    rules=json.loads(instance.get(db,'analytics.source_rules','[]'))
+    labels={rule['key']:rule['label'] for rule in rules}
+    aliases={}
+    for rule in rules:
+        for alias in rule['aliases']:aliases.setdefault(alias,set()).add(rule['key'])
+    for alias,keys in aliases.items():
+        if alias not in labels and len(keys)==1:labels[alias]=labels[next(iter(keys))]
+    labels.update({'tracked:'+row['id']:row['name'] for row in db.execute('SELECT id,name FROM tracking_sources')})
+    return labels
+
 def report(start,end,source=""):
     a,b=date.fromisoformat(start),date.fromisoformat(end)
     if a>b or (b-a).days>399:raise ValueError("Période maximale : 400 jours")
@@ -222,7 +234,14 @@ def report(start,end,source=""):
             elif metric["link"].startswith("block:"):
                 campaign_metrics.append({"day":metric["day"],"source":metric["source"],"id":metric["link"][6:],"kind":metric["kind"],"total":metric["total"]})
         tracked=tracked_links.tracked_events(db,start,end,source)
-        source_names={"tracked:"+r["id"]:r["name"] for r in db.execute("SELECT id,name FROM tracking_sources")}
+        source_names=source_labels(db)
+        # Legacy shared keys have a captured identity. Public traffic with the same
+        # key still describes a generic referrer, not a publication placement.
+        shared_names={row['key']:row['name'] for row in db.execute('''SELECT k.key,s.name
+            FROM tracking_source_keys k JOIN tracking_sources s ON s.id=k.source_id
+            WHERE k.key NOT IN ('instagram-story','shared-unknown')''')}
+        for row in stories:
+            row['source_name']=source_names.get(row['source'],shared_names.get(row['source']))
     return {"rows":rows,"stories":stories,"tracked":tracked,"source_names":source_names,"promo_code_copies":copies,"campaign_metrics":campaign_metrics,"timezone":str(PARIS)}
 
 STORY_TOKEN=re.compile(r'st_[A-Za-z0-9_-]{16}')

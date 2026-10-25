@@ -30,10 +30,10 @@ assert.equal(await page.locator('#dashboard .analytics-kpis article').first().ev
 
 await page.locator('[data-tab=statistics]').click();await page.locator('#statistics.active').waitFor();await page.selectOption('#analysis-scope','public');await page.locator('#statistics #chart svg').waitFor();assert.equal(await page.locator('#sources .donut-segment').count(),4);assert.equal(await page.locator('#sources .source-row').count(),4);
 assert.equal(await page.locator('#story-total').textContent(),'42');assert.equal(await page.locator('#promo-copy-total').textContent(),'12');assert.equal(await page.locator('#story-list .engagement-row,#promo-copy-list .engagement-row').count(),2);
-await page.locator('.chart-bucket').last().hover();assert(await page.locator('.chart-tooltip').isVisible());assert.match(await page.locator('.chart-tooltip').textContent(),/Visites.*Clics/);
-assert.equal(await page.locator('#sources .source-detail').count(),0);assert.equal(await page.locator('#sources svg').getAttribute('role'),'img');
-const geometry=await page.locator('.chart-bucket').evaluateAll(groups=>groups.map(g=>[...g.querySelectorAll('.animated-bar')].map(r=>({x:r.getAttribute('x'),width:r.getAttribute('width'),height:Number(r.getAttribute('height'))}))));assert(geometry.every(([a,b])=>a.x!==b.x&&a.width===b.width),'visits and clicks must be side by side');
-assert.equal(await page.locator('.chart-grid').count(),5);assert.equal(await page.locator('.visits-bar').first().evaluate(e=>getComputedStyle(e).fill),'rgb(34, 211, 238)');assert.equal(await page.locator('.clicks-bar').first().evaluate(e=>getComputedStyle(e).fill),'rgb(139, 92, 246)');await page.evaluate(()=>{document.activeElement.blur();scrollTo(0,0)});
+await page.locator('#chart .chart-bucket').last().hover();assert(await page.locator('#chart .chart-tooltip').isVisible());assert.match(await page.locator('#chart .chart-tooltip').textContent(),/Visites.*Clics/);
+assert.equal(await page.locator('#sources .source-detail').count(),0);assert.equal(await page.locator('#sources svg').getAttribute('role'),'group');
+assert.equal(await page.locator('#chart .time-line').count(),2);assert.equal(await page.locator('#chart .time-line.is-dashed').count(),1);
+assert.equal(await page.locator('#chart .time-grid').count(),5);assert.equal(await page.locator('#public-daily-chart .daily-bar').count(),28);await page.evaluate(()=>{document.activeElement.blur();scrollTo(0,0)});
 const publicBefore=await fetch('http://127.0.0.1:3003/api/public-config').then(r=>r.json());
 const overflow=async()=>assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'horizontal overflow');
 const nav=async id=>{if(await page.locator('#menu-toggle').isVisible())await page.locator('#menu-toggle').click();await page.locator(`[data-tab="${id}"]`).click();await page.locator(`#${id}.active`).waitFor()};
@@ -69,7 +69,7 @@ await refresh();assert.equal(await page.locator('.chart-bucket').last().locator(
 await page.locator('.chart-bucket').last().click();assert(await page.locator('.chart-tooltip').isVisible());
 
 fixture.rows=Array.from({length:12},(_,i)=>({day:today,source:'source-'+i,kind:'view',link:'',total:i+1}));fixture.stories.push({promotion_id:'two',label:'Autre Story',total:2,source:'instagram-story',day:today});fixture.promo_code_copies.push({id:'two',name:'Autre offre',code:'AUTRE',source:'source-1',total:2,day:today});
-await refresh();await nav('statistics');await page.selectOption('#analysis-scope','sources');assert.equal(await page.locator('#sources .source-row').count(),13);assert.equal(await page.locator('#source-details').count(),0);await nav('dashboard');assert.equal(await page.locator('#story-list .engagement-row,#promo-copy-list .engagement-row').count(),4);await overflow();
+await refresh();await nav('statistics');assert.equal(await page.locator('#sources .source-row').count(),13);assert.equal(await page.locator('#source-details').count(),0);await nav('dashboard');assert.equal(await page.locator('#story-list .engagement-row,#promo-copy-list .engagement-row').count(),4);await overflow();
 await page.emulateMedia({reducedMotion:'reduce'});assert.equal(await page.locator('.animated-bar').first().evaluate(e=>getComputedStyle(e).animationName),'none');
 if(process.env.UI_SCREENSHOTS){await nav('content');await page.locator('[data-section]').first().waitFor();await page.screenshot({path:join(process.env.UI_SCREENSHOTS,'links-blocks-mobile.png'),fullPage:true});}assert.deepEqual(await fetch('http://127.0.0.1:3003/api/public-config').then(r=>r.json()),publicBefore,'UI changed public configuration');// Private tracked links use their independent library.
 await nav('tracked-links');

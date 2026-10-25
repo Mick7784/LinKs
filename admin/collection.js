@@ -15,7 +15,7 @@
    const body=document.createElement("div");body.className="collection-rows";
    const max=rows.reduce((peak,row)=>Math.max(peak,row.total),1);
    const seriesMax=rows.reduce((peak,row)=>Math.max(peak,...(row.series||[]).map(x=>x.value)),1);
-   if(result.total)body.append(...result.rows.map(row=>renderRow(row,{max,seriesMax,preview:options.preview})));else{const p=document.createElement("p");p.className="empty";p.textContent=empty;body.append(p)}
+   if(result.total)body.append(...result.rows.map(row=>renderRow(row,{max,seriesMax,preview:options.preview})));else{const p=document.createElement("p");p.className="empty";p.textContent=options.query.trim()?"Aucun résultat pour cette recherche. Modifiez le texte recherché.":empty;body.append(p)}
    if(result.pages===1||options.preview){node.replaceChildren(body);return}
    const nav=document.createElement("nav");nav.className="collection-pagination";nav.setAttribute("aria-label","Pagination · "+(node.getAttribute("aria-label")||"résultats"));
    const status=document.createElement("span");status.setAttribute("role","status");status.textContent=`${result.total} résultats · ${page+1} / ${result.pages}`;

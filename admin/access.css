@@ -1,8 +1,40 @@
+/* Access screens use the same surface hierarchy as the administration.
+   They follow the system theme before a user is signed in. */
 :root {
   color-scheme: dark;
   font-family: system-ui, sans-serif;
-  background: #0a111e;
-  color: #f1f4fa;
+  --bg: #070C14;
+  --surface: #142238;
+  --raised: #1B2B43;
+  --text: #EAF2FF;
+  --muted: #B7C6DA;
+  --line: #344B69;
+  --control-line: #7186A4;
+  --accent: #62D9EC;
+  --focus: #67E8F9;
+  --danger: #F1A1AB;
+  --primary: #2563EB;
+  --primary-hover: #1D4ED8;
+  --primary-line: #7DA7FF;
+  background: var(--bg);
+  color: var(--text);
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    --bg: #EEF3F9;
+    --surface: #FFFFFF;
+    --raised: #F1F5FA;
+    --text: #142238;
+    --muted: #52637A;
+    --line: #C3CFDF;
+    --control-line: #73839A;
+    --accent: #086B88;
+    --focus: #0E7490;
+    --danger: #B23A49;
+    --primary-line: #2563EB;
+  }
+  .access-brand { content: url('/brand-light.svg'); }
 }
 * {
   box-sizing: border-box;
@@ -18,18 +50,18 @@ main {
   max-width: 520px;
   margin: 4vh auto;
   padding: 28px;
-  border: 1px solid #7acfe533;
+  border: 1px solid var(--line);
   border-radius: 20px;
-  background: #131e2e;
+  background: var(--surface);
 }
 h1 {
-  color: #7acfe5;
+  color: var(--accent);
 }
 h2 {
   font-size: 1.25rem;
 }
 p {
-  color: #b0bdd0;
+  color: var(--muted);
   line-height: 1.5;
 }
 label {
@@ -42,9 +74,9 @@ input {
   width: 100%;
   margin-top: 7px;
   padding: 12px;
-  border: 1px solid #58647a;
+  border: 1px solid var(--control-line);
   border-radius: 9px;
-  background: #0a111e;
+  background: var(--bg);
   color: inherit;
   font: inherit;
 }
@@ -61,8 +93,8 @@ button {
   padding: 12px 18px;
   border: 0;
   border-radius: 10px;
-  background: #7acfe5;
-  color: #0a111e;
+  background: var(--accent);
+  color: #FFFFFF;
   font-weight: 700;
   cursor: pointer;
 }
@@ -73,7 +105,7 @@ button {
   margin-top: 24px;
 }
 dt {
-  color: #b0bdd0;
+  color: var(--muted);
   margin-top: 12px;
 }
 dd {
@@ -81,14 +113,14 @@ dd {
   overflow-wrap: anywhere;
 }
 #feedback {
-  color: #ffb9bd;
+  color: var(--danger);
 }
 button:disabled {
   opacity: 0.5;
 }
 input:focus-visible,
 button:focus-visible {
-  outline: 2px solid #b19bdc;
+  outline: 2px solid var(--focus);
   outline-offset: 3px;
 }
 @media (max-width: 400px) {
@@ -102,11 +134,11 @@ button:focus-visible {
 body {
   background:
     radial-gradient(ellipse at 20% 0%, #31c9e50a, transparent 45%),
-    radial-gradient(ellipse at 85% 80%, #9b5ce60a, transparent 50%), #0b101a;
+    radial-gradient(ellipse at 85% 80%, #9b5ce60a, transparent 50%), var(--bg);
 }
 main {
-  background: #131b29;
-  border-color: #29364a;
+  background: var(--surface);
+  border-color: var(--line);
   box-shadow: 0 20px 70px #0002;
   padding: 32px;
 }
@@ -124,12 +156,12 @@ main {
   clip-path: inset(50%);
 }
 button {
-  background: linear-gradient(120deg, #65d4e8, #a99af2);
-  color: #0b101a;
+  background: var(--primary);
+  color: #FFFFFF;
 }
 input {
-  background: #0e1521;
-  border-color: #35445a;
+  background: var(--raised);
+  border-color: var(--control-line);
 }
 h2 {
   letter-spacing: -0.025em;
@@ -145,19 +177,21 @@ input[type="file"] {
 }
 
 /* Same restrained DomotiK identity as the main administration. */
-:root{background:#0A1221;color:#EAF2FF}
 body{
   background:radial-gradient(ellipse at 8% 4%,rgba(0,102,255,.13),transparent 44%),
-             radial-gradient(ellipse at 95% 94%,rgba(168,85,247,.09),transparent 44%),#0A1221;
+             radial-gradient(ellipse at 95% 94%,rgba(168,85,247,.09),transparent 44%),var(--bg);
 }
-main{background:#111B2B;border:1px solid #2A3952;position:relative;overflow:hidden}
+main{background:var(--surface);border:1px solid var(--line);position:relative;overflow:hidden}
 main::before{
   content:"";position:absolute;top:0;left:0;right:0;height:3px;pointer-events:none;
   background:linear-gradient(90deg,#00E5FF,#0066FF 52%,#A855F7);
 }
-p,dt{color:#AFBED8}
-h1{color:#00E5FF}
-input{background:#0A1221;border-color:#344460}
-input:focus-visible,button:focus-visible{outline-color:#00E5FF}
-button{background:#0066FF;color:#fff}
-button:hover{background:#165CDA}
+p,dt{color:var(--muted)}
+h1{color:var(--accent)}
+input{background:var(--raised);border-color:var(--control-line)}
+input:focus-visible,button:focus-visible{outline-color:var(--focus)}
+button{background:var(--primary);color:#fff;border:1px solid var(--primary-line)}
+button:hover{background:var(--primary-hover)}
+
+input::placeholder{color:var(--muted);opacity:1}
+input:hover{border-color:var(--accent)}
