@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>LinKs by DomotiK Studio · Administration</title><link rel="icon" href="/mark.svg">
-<script src="/theme-init.js"></script><link rel="stylesheet" href="/style.css"><script src="/dates.js" defer></script><script src="/preview/cards.js" defer></script><script src="/calendar.js" defer></script><script src="/preview/theme.js" defer></script><script src="/uploads.js" defer></script><script src="/navigation.js" defer></script><script src="/charts.js" defer></script><script src="/collection.js" defer></script><script src="/app.js" defer></script><script src="/tracking.js" defer></script><script src="/appearance.js" defer></script><script src="/shortcuts.js" defer></script><script src="/storage.js" defer></script><script src="/settings.js" defer></script><link rel="stylesheet" href="/appearance.css"></head>
+<script src="/theme-init.js"></script><link rel="stylesheet" href="/style.css"><script src="/dates.js" defer></script><script src="/preview/cards.js" defer></script><script src="/calendar.js" defer></script><script src="/preview/theme.js" defer></script><script src="/uploads.js" defer></script><script src="/navigation.js" defer></script><script src="/charts.js" defer></script><script src="/collection.js" defer></script><script src="/partner-report.js" defer></script><script src="/app.js" defer></script><script src="/tracking.js" defer></script><script src="/appearance.js" defer></script><script src="/shortcuts.js" defer></script><script src="/storage.js" defer></script><script src="/settings.js" defer></script><link rel="stylesheet" href="/appearance.css"></head>
 <body class="admin-shell">
 <a class="skip-link" href="#main-content">Aller au contenu</a>
 <aside class="sidebar" aria-label="Links">
@@ -80,7 +80,17 @@
   <section id="statistics-tracked" class="statistics-section" aria-labelledby="statistics-tracked-title">
    <header class="statistics-section-heading"><div><h2 id="statistics-tracked-title" tabindex="-1">Liens suivis</h2><p>Ouvertures des liens indépendants, toutes sources de publication confondues.</p></div></header>
    <section class="panel" data-analysis="tracked"><h3>Classement des liens suivis</h3><div id="tracked-stat-list" aria-live="polite"></div></section>
-   <section class="panel statistics-partner-panel"><h3>Classement des partenaires</h3><p id="partner-stat-note" class="panel-helper">Ouvertures de la période, selon les associations actuelles des liens.</p><div id="partner-stat-list" aria-live="polite"></div></section>
+   <section class="panel statistics-partner-panel"><h3>Classement des partenaires</h3><p id="partner-stat-note" class="panel-helper">Ouvertures de la période et de la source sélectionnées, selon les associations actuelles des liens.</p>
+    <dl id="partner-attribution-summary" class="partner-attribution-summary" aria-label="Répartition des ouvertures de liens suivis" aria-live="polite" hidden>
+     <div><dt>Attribuées à un partenaire</dt><dd data-partner-count="attributed">—</dd></div>
+     <div><dt>Sans partenaire déclaré</dt><dd data-partner-count="withoutPartner">—</dd></div>
+     <div><dt>Attribution non identifiable</dt><dd data-partner-count="unidentified">—</dd></div>
+    </dl>
+    <div id="partner-stat-list" aria-live="polite"></div>
+    <details id="partner-unattributed" class="partner-unattributed" hidden><summary>Comprendre les ouvertures non attribuées</summary>
+     <section id="partner-without-section" aria-labelledby="partner-without-title"><h4 id="partner-without-title">Liens sans partenaire déclaré</h4><p class="panel-helper">Ces liens existent et n’ont actuellement aucun partenaire renseigné. Ce cas est légitime, notamment pour les URL affiliées directes. L’historique ne précise pas si l’absence d’association était un choix volontaire.</p><div id="partner-without-list" aria-live="polite"></div></section>
+     <section id="partner-unidentified-section" aria-labelledby="partner-unidentified-title"><h4 id="partner-unidentified-title">Attribution non identifiable</h4><p class="panel-helper">Le lien, son association ou le partenaire référencé ne figure pas dans les métadonnées disponibles. Ces ouvertures restent dans les totaux des liens suivis ; aucun partenaire n’est déduit du domaine.</p><div id="partner-unidentified-list" aria-live="polite"></div></section>
+    </details></section>
   </section>
   <section id="statistics-public" class="statistics-section" aria-labelledby="statistics-public-title">
    <header class="statistics-section-heading"><div><h2 id="statistics-public-title" tabindex="-1">Page publique</h2><p>Les visites mesurent les pages vues ; les clics publics mesurent les actions sur ses liens.</p></div></header>

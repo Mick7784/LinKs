@@ -2696,3 +2696,17 @@ main:has(> #statistics.active) { max-width: none; width: 100%; }
 #statistics #campaign-series-controls .series-toggle::before { width: 10px; height: 10px; flex: 0 0 10px; border: 0; border-radius: 50%; background: var(--series-color); }
 #statistics #campaign-series-controls [data-series-key="campaign-clicks"]::before { border-radius: 0; transform: rotate(45deg); }
 #statistics .source-inspector { overflow-wrap: anywhere; }
+
+#statistics .partner-attribution-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 20px 0; }
+#statistics .partner-attribution-summary > div { padding: 14px; border: 1px solid var(--line); border-radius: 8px; min-width: 0; background: var(--raised); }
+#statistics .partner-attribution-summary dt { font-size: .95rem; line-height: 1.5; color: var(--muted); overflow-wrap: anywhere; }
+#statistics .partner-attribution-summary dd { margin: 8px 0 0; font-size: 1.8rem; font-weight: 650; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+#statistics .partner-unattributed { border-top: 1px solid var(--line); margin-top: 18px; }
+#statistics .partner-unattributed > summary { min-height: 44px; padding: 14px 0; cursor: pointer; color: var(--accent); font-size: 1rem; }
+#statistics .partner-unattributed > section { margin: 16px 0; }
+#statistics .partner-unattributed h4 { margin: 0 0 8px; font-size: 1rem; }
+@media (max-width: 760px) { #statistics .partner-attribution-summary { grid-template-columns: minmax(0, 1fr); gap: 10px; } }
+
+/* Closed explanatory sections have no visible transition to animate. */
+#statistics .partner-unattributed:not([open]) > section,
+#statistics .partner-unattributed:not([open]) > section * { transition: none; animation: none; }

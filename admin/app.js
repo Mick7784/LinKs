@@ -31,7 +31,7 @@ function dates(){
  const days=Number($("period").value),end=new Intl.DateTimeFormat("en-CA",{timeZone:adminTimezone,year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date()),start=new Date(end+"T12:00:00Z");start.setUTCDate(start.getUTCDate()-days+1);return {start:start.toISOString().slice(0,10),end}}
 
 const analyticCollections=new Map(),analyticRows=new Map();
-let latestTrackedRows=[],partnerReportRows=null,partnerPending=false;
+let latestTrackedRows=[],partnerReportRows=null,partnerPending=false,partnerUnavailable=false;
 const hiddenCampaignSeries=new Set();
 let statisticsEntities=new Map();
 let campaignRows=[],sourceRows=[],analysisDays={},renderedData=null,renderedSource="";
@@ -59,15 +59,15 @@ function collectionOptions(){const preview=!$("statistics").classList.contains("
 function metricRows(id,items,empty){
  analyticRows.set(id,items);
  if(!analyticCollections.has(id)){
-  const node=$(id);node.setAttribute("aria-label",node.closest("section").querySelector("h3").textContent);
+  const node=$(id);node.setAttribute("aria-label",node.closest("section").querySelector("h3,h4").textContent);
   analyticCollections.set(id,StudioCollection.create(node,{empty,renderRow:(item,context)=>{
    const row=document.createElement("div");row.className="engagement-row";
    row.innerHTML=`<div class="engagement-copy"><strong>${esc(item.name)}</strong></div><div class="engagement-value"><strong>${fmt.format(item.total)}</strong><small>${esc(item.unit)}</small></div>`;
    if(item.entity&&!context.preview){const button=document.createElement("button");button.type="button";button.className="statistics-entity-shortcut";button.dataset.statisticsEntity=item.entity.type;button.dataset.entityId=item.entity.id;button.textContent=item.entity.type==="partner"?"Fiche partenaire ↗":item.entity.type==="tracked"?"Fiche du lien ↗":statisticsEntities.get(item.entity.id)?.type==="classic"?"Fiche du lien ↗":"Fiche campagne ↗";button.setAttribute("aria-label",button.textContent+" · "+item.name);row.querySelector(".engagement-copy").append(button)}
-   const visual=item.series||([{label:item.unit,value:item.total,key:id==="top-links"?"public-clicks":undefined,tone:id==="top-links"?"public":id==="tracked-stat-list"||id==="partner-stat-list"?"tracked":"campaigns"}]);
+   const visual=item.series||([{label:item.unit,value:item.total,key:id==="top-links"?"public-clicks":undefined,tone:id==="top-links"?"public":id==="tracked-stat-list"||id.startsWith("partner-")?"tracked":"campaigns"}]);
    if(id!=="promo-copy-list")row.append(StudioCharts.ranking(visual,item.series?context.seriesMax:context.max,{comparison:Boolean(item.series)}));
    if(!context.preview&&item.details.length){
-     const details=document.createElement("details"),summary=document.createElement("summary");summary.textContent=item.sourceBreakdown?"Sources de publication":"Indicateurs détaillés";details.append(summary);
+     const details=document.createElement("details"),summary=document.createElement("summary");summary.textContent=item.detailLabel||(item.sourceBreakdown?"Sources de publication":"Indicateurs détaillés");details.append(summary);
      details.addEventListener("toggle",()=>{
       if(!details.open||details.dataset.loaded)return;
       details.dataset.loaded="true";
@@ -94,24 +94,35 @@ function statisticsSeries(scope){
  if(scope==="copies")return [{key:"copies",label:"Copies de codes promo",index:2,tone:"campaigns"}];
  return [{key:"visits",label:"Visites de la page",index:1,tone:"public"},{key:"public-clicks",label:"Clics publics",index:2,tone:"public",dashed:true}];
 }
+function renderPartnerReport(report){
+ const note=$("partner-stat-note"),summary=$("partner-attribution-summary");
+ note.textContent="Ouvertures de la période et de la source sélectionnées, selon les associations actuelles des liens. L’association au jour du clic n’est pas conservée dans les événements historiques.";
+ summary.hidden=false;summary.querySelectorAll('[data-partner-count]').forEach(node=>node.textContent=fmt.format(report.totals[node.dataset.partnerCount]));
+ metricRows("partner-stat-list",report.attributed.map(partner=>({name:partner.name,total:partner.total,unit:"ouvertures",entity:{type:"partner",id:partner.id},detailLabel:"Liens suivis concernés",details:partner.links.map(link=>link.name+" : "+fmt.format(link.total)+" ouverture(s)")})),"Aucune ouverture attribuée à un partenaire pour cette période et cette source.");
+ const reasons={"missing-link":"Lien absent des métadonnées actuelles.","missing-association":"Information d’association indisponible.","missing-partner":"Partenaire référencé introuvable."};
+ for(const [kind,id] of [["withoutPartner","without"],["unidentified","unidentified"]]){
+  $("partner-"+id+"-section").hidden=!report[kind].length;
+  metricRows("partner-"+id+"-list",report[kind].map(link=>({name:link.name,total:link.total,unit:"ouvertures",details:link.reason?[reasons[link.reason]]:[],entity:link.id?{type:"tracked",id:link.id}:null})),"Aucune ouverture dans cette catégorie.");
+ }
+ $("partner-unattributed").hidden=!(report.totals.withoutPartner||report.totals.unidentified);
+}
 async function loadPartnerRanking(){
- const rows=latestTrackedRows;if(partnerReportRows===rows)return;partnerReportRows=rows;
- const note=$("partner-stat-note");note.textContent="Ouvertures de la période, selon les associations actuelles des liens.";
- if(!rows.length){partnerPending=false;metricRows("partner-stat-list",[],"Aucune ouverture associée à un partenaire sur cette période.");return}
- partnerPending=true;analyticRows.set("partner-stat-list",[]);const loading=document.createElement("p");loading.className="empty";loading.textContent="Chargement des associations partenaires…";$("partner-stat-list").replaceChildren(loading);
+ const rows=latestTrackedRows;if(partnerReportRows===rows)return;partnerReportRows=rows;partnerUnavailable=false;
+ const note=$("partner-stat-note");
+ $("partner-attribution-summary").hidden=true;$("partner-unattributed").hidden=true;
+ if(!rows.length){partnerPending=false;renderPartnerReport(StudioPartnerReport.attribute([],[],[]));return}
+ partnerPending=true;analyticRows.set("partner-stat-list",[]);const loading=document.createElement("p");loading.className="empty";loading.textContent="Chargement des associations partenaires…";$("partner-stat-list").replaceChildren(loading);note.textContent="Vérification des associations explicites des liens suivis…";
  try{
   const [links,partners]=await Promise.all([reportApi("/api/tracked-links"),reportApi("/api/affiliate-partners")]);
   if(rows!==latestTrackedRows)return;if(!$("statistics").classList.contains("active")){partnerReportRows=null;partnerPending=false;return}
-  const names=new Map(partners.items.map(row=>[row.id,row.name])),bindings=new Map(links.items.map(row=>[row.id,row.partner_id])),totals=new Map();let unassigned=0;
-  for(const row of rows){const id=bindings.get(row.link_id);if(!names.has(id)){unassigned+=row.total;continue}totals.set(id,(totals.get(id)||0)+row.total)}
-  partnerPending=false;metricRows("partner-stat-list",[...totals].map(([id,total])=>({name:names.get(id),total,unit:"ouvertures",details:[],entity:{type:"partner",id}})),"Aucune ouverture associée à un partenaire sur cette période.");
-  if(unassigned)note.textContent="Associations actuelles des liens. "+fmt.format(unassigned)+" ouverture(s) sans association partenaire disponible, exclues de ce classement.";
- }catch{if(rows!==latestTrackedRows)return;partnerReportRows=null;partnerPending=false;note.textContent="Associations partenaires indisponibles. Les ouvertures des liens restent visibles ci-dessus.";metricRows("partner-stat-list",[],"Aucune ouverture associée à un partenaire sur cette période.")}
+  const report=StudioPartnerReport.attribute(rows,links.items,partners.items);
+  partnerPending=false;renderPartnerReport(report);
+ }catch{if(rows!==latestTrackedRows)return;partnerPending=false;partnerUnavailable=true;$("partner-attribution-summary").hidden=true;$("partner-unattributed").hidden=true;note.textContent="Associations partenaires indisponibles. Les ouvertures des liens restent visibles ci-dessus ; aucune attribution ne peut être vérifiée actuellement.";analyticRows.set("partner-stat-list",[]);const error=document.createElement("p");error.className="empty";error.textContent="Classement temporairement indisponible. Actualisez les statistiques pour réessayer.";$("partner-stat-list").replaceChildren(error)}
 }
 $("campaign-series-controls").querySelectorAll("button").forEach((button,index)=>button.addEventListener("click",()=>{hiddenCampaignSeries.has(index)?hiddenCampaignSeries.delete(index):hiddenCampaignSeries.add(index);button.setAttribute("aria-pressed",String(!hiddenCampaignSeries.has(index)));$("campaign-series-empty").hidden=hiddenCampaignSeries.size!==2;drawCampaignRanking()}));
 function syncAnalysis(){
  const statistics=$("statistics").classList.contains("active"),scope=analysisScope();if(statistics)queueStatisticsLocation();
- $("analysis-empty").hidden=sourceRows.some(row=>row[1]>0)||[...analyticRows].filter(([id])=>id!=="partner-stat-list").some(([,rows])=>rows.some(row=>row.total>0||row.series?.some(entry=>entry.value>0)));
+ $("analysis-empty").hidden=sourceRows.some(row=>row[1]>0)||[...analyticRows].filter(([id])=>!id.startsWith("partner-")).some(([,rows])=>rows.some(row=>row.total>0||row.series?.some(entry=>entry.value>0)));
  $("analysis-history").hidden=false;
  (statistics?$("statistics-chart"):$("dashboard-chart")).append($("traffic-chart"));
  if(!statistics)$("public-daily-chart").replaceChildren();
@@ -123,7 +134,7 @@ function syncAnalysis(){
 
 }
 function filterAnalysis(){
- for(const [id,collection] of analyticCollections){if(id!=="campaign-details"&&!(id==="partner-stat-list"&&partnerPending)){const options=collectionOptions(),rows=analyticRows.get(id)||[];collection.setRows(options.preview?rows.filter(row=>row.total>0):rows,options)}}
+ for(const [id,collection] of analyticCollections){if(id!=="campaign-details"&&!(id.startsWith("partner-")&&(partnerPending||partnerUnavailable))){const options=collectionOptions(),rows=analyticRows.get(id)||[];collection.setRows(options.preview?rows.filter(row=>row.total>0):rows,options)}}
  drawCampaignRanking();drawSources();syncAnalysis();
 }
 $("analysis-controls").onsubmit=event=>event.preventDefault();

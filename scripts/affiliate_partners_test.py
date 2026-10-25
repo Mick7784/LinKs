@@ -12,6 +12,7 @@ class PartnerTests(unittest.TestCase):
     tearDown = analytics_test.AnalyticsTests.tearDown
     server = analytics_test.AnalyticsTests.server
     request = analytics_test.AnalyticsTests.request
+    redirect = analytics_test.AnalyticsTests.redirect
 
     def fields(self, **values):
         return {'name': 'Test partenaire', 'code': 'ABC', 'domains': ['shop.example'],
@@ -155,6 +156,48 @@ class PartnerTests(unittest.TestCase):
         self.a.restore_backup(old)
         with self.a.connection() as db:
             self.assertEqual(partners.link_metadata(db, saved['id'], saved['url'])['original_url'], fields['url'])
+
+
+    def test_partner_statistics_chain_uses_explicit_ids_and_preserves_short_links(self):
+        admin, public = self.server(True), self.server()
+        configured = {row['name']: row for row in json.loads(self.request(admin+'/api/affiliate-partners')[1])['items']}
+        source = json.loads(self.request(admin+'/api/tracking-sources')[1])['items'][0]['id']
+        day = self.a.datetime.now(self.a.PARIS).date().isoformat()
+        cases = [('Domadoo', 'https://www.domadoo.fr/p', '?domid=117'),
+                 ('Reolink', 'https://reolink.com/p', '?aff=1404'),
+                 ('Sanyipace', 'https://sanyipacetoilet.com/p', '?ref=DomotiK')]
+        for name, origin, suffix in cases:
+            partner = configured[name]
+            status, body = self.request(admin+'/api/tracked-links', {'name':name+' associé', 'url':origin,
+                'partner_id':partner['id'], 'expected_url':origin+suffix})
+            self.assertEqual(status, 201, body)
+            ident = json.loads(body)['id']
+            status, body = self.request(admin+'/api/tracked-links/'+ident+'/token', {'source_id':source})
+            self.assertEqual(status, 200, body)
+            short = json.loads(body)
+            for path, method in [('/'+short['code'], 'GET'), ('/go/'+short['token'], 'HEAD'), ('/go/'+short['token'], 'GET')]:
+                status, headers = self.redirect(public+path, method=method)
+                self.assertEqual((status, headers['Location']), (302, origin+suffix))
+            if name == 'Domadoo': self.assertEqual(self.request(admin+'/api/tracked-links/'+ident+'/archive', {})[0], 200)
+            with self.a.connection() as db:
+                db.execute('UPDATE tracked_tokens SET click_total=999 WHERE token=?', (short['token'],))
+                db.execute('INSERT INTO counts VALUES(?,?,?,?,?)', ('2020-01-01','tracked:'+source,'tracked','tracked:'+short['token']+':10',7))
+            link = next(row for row in json.loads(self.request(admin+'/api/tracked-links')[1])['items'] if row['id']==ident)
+            self.assertEqual((link['partner_id'], link['clicks']), (partner['id'], 999))
+            report = json.loads(self.request(admin+'/api/stats?start='+day+'&end='+day)[1])
+            self.assertEqual(sum(row['total'] for row in report['tracked'] if row['link_id']==ident), 2)
+            self.assertEqual(self.request(admin+'/api/tracked-links/'+ident+'/token', {'source_id':source})[0], 400 if name=='Domadoo' else 200)
+            with self.a.connection() as db:
+                alias = db.execute('SELECT code FROM short_aliases WHERE target_token=?', (short['token'],)).fetchone()
+                self.assertEqual(alias['code'], short['code'])
+        for index, label in enumerate(['API historique', 'Choix sans partenaire']):
+            destination = 'https://reolink.com/direct-'+str(index)+'?aff=custom'
+            fields = {} if index==0 else {'partner_id':'', 'expected_url':destination}
+            status, body = self.request(admin+'/api/tracked-links', {'name':label,'url':destination, **fields})
+            self.assertEqual(status, 201, body)
+            ident=json.loads(body)['id']
+            link=next(row for row in json.loads(self.request(admin+'/api/tracked-links')[1])['items'] if row['id']==ident)
+            self.assertEqual((link['partner_id'],link['url']), ('',destination))
 
 
 if __name__ == '__main__': unittest.main()
