@@ -25,3 +25,9 @@ test('long periods retain every daily measurement and source colours follow iden
  for(const key of ['other','tracked:renamed','unknown'])StudioCharts.sourceColor(key);
  assert.equal(StudioCharts.sourceColor('tracked:original'),original);
 });
+
+test('source categories have stable categorical colours without prototype lookups',()=>{
+ assert.notEqual(StudioCharts.sourceColor('youtube'),StudioCharts.sourceColor('instagram'));
+ assert.notEqual(StudioCharts.sourceColor('instagram'),StudioCharts.sourceColor('site'));
+ for(const key of ['__proto__','constructor','toString','tracked:original'])assert.match(StudioCharts.sourceColor(key),/^var\(--chart-category-[0-7]\)$/);
+});

@@ -64,8 +64,8 @@ function metricRows(id,items,empty){
    const row=document.createElement("div");row.className="engagement-row";
    row.innerHTML=`<div class="engagement-copy"><strong>${esc(item.name)}</strong></div><div class="engagement-value"><strong>${fmt.format(item.total)}</strong><small>${esc(item.unit)}</small></div>`;
    if(item.entity&&!context.preview){const button=document.createElement("button");button.type="button";button.className="statistics-entity-shortcut";button.dataset.statisticsEntity=item.entity.type;button.dataset.entityId=item.entity.id;button.textContent=item.entity.type==="partner"?"Fiche partenaire ↗":item.entity.type==="tracked"?"Fiche du lien ↗":statisticsEntities.get(item.entity.id)?.type==="classic"?"Fiche du lien ↗":"Fiche campagne ↗";button.setAttribute("aria-label",button.textContent+" · "+item.name);row.querySelector(".engagement-copy").append(button)}
-   const visual=item.series||([{label:item.unit,value:item.total,tone:id==="top-links"?"public":id==="tracked-stat-list"||id==="partner-stat-list"?"tracked":"campaigns"}]);
-   if(id!=="promo-copy-list")row.append(StudioCharts.ranking(visual,item.series?context.seriesMax:context.max));
+   const visual=item.series||([{label:item.unit,value:item.total,key:id==="top-links"?"public-clicks":undefined,tone:id==="top-links"?"public":id==="tracked-stat-list"||id==="partner-stat-list"?"tracked":"campaigns"}]);
+   if(id!=="promo-copy-list")row.append(StudioCharts.ranking(visual,item.series?context.seriesMax:context.max,{comparison:Boolean(item.series)}));
    if(!context.preview&&item.details.length){
      const details=document.createElement("details"),summary=document.createElement("summary");summary.textContent=item.sourceBreakdown?"Sources de publication":"Indicateurs détaillés";details.append(summary);
      details.addEventListener("toggle",()=>{
@@ -83,14 +83,14 @@ function metricRows(id,items,empty){
 }
 function drawCampaignRanking(){
  const metric=$("campaign-metric").value,units={clicks:"clics publics",shared:"ouvertures partagées",impressions:"impressions",copies:"copies de codes"};
- metricRows("campaign-details",campaignRows.map(row=>({...row,total:row.metrics[metric]||0,unit:units[metric],series:row.series.map((entry,index)=>({...entry,tone:index?"campaigns":"public"})).filter((entry,index)=>!hiddenCampaignSeries.has(index))})),"Aucune campagne sur cette période.");
+ metricRows("campaign-details",campaignRows.map(row=>({...row,total:row.metrics[metric]||0,unit:units[metric],series:row.series.map((entry,index)=>({...entry,key:index?"campaign-openings":"campaign-clicks",tone:index?"campaigns":"public"})).filter((entry,index)=>!hiddenCampaignSeries.has(index))})),"Aucune campagne sur cette période.");
 }
 function drawSources(){const options=collectionOptions();if(options.preview)StudioCharts.donut($("sources"),sourceRows,{preview:true});else StudioCharts.distribution($("sources"),sourceRows,{query:options.query,sort:options.sort})}
 
 function statisticsSeries(scope){
  if(scope==="tracked")return [{key:"tracked-openings",label:"Ouvertures de liens suivis",index:2,tone:"tracked"}];
- if(scope==="shared")return [{key:"tracked-openings",label:"Ouvertures de liens suivis",index:1,tone:"tracked"},{key:"campaign-openings",label:"Ouvertures de campagnes partagées",index:2,tone:"campaigns"}];
- if(scope==="campaigns")return [{key:"campaign-clicks",label:"Clics publics des campagnes",index:1,tone:"public",dashed:true},{key:"campaign-openings",label:"Ouvertures de campagnes partagées",index:2,tone:"campaigns"}];
+ if(scope==="shared")return [{key:"tracked-openings",label:"Ouvertures de liens suivis",index:1,tone:"tracked"},{key:"campaign-openings",label:"Ouvertures de campagnes partagées",index:2,tone:"campaigns",dashed:true}];
+ if(scope==="campaigns")return [{key:"campaign-clicks",label:"Clics publics des campagnes",index:1,tone:"public",dashed:true},{key:"campaign-openings",label:"Ouvertures de campagnes partagées",index:2,tone:"campaigns",dashed:true}];
  if(scope==="copies")return [{key:"copies",label:"Copies de codes promo",index:2,tone:"campaigns"}];
  return [{key:"visits",label:"Visites de la page",index:1,tone:"public"},{key:"public-clicks",label:"Clics publics",index:2,tone:"public",dashed:true}];
 }
