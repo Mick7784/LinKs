@@ -10,7 +10,7 @@ const say=(message,error=false)=>{const dialog=[...document.querySelectorAll("di
 const esc=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const typeName={classic:"Lien",featured:"Mise en avant",promo:"Campagne"};
 const statusClass=value=>({Actif:"active",Programmé:"scheduled",Expiré:"expired",Brouillon:"draft"}[value]||"");
-function activate(id){StudioNavigation.activate(id,document.querySelectorAll(".view"),document.querySelectorAll(".tabs button"));syncNavigation();$("topbar-current").textContent=document.querySelector(".tabs button.active")?.textContent.trim()||"Links";if(id==="dashboard"||id==="statistics"){$(id+"-filters").append($("analytics-filters"));syncAnalysis();loadStats()}if(id==="content"){loadContent();window.LinksTracking?.load().then(()=>{if(state.content.length)renderContent()})}if(id==="tracked-links"){window.LinksTracking?.load();window.LinksTracking?.loadPartners()}if(id==="buttons")loadButtons();if(id==="archives")loadArchives();if(id==="appearance")window.LinksAppearance?.load();else window.LinksAppearance?.cancelUploads();if(id!=="settings")profileUploads.forEach(g=>g.invalidate());if(id==="settings"){loadSettings().then(()=>window.LinksSettings?.open())}}
+function activate(id){StudioNavigation.activate(id,document.querySelectorAll(".view"),document.querySelectorAll(".tabs button"));syncNavigation();$("topbar-current").textContent=document.querySelector(".tabs button.active")?.textContent.trim()||"Links";if(id==="dashboard"||id==="statistics"){$(id+"-filters").append($("analytics-filters"));filterAnalysis();loadStats()}if(id==="content"){loadContent();window.LinksTracking?.load().then(()=>{if(state.content.length)renderContent()})}if(id==="tracked-links"){window.LinksTracking?.load();window.LinksTracking?.loadPartners()}if(id==="buttons")loadButtons();if(id==="archives")loadArchives();if(id==="appearance")window.LinksAppearance?.load();else window.LinksAppearance?.cancelUploads();if(id!=="settings")profileUploads.forEach(g=>g.invalidate());if(id==="settings"){loadSettings().then(()=>window.LinksSettings?.open())}}
 const navigation=$("navigation"),menuToggle=$("menu-toggle"),mobileNavigation=matchMedia("(max-width:760px)");
 function closeMenu(restoreFocus=false){navigation.classList.remove("open");menuToggle.setAttribute("aria-expanded","false");if(restoreFocus)menuToggle.focus()}
 function syncNavigation(){document.querySelectorAll(".tabs button").forEach(button=>{const active=button.classList.contains("active");if(active){button.setAttribute("aria-current","page");$("menu-current").textContent=button.textContent.trim()}else button.removeAttribute("aria-current")})}
@@ -52,7 +52,7 @@ function renderSourceBreakdown(sources,total){
  }
  return list;
 }
-function collectionOptions(){const preview=analysisScope()==="all";return {preview,pageSize:preview?5:20,query:preview?"":$("analysis-search").value,sort:preview?"total":$("analysis-sort").value}}
+function collectionOptions(){const preview=!$("statistics").classList.contains("active");return {preview,pageSize:preview?5:20,query:preview?"":$("analysis-search").value,sort:preview?"total":$("analysis-sort").value}}
 function metricRows(id,items,empty){
  analyticRows.set(id,items);
  if(!analyticCollections.has(id)){
@@ -64,6 +64,7 @@ function metricRows(id,items,empty){
    if(id!=="promo-copy-list")row.append(StudioCharts.ranking(visual,item.series?context.seriesMax:context.max));
    if(!context.preview&&item.details.length){
      const details=document.createElement("details"),summary=document.createElement("summary");summary.textContent="Détails";details.append(summary);
+     details.open=true;
      details.addEventListener("toggle",()=>{
       if(!details.open||details.dataset.loaded)return;
       details.dataset.loaded="true";
@@ -85,35 +86,29 @@ function drawCampaignRanking(){
 function drawSources(){const options=collectionOptions();StudioCharts.donut($("sources"),sourceRows,{preview:options.preview,query:options.query,sort:options.preview?"input":options.sort})}
 
 function syncAnalysis(){
- const scope=analysisScope(),preview=scope==="all",statistics=$("statistics").classList.contains("active");
- document.querySelectorAll("[data-detail-control]").forEach(node=>node.hidden=preview);
- $("campaign-metric-control").hidden=scope!=="campaigns";
- document.querySelectorAll("[data-analysis]").forEach(node=>{
-  const id=({shared:"story-list",public:"top-links",copies:"promo-copy-list",campaigns:"campaign-details"}[node.dataset.analysis]);
-  const useful=node.dataset.analysis==="sources"?sourceRows.some(x=>x[1]>0):(analyticRows.get(id)||[]).some(row=>row.total>0||row.series?.some(entry=>entry.value>0));
-  node.hidden=preview?!useful:scope!==node.dataset.analysis;
-  node.querySelector("[data-analysis-detail]").hidden=!preview;
- });
- document.querySelectorAll(".analysis-column").forEach(node=>node.hidden=![...node.querySelectorAll("[data-analysis]")].some(cell=>!cell.hidden));
- $("analysis-grid").classList.toggle("detailed",!preview);
- $("analysis-empty").hidden=!preview||[...document.querySelectorAll("[data-analysis]")].some(node=>!node.hidden);
- const days=analysisDays[scope]||[],usefulHistory=days.filter(row=>row[1]||row[2]).length>1,history=statistics&&!preview&&scope!=="sources"&&usefulHistory;
- $("analysis-history").hidden=!history;
- (history?$("statistics-chart"):$("dashboard-chart")).append($("traffic-chart"));
+ const statistics=$("statistics").classList.contains("active"),scope=analysisScope();
+ $("analysis-empty").hidden=sourceRows.some(row=>row[1]>0)||[...analyticRows.values()].some(rows=>rows.some(row=>row.total>0||row.series?.some(entry=>entry.value>0)));
+ $("analysis-history").hidden=false;
+ (statistics?$("statistics-chart"):$("dashboard-chart")).append($("traffic-chart"));
  const labels=scope==="shared"?["","Ouvertures partagées"]:scope==="copies"?["","Copies de codes"]:scope==="campaigns"?["Clics publics","Ouvertures partagées"]:["Visites","Clics publics"];
  $("analysis-history-legend").replaceChildren(...labels.filter(Boolean).map((label,index)=>{const node=document.createElement("span");node.className=index===0&&labels[0]?"legend-visits":"legend-clicks";node.textContent=label;return node}));
- if(statistics&&history)chart(days,labels);else if(!statistics&&analysisDays.public)chart(analysisDays.public);
+ if(analysisDays.public)chart(statistics?(analysisDays[scope]||analysisDays.public):analysisDays.public,statistics?labels:undefined);
 }
 function filterAnalysis(){
- const scope=analysisScope(),selected={public:"top-links",shared:"story-list",copies:"promo-copy-list"}[scope];
- for(const [id,collection] of analyticCollections){if(id!=="campaign-details"&&(scope==="all"||id===selected)){const options=collectionOptions(),rows=analyticRows.get(id)||[];collection.setRows(options.preview?rows.filter(row=>row.total>0):rows,options)}}
- if(scope==="all"||scope==="campaigns")drawCampaignRanking();if(scope==="all"||scope==="sources")drawSources();syncAnalysis();
+ for(const [id,collection] of analyticCollections){if(id!=="campaign-details"){const options=collectionOptions(),rows=analyticRows.get(id)||[];collection.setRows(options.preview?rows.filter(row=>row.total>0):rows,options)}}
+ drawCampaignRanking();drawSources();syncAnalysis();
 }
 $("analysis-controls").onsubmit=event=>event.preventDefault();
 $("analysis-search").oninput=filterAnalysis;$("analysis-sort").onchange=filterAnalysis;
-$("analysis-scope").onchange=()=>{if(analysisScope()==="all")$("analysis-search").value="";filterAnalysis()};
+$("analysis-scope").onchange=syncAnalysis;
 $("campaign-metric").onchange=()=>{drawCampaignRanking();syncAnalysis()};
-document.addEventListener("click",event=>{const button=event.target.closest("[data-open-statistics],[data-analysis-detail]");if(button){$("analysis-scope").value=button.dataset.openStatistics||button.dataset.analysisDetail;$("analysis-search").value=button.dataset.analysisQuery||"";filterAnalysis();activate("statistics");document.querySelector("#statistics h1").tabIndex=-1;document.querySelector("#statistics h1").focus()}});
+function focusStatisticsSection(id){const section=$(id);section.scrollIntoView({block:"start"});section.querySelector("h2").focus({preventScroll:true})}
+$("statistics").querySelectorAll('.statistics-sections-nav a').forEach(link=>link.addEventListener("click",event=>{event.preventDefault();focusStatisticsSection(link.hash.slice(1))}));
+document.addEventListener("click",event=>{const button=event.target.closest("[data-open-statistics]");if(button){
+ const scope=button.dataset.openStatistics;$("analysis-scope").value=["public","shared","campaigns","copies"].includes(scope)?scope:"public";
+ $("analysis-search").value=button.dataset.analysisQuery||"";activate("statistics");
+ focusStatisticsSection(({shared:"statistics-tracked",public:"statistics-public",campaigns:"statistics-campaigns",copies:"statistics-campaigns"})[scope]||"statistics-overview");
+}});
 let chartRenderedWidth=0;
 function chart(days,labels=["Visites","Clics publics"]){if(state.chart===days&&state.chartLabels?.join("|")===labels.join("|")&&chartRenderedWidth===$("chart").clientWidth&&$("chart").children.length)return;state.chart=days;state.chartLabels=labels;chartRenderedWidth=$("chart").clientWidth;StudioCharts.timeline($("chart"),$("chart-detail"),days,labels)}
 
@@ -138,18 +133,25 @@ async function loadStats(force=false){if(force===true)reportCache.clear();const 
  for(const row of trackedRows){addDay(sharedDays,row.day,row.total);storyClicks+=row.total;const key="tracked:"+row.link_id,item=byStory.get(key)||{label:row.label+" · Lien suivi",total:0,sources:new Map()};item.total+=row.total;item.sources.set(row.source,(item.sources.get(row.source)||0)+row.total);byStory.set(key,item);bySource.set(row.source,(bySource.get(row.source)||0)+row.total)}
  for(const row of storyRows){addDay(sharedDays,row.day,row.total);addDay(campaignDays,row.day,row.total);storyClicks+=row.total;const item=byStory.get(row.promotion_id)||{label:row.label,total:0,sources:new Map()};item.total+=row.total;item.sources.set(row.source,(item.sources.get(row.source)||0)+row.total);byStory.set(row.promotion_id,item);bySource.set(row.source,(bySource.get(row.source)||0)+row.total)}
  $("views").textContent=fmt.format(views);$("clicks").textContent=fmt.format(clicks);$("ratio").textContent=views?(clicks*100/views).toLocaleString("fr-FR",{maximumFractionDigits:1})+" %":"—";
- $("story-clicks").textContent=fmt.format(storyClicks);$("story-promos").textContent=fmt.format(byStory.size);$("story-total").textContent=fmt.format(storyClicks);$("story-total").parentElement.title=fmt.format(byStory.size)+" lien(s) ou campagne(s)";
- metricRows("story-list",[...byStory.values()].sort((a,b)=>b.total-a.total).map(item=>{
+ $("story-clicks").textContent=fmt.format(storyClicks);$("story-promos").textContent=fmt.format(byStory.size);
+ // Presentation of existing report series: the combined dashboard total stays unchanged.
+ for(const [id,value] of [["statistics-views",$("views").textContent],["statistics-clicks",$("clicks").textContent],["statistics-ratio",$("ratio").textContent]])$(id).textContent=value;
+ $("statistics-tracked-openings").textContent=fmt.format(trackedRows.reduce((total,row)=>total+row.total,0));
+ $("statistics-campaign-openings").textContent=fmt.format(storyRows.reduce((total,row)=>total+row.total,0));
+ $("story-total").textContent=$("statistics-campaign-openings").textContent;
+ const sharedMetrics=entries=>entries.map(([,item])=>{
    const sourceBreakdown=[...item.sources].sort((a,b)=>b[1]-a[1]).map(([key,total])=>({key,label:sharedNames.get(key)||sourceName(key),total}));
    return {name:item.label,total:item.total,unit:"ouvertures",sourceBreakdown,details:sourceBreakdown.map(({label,total})=>label+" : "+fmt.format(total))};
-  }),"Aucun lien partagé ouvert sur cette période.");
+ });
+ metricRows("tracked-stat-list",sharedMetrics([...byStory].filter(([key])=>key.startsWith("tracked:"))),"Aucun lien suivi ouvert sur cette période.");
+ metricRows("story-list",sharedMetrics([...byStory].filter(([key])=>!key.startsWith("tracked:"))),"Aucune campagne partagée ouverte sur cette période.");
  const campaignStats=new Map(),copyStats=new Map();
  const getCampaign=id=>campaignStats.get(id)||{clicks:0,impressions:0,shared:0,copies:0};
  for(const row of (data.campaign_metrics||[]).filter(x=>!source||x.source===source)){const value=getCampaign(row.id);value.name=row.name||value.name;value[row.kind==="click"?"clicks":"impressions"]+=row.total;campaignStats.set(row.id,value)}
  for(const row of storyRows){const value=getCampaign(row.promotion_id);value.name=row.label;value.shared+=row.total;campaignStats.set(row.promotion_id,value)}
  let copyTotal=0;
  for(const row of (data.promo_code_copies||[]).filter(x=>!source||x.source===source)){copyTotal+=row.total;addDay(copyDays,row.day,row.total);const metric=getCampaign(row.id);metric.name=row.name;metric.copies+=row.total;campaignStats.set(row.id,metric);const key=JSON.stringify([row.id,row.code]);const value=copyStats.get(key)||{id:row.id,name:row.name,code:row.code,total:0};value.total+=row.total;copyStats.set(key,value)}
- $("promo-copies").textContent=fmt.format(copyTotal);$("promo-copy-total").textContent=fmt.format(copyTotal);
+ $("promo-copies").textContent=fmt.format(copyTotal);$("promo-copy-total").textContent=fmt.format(copyTotal);$("statistics-copies").textContent=$("promo-copies").textContent;
  metricRows("promo-copy-list",[...copyStats.values()].sort((a,b)=>b.total-a.total).map(value=>{const impressions=campaignStats.get(value.id)?.impressions||0;return {name:value.name+" · "+value.code,total:value.total,unit:"copies",details:[...(impressions?["Taux de copie : "+(value.total*100/impressions).toLocaleString("fr-FR",{maximumFractionDigits:1})+" %"]:[])]}}),"Aucun code copié sur cette période.");
  await loadCampaigns(campaignStats,request);if(request!==statsRequest)return;
  const campaignIds=new Set(campaignRows.map(row=>row.id));for(const row of data.campaign_metrics||[])if(row.kind==="click"&&campaignIds.has(row.id)&&(!source||row.source===source))addDay(campaignDays,row.day,row.total,0);
