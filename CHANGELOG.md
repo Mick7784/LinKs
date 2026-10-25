@@ -20,6 +20,7 @@
 
 - Résolution des libellés depuis les identités, règles, alias non ambigus et associations historiques enregistrées ; les identifiants techniques restent internes.
 - Les sources renommées ou archivées gardent leurs associations. Les provenances inconnues ou incertaines restent signalées, sans attribution arbitraire.
+- Les événements de l’ancien graphique sont détachés lors du passage du tableau de bord aux statistiques : les infobulles et le clavier utilisent toujours les séries et la période courantes.
 - Visites, clics publics, ouvertures des liens suivis, ouvertures des campagnes et copies de codes restent distincts. Une mesure indisponible n’est pas remplacée par un zéro.
 - Les classements partenaires utilisent les événements de la période filtrée et les associations actuelles explicites des liens ; les ouvertures sans association sont indiquées et exclues du classement.
 

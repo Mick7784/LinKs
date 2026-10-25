@@ -49,6 +49,10 @@ function plotModel(days,series,hidden=new Set()){
 }
 const dayLabel=(day,long=false)=>new Intl.DateTimeFormat('fr-FR',{day:'numeric',month:long?'long':'short',...(long?{year:'numeric'}:{}),timeZone:'UTC'}).format(new Date(day+'T12:00:00Z'));
 function timeSeries(root,detail,days,series,{mode='line',active=()=>true}={}){
+ // The main root is shared with timeline(). Replacing children does not detach
+ // its delegated handlers, which close over a different report and date range.
+ root.onclick=root.onpointerover=root.onkeydown=root.onpointerleave=null;
+ if(root.chartFocusHandler){root.removeEventListener('focusin',root.chartFocusHandler);delete root.chartFocusHandler}
  let state=chartStates.get(root);
  if(!state){state={hidden:new Set(),selected:null};chartStates.set(root,state);state.observer=new ResizeObserver(()=>{if(state.active?.()&&root.clientWidth>0&&state.width!==root.clientWidth)state.draw?.()});state.observer.observe(root)}
  Object.assign(state,{days,series,mode,active});

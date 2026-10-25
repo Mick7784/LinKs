@@ -31,6 +31,11 @@ db.executemany('INSERT INTO counts VALUES(?,?,?,?,?)',[(day,source,'tracked','tr
   assert.equal(await page.locator('[data-analysis-detail],.analysis-more').count(),0);
   assert.equal(await page.locator('#filters').count(),1);assert(await page.locator('#statistics #filters').isVisible());
   assert.deepEqual(await page.locator('#statistics .statistics-kpis strong').allTextContents(),['145',fmt.format(expectedClicks),'7','32',await page.locator('#ratio').textContent(),'2']);
+  // Switching renderers must discard dashboard closures before showing statistics.
+  await page.selectOption('#analysis-scope','tracked');await page.locator('#chart .chart-bucket').last().hover();await page.locator('#chart .chart-bucket').last().click();assert(!(await page.locator('#chart .chart-tooltip').textContent()).includes('Visites'),'a tracked-series click must not restore the old dashboard tooltip');assert((await page.locator('#chart .time-inspector').textContent()).includes('Ouvertures de liens suivis : 7'));
+  await page.selectOption('#period','7');await page.evaluate(()=>loadStats());assert.equal(await page.locator('#chart .chart-bucket').count(),7);await page.locator('#chart .chart-bucket').last().focus();await page.keyboard.press('ArrowRight');assert.equal(await page.locator('#chart .chart-bucket:focus').getAttribute('data-bucket'),'6');assert.deepEqual(errors,[],'keyboard navigation must use the new, shorter period');
+  await page.evaluate(()=>activate('dashboard'));await page.locator('#chart .chart-bucket').last().click();assert((await page.locator('#chart .chart-tooltip').textContent()).includes('Visites'));await page.evaluate(()=>activate('statistics'));await page.locator('#chart .chart-bucket').last().click();assert(!(await page.locator('#chart .chart-tooltip').textContent()).includes('Visites'));
+  await page.selectOption('#period','14');await page.evaluate(()=>loadStats());await page.selectOption('#analysis-scope','public');
   // Chart controls affect presentation only; partner attribution uses explicit IDs
   // and selected-period report events, never the 999 lifetime clicks in the fixture.
   await page.waitForFunction(()=>document.querySelector('#partner-stat-list .engagement-value strong')?.textContent==='4');
