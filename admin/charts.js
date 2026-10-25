@@ -73,7 +73,7 @@ function timeSeries(root,detail,days,series,{mode='line',active=()=>true}={}){
   const grid=Array.from({length:5},(_,i)=>{const value=i*step,at=y(value);return `<line class="time-grid" x1="${left}" x2="${right}" y1="${at}" y2="${at}"/><text class="time-axis" x="${left-10}" y="${at+4}" text-anchor="end">${esc(axisFmt.format(value))}</text>`}).join('');
   const crossesYear=days.length>1&&days[0][0].slice(0,4)!==days[days.length-1][0].slice(0,4);
   const axisDate=day=>crossesYear?new Intl.DateTimeFormat('fr-FR',{day:'numeric',month:'short',year:'2-digit',timeZone:'UTC'}).format(new Date(day+'T12:00:00Z')):dayLabel(day);
-  const labels=days.map((row,i)=>i===0||i===days.length-1||i%stride===0&&days.length-1-i>=stride*.65?`<text class="time-axis" text-anchor="${i===0?'start':i===days.length-1?'end':'middle'}" x="${i===0?left+3:i===days.length-1?right-3:x(i)}" y="${bottom+27}">${esc(axisDate(row[0]))}</text>`:'').join('');
+  const labels=days.map((row,i)=>i===0||i===days.length-1||i%stride===0&&days.length-1-i>=stride*.65?`<text class="time-axis time-date" text-anchor="${i===0?'start':i===days.length-1?'end':'middle'}" x="${i===0?left+3:i===days.length-1?right-3:x(i)}" y="${bottom+27}">${esc(axisDate(row[0]))}</text>`:'').join('');
   let marks='';
   if(mode==='line')for(let j=0;j<visible.length;j++){
    const s=visible[j],parts=[];let current=[];
@@ -87,6 +87,9 @@ function timeSeries(root,detail,days,series,{mode='line',active=()=>true}={}){
   const frame=document.createElement('div');frame.className='time-frame';frame.append(viewport);
   if(mode==='bars'){const axis=document.createElement('div');axis.className='time-fixed-axis';axis.setAttribute('aria-hidden','true');axis.innerHTML=`<svg width="${left}" height="${bottom+48}" viewBox="0 0 ${left} ${bottom+48}"><rect class="time-axis-backdrop" width="${left}" height="${bottom+48}"/>${Array.from({length:5},(_,i)=>`<text class="time-axis" x="${left-10}" y="${y(i*step)+4}" text-anchor="end">${esc(axisFmt.format(i*step))}</text>`).join('')}</svg>`;frame.append(axis)}
   root.append(frame);
+  // Hide date labels partly covered by the fixed axis while scrolling daily bars.
+  const fitDates=()=>{if(mode==='bars')viewport.querySelectorAll('.time-date').forEach(label=>{const box=label.getBBox();label.style.visibility=box.x-viewport.scrollLeft<left||box.x+box.width-viewport.scrollLeft>outerWidth?'hidden':''})};
+  viewport.onscroll=fitDates;
   const tooltip=document.createElement('div');tooltip.className='chart-tooltip time-tooltip';tooltip.hidden=true;tooltip.setAttribute('role','tooltip');root.append(tooltip);
   const inspector=document.createElement('div');inspector.className='time-inspector';inspector.setAttribute('role','status');inspector.setAttribute('aria-live','polite');const reading=document.createElement('div');reading.className='time-reading';reading.append(inspector);root.append(reading);
   const navigation=document.createElement('div');navigation.className='time-navigation';
@@ -110,6 +113,7 @@ function timeSeries(root,detail,days,series,{mode='line',active=()=>true}={}){
   slider.oninput=()=>show(Number(slider.value),{focus:false});previous.onclick=()=>show(Number(slider.value)-1,{focus:mode==='bars'});next.onclick=()=>show(Number(slider.value)+1,{focus:mode==='bars'});
   slider.disabled=previous.disabled=next.disabled=!days.length;
   if(days.length){const selected=days.findIndex(row=>row[0]===state.selected),index=selected>=0?selected:days.length-1;show(index);if(mode==='bars')viewport.scrollLeft=Math.max(0,x(index)-outerWidth/2)}else inspector.textContent='Aucune date disponible.';
+  fitDates();
  };
  state.draw();
 }
