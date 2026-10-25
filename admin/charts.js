@@ -118,21 +118,22 @@ function timeSeries(root,detail,days,series,{mode='line',active=()=>true}={}){
  state.draw();
 }
 // Category identity determines colour and texture, never row order or volume.
-const sourceSlots={site:0,youtube:3,instagram:1,facebook:2,mail:4,newsletter:6,qr:5,tiktok:7};
+const sourceSlots={site:0,youtube:3,instagram:1,facebook:2,mail:4,newsletter:6,qr:5,tiktok:7,discord:6,other:4};
 function sourceHash(key){let hash=0;for(const char of String(key))hash=(hash*31+char.codePointAt(0))>>>0;return hash}
-function sourceColor(key){return 'var(--chart-category-'+(Object.hasOwn(sourceSlots,key)?sourceSlots[key]:sourceHash(key)%8)+')'}
+function sourceColor(key){if(key==='unknown')return 'var(--chart-category-unknown)';return 'var(--chart-category-'+(Object.hasOwn(sourceSlots,key)?sourceSlots[key]:sourceHash(key)%8)+')'}
 function sourceTexture(key){return Math.floor(sourceHash(key)/8)%4}
 let distributionId=0;
-function distribution(root,items,{query='',sort='input'}={}){
+function distribution(root,items,{query='',sort='input',category='source',onSelect=()=>{}}={}){
  root.classList.add('source-distribution');
  const total=items.reduce((sum,row)=>sum+row[1],0),positive=items.filter(row=>row[1]>0),ring=positive.length>=2&&positive.length<=6&&positive.every(row=>String(row[0]).length<=42);
  if(!total){root.innerHTML='<p class="empty">Aucune visite ou ouverture mesurée pour cette période et cette source.</p>';return}
- root.innerHTML=`<div class="source-overview"><strong class="source-total">${fmt.format(total)}</strong><span>visites et ouvertures · ${fmt.format(positive.length)} source(s)</span></div><div class="sources-layout"><div class="donut-wrap" ${ring?'':'hidden'}></div><div class="source-list"></div></div><p class="source-inspector" role="status" aria-live="polite">${ring?'Choisissez un segment ou sa légende pour lire ses valeurs.':'Répartition par source · barres proportionnelles au total.'}</p>`;
+ root.innerHTML=`<div class="source-overview"><strong class="source-total">${fmt.format(total)}</strong><span>visites et ouvertures · ${fmt.format(positive.length)} ${esc(category)}(s)</span></div><div class="sources-layout"><div class="donut-wrap" ${ring?'':'hidden'}></div><div class="source-list"></div></div><p class="source-inspector" role="status" aria-live="polite">${ring?'Choisissez un segment ou sa légende pour lire ses valeurs.':'Répartition par '+esc(category)+' · barres proportionnelles au total.'}</p>`;
  const pct=value=>value>0&&value/total*100<.1?'<0,1 %':(value/total*100).toLocaleString('fr-FR',{maximumFractionDigits:1})+' %';
- const select=(key,name,value)=>{
+ const select=(key,name,value,activate=false)=>{
   root.querySelector('.source-inspector').textContent=name+' : '+fmt.format(value)+' visites et ouvertures · '+pct(value);
   root.querySelectorAll('[data-source-key]').forEach(n=>{const selected=n.dataset.sourceKey===key;n.classList.toggle('selected',selected);n.setAttribute('aria-pressed',String(selected))});
   if(ring){root.querySelector('.donut-total').textContent=fmt.format(value);root.querySelector('.donut-caption').textContent=pct(value)}
+  onSelect({key,name,value,activate});
  };
  if(ring){
   let offset=0;const circumference=2*Math.PI*66,uid='source-ring-'+(++distributionId);
@@ -143,20 +144,20 @@ function distribution(root,items,{query='',sort='input'}={}){
    if(value/total>=.08){const x=90+66*Math.cos(angle),y=90+66*Math.sin(angle);markers.push(`<g class="source-segment-number" aria-hidden="true"><circle cx="${x}" cy="${y}" r="10"/><text x="${x}" y="${y+4}" text-anchor="middle">${index+1}</text></g>`)}
    const result=`<circle class="donut-segment" data-source-key="${esc(key)}" data-source-color="${esc(sourceColor(key))}" tabindex="0" role="button" aria-pressed="false" aria-label="${esc(name+' : '+fmt.format(value)+' · '+pct(value))}" cx="90" cy="90" r="66" fill="none" stroke="url(#${uid}-${index})" stroke-width="24" stroke-dasharray="${length} ${circumference-length}" stroke-dashoffset="${-offset}" transform="rotate(-90 90 90)"><title>${esc(name+' : '+fmt.format(value)+' · '+pct(value))}</title></circle>`;offset+=length;return result;
   }).join('');
-  root.querySelector('.donut-wrap').innerHTML=`<svg viewBox="0 0 180 180" role="group" aria-label="Répartition des visites et ouvertures par source"><defs>${defs}</defs>${segments}${markers.join('')}<text class="donut-total" x="90" y="87" text-anchor="middle">${fmt.format(total)}</text><text class="donut-caption" x="90" y="107" text-anchor="middle">Total</text></svg>`;
+  root.querySelector('.donut-wrap').innerHTML=`<svg viewBox="0 0 180 180" role="group" aria-label="Répartition des visites et ouvertures par ${esc(category)}"><defs>${defs}</defs>${segments}${markers.join('')}<text class="donut-total" x="90" y="87" text-anchor="middle">${fmt.format(total)}</text><text class="donut-caption" x="90" y="107" text-anchor="middle">Total</text></svg>`;
   const nodes=[...root.querySelectorAll('.donut-segment')];
   nodes.forEach((node,index)=>{
-   const row=positive[index],show=()=>select(node.dataset.sourceKey,row[0],row[1]);node.onpointerenter=node.onclick=node.onfocus=show;
-   node.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();show()}else if(['ArrowLeft','ArrowRight','Home','End'].includes(event.key)){event.preventDefault();nodes[event.key==='Home'?0:event.key==='End'?nodes.length-1:(index+(event.key==='ArrowLeft'?-1:1)+nodes.length)%nodes.length].focus()}};
+   const row=positive[index],show=()=>select(node.dataset.sourceKey,row[0],row[1]);node.onpointerenter=node.onfocus=show;node.onclick=()=>select(node.dataset.sourceKey,row[0],row[1],true);
+   node.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();select(node.dataset.sourceKey,row[0],row[1],true)}else if(['ArrowLeft','ArrowRight','Home','End'].includes(event.key)){event.preventDefault();nodes[event.key==='Home'?0:event.key==='End'?nodes.length-1:(index+(event.key==='ArrowLeft'?-1:1)+nodes.length)%nodes.length].focus()}};
   });
  }
- const rows=positive.map(([name,value,key=name],index)=>({name,total:value,key:String(key),number:index+1,details:[]}));
+ const rows=positive.map(([name,value,key=name,details=[]],index)=>({name,total:value,key:String(key),number:index+1,details}));
  StudioCollection.create(root.querySelector('.source-list'),{pageSize:20,renderRow:item=>{
   const node=document.createElement('div');node.className='source-row source-stat-row';node.dataset.sourceKey=item.key;node.tabIndex=0;node.setAttribute('role','button');node.setAttribute('aria-pressed','false');node.setAttribute('aria-label',item.name+' : '+fmt.format(item.total)+' · '+pct(item.total));
   node.innerHTML=`<span class="source-dot${ring?' source-number':''}" aria-hidden="true">${ring?item.number:''}</span><span class="source-name">${esc(item.name)}</span><strong>${fmt.format(item.total)}</strong><small>${pct(item.total)}</small>${ring?'':'<span class="source-share-track"><i></i></span>'}`;
   node.style.setProperty('--source-color',sourceColor(item.key));node.dataset.sourceTexture=String(sourceTexture(item.key));
   const bar=node.querySelector('i');if(bar)bar.style.width=(item.total/total*100)+'%';
-  node.onpointerenter=node.onfocus=node.onclick=()=>select(item.key,item.name,item.total);node.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();select(item.key,item.name,item.total)}};return node;
+  node.onpointerenter=node.onfocus=()=>select(item.key,item.name,item.total);node.onclick=()=>select(item.key,item.name,item.total,true);node.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();select(item.key,item.name,item.total,true)}};return node;
  }}).setRows(rows,{sort,query});
 }
 (typeof window==='undefined'?globalThis:window).StudioCharts={donut,ranking,timeline,timeSeries,distribution,plotModel,sourceColor};

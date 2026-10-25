@@ -34,6 +34,7 @@ const analyticCollections=new Map(),analyticRows=new Map();
 let latestTrackedRows=[],partnerReportRows=null,partnerPending=false,partnerUnavailable=false;
 const hiddenCampaignSeries=new Set();
 let statisticsEntities=new Map();
+let sourceMetadata=null;
 let campaignRows=[],sourceRows=[],analysisDays={},renderedData=null,renderedSource="";
 const analysisScope=()=>$("analysis-scope").value;
 function readableSourceName({key,label}){
@@ -41,7 +42,7 @@ function readableSourceName({key,label}){
  if(key==="shared-unknown"||label==="Lien partagé (source inconnue)")return "Source inconnue";
  return label;
 }
-function renderSourceBreakdown(sources,total){
+function renderRawSourceBreakdown(sources,total,{filterable=false}={}){
  const list=document.createElement("div");list.className="engagement-source-list";list.setAttribute("role","list");
  for(const source of sources){
   const item=document.createElement("div");item.className="engagement-source-item";item.setAttribute("role","listitem");
@@ -51,9 +52,19 @@ function renderSourceBreakdown(sources,total){
   const numbers=document.createElement("span");numbers.className="engagement-source-figures";
   const count=document.createElement("strong");count.textContent=fmt.format(source.total);
   const percent=document.createElement("small");percent.textContent=(total>0?source.total/total*100:0).toLocaleString("fr-FR",{maximumFractionDigits:1})+" %";
-  numbers.append(count,percent);item.append(label,numbers);if(source.key==="instagram-story"){const note=document.createElement("small");note.className="source-provenance-note";note.textContent="Provenance historique incertaine";item.append(note)}list.append(item);
+  numbers.append(count,percent);item.append(label,numbers);if(filterable){if(!["instagram-story","shared-unknown"].includes(source.key)){const origin=document.createElement("small");origin.className="source-origin-note";origin.textContent=source.key.startsWith("tracked:")?"Source de publication":"Source générale";item.append(origin)}const button=document.createElement("button");button.type="button";button.className="source-filter-shortcut";button.dataset.filterSource=source.key;button.textContent="Filtrer cette source";button.setAttribute("aria-label","Filtrer cette source · "+readableSourceName(source));button.onclick=()=>{if(![...$("source").options].some(option=>option.value===source.key))return;$("source").value=source.key;loadStats()};item.append(button)}if(source.key==="instagram-story"){const note=document.createElement("small");note.className="source-provenance-note";note.textContent="Provenance historique incertaine";item.append(note)}list.append(item);
  }
  return list;
+}
+function platformBreakdownRow(group,total,{filterable=false,open=false}={}){
+ const details=document.createElement("details");details.className="platform-source-group";details.dataset.platformKey=group.key;details.open=open;
+ const summary=document.createElement("summary"),label=document.createElement("strong"),figures=document.createElement("span");label.className="platform-breakdown-name";label.textContent=group.label;figures.className="engagement-source-figures";
+ const count=document.createElement("strong"),share=document.createElement("small");count.textContent=fmt.format(group.total);share.textContent=(total>0?group.total/total*100:0).toLocaleString("fr-FR",{maximumFractionDigits:1})+" %";figures.append(count,share);summary.append(label,figures);details.append(summary);
+ details.addEventListener("toggle",()=>{if(!details.open||details.dataset.loaded)return;details.dataset.loaded="true";const note=document.createElement("p");note.className="panel-helper";note.textContent="Parts des sources au sein de cette plateforme.";details.append(note);if(!filterable){details.append(renderRawSourceBreakdown(group.sources,group.total));return}const members=document.createElement("div");members.className="platform-member-list";members.setAttribute("aria-label","Sources de "+group.label);details.append(members);StudioCollection.create(members,{pageSize:20,renderRow:source=>{const item=renderRawSourceBreakdown([source],group.total,{filterable:true}).firstElementChild;item.removeAttribute("role");return item}}).setRows(group.sources.map(source=>({...source,name:source.label,details:[]})),{sort:"total"})});return details;
+}
+function renderSourceBreakdown(sources,total){
+ if($("source-level").value==="sources")return renderRawSourceBreakdown(sources,total);
+ const list=document.createElement("div");list.className="platform-source-breakdown";for(const group of StudioSourcePlatforms.group(sources,sourceMetadata||[]))list.append(platformBreakdownRow(group,total));return list;
 }
 function collectionOptions(){const preview=!$("statistics").classList.contains("active");return {preview,pageSize:preview?5:20,query:preview?"":$("analysis-search").value,sort:preview?"total":$("analysis-sort").value}}
 function metricRows(id,items,empty){
@@ -68,12 +79,12 @@ function metricRows(id,items,empty){
    if(id!=="promo-copy-list")row.append(StudioCharts.ranking(visual,item.series?context.seriesMax:context.max,{comparison:Boolean(item.series)}));
    if(!context.preview&&item.details.length){
      const details=document.createElement("details"),summary=document.createElement("summary");summary.textContent=item.detailLabel||(item.sourceBreakdown?"Sources de publication":"Indicateurs détaillés");details.append(summary);
-     details.addEventListener("toggle",()=>{
+     const renderDetails=()=>{
       if(!details.open||details.dataset.loaded)return;
       details.dataset.loaded="true";
       if(item.sourceBreakdown)details.append(renderSourceBreakdown(item.sourceBreakdown,item.total));
       else{const text=document.createElement("small");text.textContent=item.details.join(" · ");details.append(text)}
-     });
+     };details.addEventListener("toggle",renderDetails);details.addEventListener("source-level-change",()=>{delete details.dataset.loaded;while(details.children.length>1)details.lastElementChild.remove();renderDetails()});
      details.className="engagement-details"+(item.sourceBreakdown?" engagement-source-details":"");row.append(details);
     }
    return row;
@@ -85,7 +96,18 @@ function drawCampaignRanking(){
  const metric=$("campaign-metric").value,units={clicks:"clics publics",shared:"ouvertures partagées",impressions:"impressions",copies:"copies de codes"};
  metricRows("campaign-details",campaignRows.map(row=>({...row,total:row.metrics[metric]||0,unit:units[metric],series:row.series.map((entry,index)=>({...entry,key:index?"campaign-openings":"campaign-clicks",tone:index?"campaigns":"public"})).filter((entry,index)=>!hiddenCampaignSeries.has(index))})),"Aucune campagne sur cette période.");
 }
-function drawSources(){const options=collectionOptions();if(options.preview)StudioCharts.donut($("sources"),sourceRows,{preview:true});else StudioCharts.distribution($("sources"),sourceRows,{query:options.query,sort:options.sort})}
+function drawSources(){
+ const options=collectionOptions(),raw=sourceRows.map(([label,total,key])=>({key,label,total})),total=raw.reduce((sum,source)=>sum+source.total,0),platforms=$("source-level").value==="platforms";
+ if(options.preview){$("platform-source-details").hidden=true;StudioCharts.donut($("sources"),sourceRows,{preview:true});return}
+ const groups=StudioSourcePlatforms.group(raw,sourceMetadata||[]),items=platforms?groups.map(group=>[group.label,group.total,group.key,group.sources.map(source=>source.label)]):sourceRows;
+ const details=$("platform-source-details"),open=new Set([...details.querySelectorAll('.platform-source-group[open]')].map(node=>node.dataset.platformKey));details.hidden=!platforms||!groups.length;
+ const matching=StudioCollection.select(groups.map(group=>({...group,name:group.label,details:group.sources.map(source=>source.label)})),{query:options.query,sort:options.sort,pageSize:Math.max(1,groups.length)}).rows;
+ $("platform-source-list").replaceChildren(...matching.map(group=>platformBreakdownRow(group,total,{filterable:true,open:open.has(group.key)})));
+ if(!matching.length){const empty=document.createElement("p");empty.className="empty";empty.textContent="Aucune plateforme ne correspond à cette recherche.";$("platform-source-list").append(empty)}
+ $("platform-group-note").textContent=!platforms?"Sources individuelles : le filtre Source permet d’isoler leur activité.":sourceMetadata?"Regroupement de lecture : les sources et leurs filtres restent distincts.":"Métadonnées des plateformes indisponibles : seuls les libellés explicites et les clés connues sont regroupés.";
+ StudioCharts.distribution($("sources"),items,{query:options.query,sort:options.sort,category:platforms?"plateforme":"source",onSelect:({key,activate})=>{if(!platforms||!activate)return;let target=[...details.querySelectorAll('.platform-source-group')].find(node=>node.dataset.platformKey===key);if(!target){const selected=groups.find(group=>group.key===key);if(selected){target=platformBreakdownRow(selected,total,{filterable:true});$("platform-source-list").querySelector(".empty")?.remove();$("platform-source-list").append(target)}}if(target){details.open=true;target.open=true}}});
+}
+$("source-level").onchange=()=>{drawSources();document.querySelectorAll("#statistics .engagement-source-details").forEach(node=>node.dispatchEvent(new Event("source-level-change")))};
 
 function statisticsSeries(scope){
  if(scope==="tracked")return [{key:"tracked-openings",label:"Ouvertures de liens suivis",index:2,tone:"tracked"}];
@@ -177,9 +199,10 @@ async function loadStats(force=false){if(force===true)reportCache.clear();const 
  try{range=dates();$("stats-range-error").textContent=""}catch(error){$("stats-range-error").textContent=error.message;$("analysis-grid").setAttribute("aria-busy","false");return}
  try{
  $("analysis-grid").setAttribute("aria-busy","true");
- const data=await reportApi("/api/stats?"+new URLSearchParams(range)),stories=data.stories||[],tracked=data.tracked||[],previous=$("source").value,previousLabel=$("source").selectedOptions[0]?.textContent;
+ const [data,metadata]=await Promise.all([reportApi("/api/stats?"+new URLSearchParams(range)),reportApi("/api/tracking-sources").catch(()=>null)]),stories=data.stories||[],tracked=data.tracked||[],previous=$("source").value,previousLabel=$("source").selectedOptions[0]?.textContent;
  if(request!==statsRequest)return;
- if(renderedData===data&&renderedSource===$("source").value){syncAnalysis();return}
+ const sameMetadata=sourceMetadata===(metadata?.items||null);sourceMetadata=metadata?.items||null;
+ if(renderedData===data&&renderedSource===$("source").value&&sameMetadata){syncAnalysis();return}
  const trackedNames=new Map([...Object.entries(data.source_names||{}),...tracked.map(x=>[x.source,x.source_name])]);
  const sourceName=key=>trackedNames.get(key)||(Object.hasOwn(names,key)?names[key]:key===previous&&previousLabel?previousLabel:"Source inconnue");
  const sharedNames=new Map([...tracked,...stories].filter(x=>x.source_name).map(x=>[x.source,x.source_name]));
