@@ -36,14 +36,14 @@ LinKs est une page de liens auto-hébergée, personnalisable et accompagnée d�
 
 ### Statistiques
 
-- Visites, clics, sources, impressions et CTR.
-- Activité des Stories présentée séparément.
-- Copies de codes promo et taux de copie, avec historique du code réellement copié.
-- Histogramme quotidien : visites en cyan et clics en violet, superposés sur le même axe.
-- Vue de 14 jours par défaut ; périodes de 7, 30 ou 90 jours disponibles, avec conservation des jours sans activité.
-- Valeurs lisibles, repères intermédiaires et détail au survol, au toucher ou au clavier.
-- Répartition des sources en donut, avec total, valeurs et pourcentages.
-- Filtres par période et par source, sans modification des compteurs historiques.
+- Une seule page, organisée en vue globale, liens suivis, page publique et campagnes, avec six indicateurs distincts.
+- Visites, clics publics, ouvertures des liens suivis, ouvertures des campagnes, impressions, CTR et copies de codes conservés séparément.
+- Courbes d’évolution, histogramme quotidien avec axe fixe, classements horizontaux de liens et partenaires, comparaisons de campagnes et répartitions des sources adaptées.
+- Valeurs exactes au survol, au toucher et au clavier ; séries activables, inspecteur de date et navigation quotidienne.
+- Vue de 14 jours par défaut ; périodes de 7, 30, 90 jours ou dates personnalisées jusqu’à 400 jours, sans suppression des historiques.
+- Libellés des sources résolus depuis leurs identités, règles et associations historiques ; provenances inconnues et incertaines explicitement conservées.
+- Filtres de période et de source communs et conservés lors de la navigation, même sans activité ; recherche, tri, pagination et accès directs aux fiches existantes.
+- Palette claire/sombre, disposition responsive et focus clavier visibles. Cyan : activité publique ; violet : liens suivis ; bleu : sources ; rose : campagnes.
 
 ### Back office
 
