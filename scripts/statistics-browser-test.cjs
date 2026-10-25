@@ -109,6 +109,7 @@ db.executemany('INSERT INTO counts VALUES(?,?,?,?,?)',[(day,source,'tracked','tr
      const bounds=label.getBoundingClientRect();
      return label.scrollWidth>label.clientWidth||[...label.children].some(child=>{const r=child.getBoundingClientRect();return r.left<bounds.left-1||r.right>bounds.right+1})?[{label:label.textContent,client:label.clientWidth,scroll:label.scrollWidth}]:[];
     }));assert.deepEqual(overflow,[],`KPI title/icon overflow ${context}`);
+    if(width===320)assert(await page.locator('#statistics .statistics-kpis article > strong').evaluateAll(numbers=>numbers.every(n=>n.getBoundingClientRect().height<=parseFloat(getComputedStyle(n).lineHeight)+1)),`KPI numbers remain on one line ${context}`);
    };
    await checkKpiLabels(`${width} ${theme}`);
    if(width===320){
