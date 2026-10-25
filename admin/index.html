@@ -44,13 +44,16 @@
 </section>
 <section class="view" id="statistics">
  <header class="section-head statistics-heading"><div><p class="eyebrow">ANALYSE DE L’ACTIVITÉ</p><h1>Statistiques</h1><p>Vos résultats, de la visite aux interactions avec vos campagnes.</p></div></header>
+ <div class="statistics-navigation">
  <div class="statistics-toolbar">
   <div id="statistics-filters"></div>
-  <p class="statistics-filter-note">Période et source communes à toutes les sections.</p>
+
  </div>
  <nav class="statistics-sections-nav" aria-label="Sections des statistiques">
   <a href="#statistics-overview">Vue globale</a><a href="#statistics-tracked">Liens suivis</a><a href="#statistics-public">Page publique</a><a href="#statistics-campaigns">Campagnes</a>
  </nav>
+ <p id="statistics-filter-context" class="sr-only" role="status" aria-live="polite"></p>
+ </div>
  <p id="analysis-empty" class="empty" hidden>Aucune activité sur cette période pour la source sélectionnée. Les sections et les historiques restent accessibles ci-dessous.</p>
  <div id="analysis-grid" class="statistics-sections">
   <section id="statistics-overview" class="statistics-section" aria-labelledby="statistics-overview-title">

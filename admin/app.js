@@ -33,6 +33,7 @@ function dates(){
 const analyticCollections=new Map(),analyticRows=new Map();
 let latestTrackedRows=[],partnerReportRows=null,partnerPending=false;
 const hiddenCampaignSeries=new Set();
+let statisticsEntities=new Map();
 let campaignRows=[],sourceRows=[],analysisDays={},renderedData=null,renderedSource="";
 const analysisScope=()=>$("analysis-scope").value;
 function readableSourceName({key,label}){
@@ -50,7 +51,7 @@ function renderSourceBreakdown(sources,total){
   const numbers=document.createElement("span");numbers.className="engagement-source-figures";
   const count=document.createElement("strong");count.textContent=fmt.format(source.total);
   const percent=document.createElement("small");percent.textContent=(total>0?source.total/total*100:0).toLocaleString("fr-FR",{maximumFractionDigits:1})+" %";
-  numbers.append(count,percent);item.append(label,numbers);list.append(item);
+  numbers.append(count,percent);item.append(label,numbers);if(source.key==="instagram-story"){const note=document.createElement("small");note.className="source-provenance-note";note.textContent="Provenance historique incertaine";item.append(note)}list.append(item);
  }
  return list;
 }
@@ -62,6 +63,7 @@ function metricRows(id,items,empty){
   analyticCollections.set(id,StudioCollection.create(node,{empty,renderRow:(item,context)=>{
    const row=document.createElement("div");row.className="engagement-row";
    row.innerHTML=`<div class="engagement-copy"><strong>${esc(item.name)}</strong></div><div class="engagement-value"><strong>${fmt.format(item.total)}</strong><small>${esc(item.unit)}</small></div>`;
+   if(item.entity&&!context.preview){const button=document.createElement("button");button.type="button";button.className="statistics-entity-shortcut";button.dataset.statisticsEntity=item.entity.type;button.dataset.entityId=item.entity.id;button.textContent=item.entity.type==="partner"?"Fiche partenaire ↗":item.entity.type==="tracked"?"Fiche du lien ↗":statisticsEntities.get(item.entity.id)?.type==="classic"?"Fiche du lien ↗":"Fiche campagne ↗";button.setAttribute("aria-label",button.textContent+" · "+item.name);row.querySelector(".engagement-copy").append(button)}
    const visual=item.series||([{label:item.unit,value:item.total,tone:id==="top-links"?"public":id==="tracked-stat-list"||id==="partner-stat-list"?"tracked":"campaigns"}]);
    if(id!=="promo-copy-list")row.append(StudioCharts.ranking(visual,item.series?context.seriesMax:context.max));
    if(!context.preview&&item.details.length){
@@ -104,13 +106,13 @@ async function loadPartnerRanking(){
   if(rows!==latestTrackedRows)return;if(!$("statistics").classList.contains("active")){partnerReportRows=null;partnerPending=false;return}
   const names=new Map(partners.items.map(row=>[row.id,row.name])),bindings=new Map(links.items.map(row=>[row.id,row.partner_id])),totals=new Map();let unassigned=0;
   for(const row of rows){const id=bindings.get(row.link_id);if(!names.has(id)){unassigned+=row.total;continue}totals.set(id,(totals.get(id)||0)+row.total)}
-  partnerPending=false;metricRows("partner-stat-list",[...totals].map(([id,total])=>({name:names.get(id),total,unit:"ouvertures",details:[]})),"Aucune ouverture associée à un partenaire sur cette période.");
+  partnerPending=false;metricRows("partner-stat-list",[...totals].map(([id,total])=>({name:names.get(id),total,unit:"ouvertures",details:[],entity:{type:"partner",id}})),"Aucune ouverture associée à un partenaire sur cette période.");
   if(unassigned)note.textContent="Associations actuelles des liens. "+fmt.format(unassigned)+" ouverture(s) sans association partenaire disponible, exclues de ce classement.";
  }catch{if(rows!==latestTrackedRows)return;partnerReportRows=null;partnerPending=false;note.textContent="Associations partenaires indisponibles. Les ouvertures des liens restent visibles ci-dessus.";metricRows("partner-stat-list",[],"Aucune ouverture associée à un partenaire sur cette période.")}
 }
 $("campaign-series-controls").querySelectorAll("button").forEach((button,index)=>button.addEventListener("click",()=>{hiddenCampaignSeries.has(index)?hiddenCampaignSeries.delete(index):hiddenCampaignSeries.add(index);button.setAttribute("aria-pressed",String(!hiddenCampaignSeries.has(index)));$("campaign-series-empty").hidden=hiddenCampaignSeries.size!==2;drawCampaignRanking()}));
 function syncAnalysis(){
- const statistics=$("statistics").classList.contains("active"),scope=analysisScope();
+ const statistics=$("statistics").classList.contains("active"),scope=analysisScope();if(statistics)queueStatisticsLocation();
  $("analysis-empty").hidden=sourceRows.some(row=>row[1]>0)||[...analyticRows].filter(([id])=>id!=="partner-stat-list").some(([,rows])=>rows.some(row=>row.total>0||row.series?.some(entry=>entry.value>0)));
  $("analysis-history").hidden=false;
  (statistics?$("statistics-chart"):$("dashboard-chart")).append($("traffic-chart"));
@@ -130,8 +132,29 @@ $("analysis-controls").onsubmit=event=>event.preventDefault();
 $("analysis-search").oninput=filterAnalysis;$("analysis-sort").onchange=filterAnalysis;
 $("analysis-scope").onchange=syncAnalysis;
 $("campaign-metric").onchange=()=>{drawCampaignRanking();syncAnalysis()};
-function focusStatisticsSection(id){const section=$(id);section.scrollIntoView({block:"start"});section.querySelector("h2").focus({preventScroll:true})}
+function statisticsNavigationHeight(){return getComputedStyle(document.querySelector('.statistics-navigation')).position==="sticky"?document.querySelector('.statistics-navigation').getBoundingClientRect().height:0}
+function syncStatisticsLocation(){
+ if(!$("statistics").classList.contains("active"))return;
+ const height=statisticsNavigationHeight();$("statistics").style.setProperty("--statistics-navigation-height",height+"px");
+ const sections=[...document.querySelectorAll('#statistics .statistics-section')],threshold=height+32;
+ let current=sections[0];for(const section of sections)if(section.getBoundingClientRect().top<=threshold)current=section;
+ if(scrollY+innerHeight>=document.documentElement.scrollHeight-4)current=sections.at(-1);
+ document.querySelectorAll('.statistics-sections-nav a').forEach(link=>{if(link.hash==="#"+current.id)link.setAttribute("aria-current","location");else link.removeAttribute("aria-current")});
+}
+let statisticsScrollFrame=0;
+function queueStatisticsLocation(){if(!statisticsScrollFrame)statisticsScrollFrame=requestAnimationFrame(()=>{statisticsScrollFrame=0;syncStatisticsLocation()})}
+new ResizeObserver(queueStatisticsLocation).observe(document.querySelector('.statistics-navigation'));addEventListener("scroll",queueStatisticsLocation,{passive:true});
+function focusStatisticsSection(id){$("statistics").style.setProperty("--statistics-navigation-height",statisticsNavigationHeight()+"px");const section=$(id);section.scrollIntoView({block:"start"});section.querySelector("h2").focus({preventScroll:true});syncStatisticsLocation()}
 $("statistics").querySelectorAll('.statistics-sections-nav a').forEach(link=>link.addEventListener("click",event=>{event.preventDefault();focusStatisticsSection(link.hash.slice(1))}));
+$("statistics").addEventListener("click",async event=>{
+ const button=event.target.closest('[data-statistics-entity]');if(!button)return;
+ const {statisticsEntity:type,entityId:id}=button.dataset;button.disabled=true;
+ try{
+  if(type==="tracked"||type==="partner")await window.LinksTracking.openEntity(type,id);
+  else{const item=statisticsEntities.get(id);if(!item)throw Error("Cette fiche historique n’est plus disponible.");openBlock(item)}
+  const dialog=document.querySelector('dialog[open]');if(dialog)dialog.addEventListener("close",async()=>{await loadStats();const replacement=[...document.querySelectorAll('[data-statistics-entity]')].find(node=>node.dataset.statisticsEntity===type&&node.dataset.entityId===id);(replacement||$("statistics-tracked-title")).focus({preventScroll:true})},{once:true});
+ }catch(error){say(error.message,true)}finally{button.disabled=false}
+});
 document.addEventListener("click",event=>{const button=event.target.closest("[data-open-statistics]");if(button){
  const scope=button.dataset.openStatistics;$("analysis-scope").value=["public","shared","campaigns","copies"].includes(scope)?scope:"public";
  $("analysis-search").value=button.dataset.analysisQuery||"";activate("statistics");
@@ -142,16 +165,21 @@ function chart(days,labels=["Visites","Clics publics"]){const statistics=$("stat
 
 let statsRequest=0;
 async function loadStats(force=false){if(force===true)reportCache.clear();const request=++statsRequest;let range;
- try{range=dates();$("stats-range-error").textContent=""}catch(error){$("stats-range-error").textContent=error.message;return}
+ try{range=dates();$("stats-range-error").textContent=""}catch(error){$("stats-range-error").textContent=error.message;$("analysis-grid").setAttribute("aria-busy","false");return}
  try{
- const data=await reportApi("/api/stats?"+new URLSearchParams(range)),stories=data.stories||[],tracked=data.tracked||[],previous=$("source").value;
+ $("analysis-grid").setAttribute("aria-busy","true");
+ const data=await reportApi("/api/stats?"+new URLSearchParams(range)),stories=data.stories||[],tracked=data.tracked||[],previous=$("source").value,previousLabel=$("source").selectedOptions[0]?.textContent;
  if(request!==statsRequest)return;
  if(renderedData===data&&renderedSource===$("source").value){syncAnalysis();return}
  const trackedNames=new Map([...Object.entries(data.source_names||{}),...tracked.map(x=>[x.source,x.source_name])]);
- const sourceName=key=>trackedNames.get(key)||(Object.hasOwn(names,key)?names[key]:"Source inconnue");
+ const sourceName=key=>trackedNames.get(key)||(Object.hasOwn(names,key)?names[key]:key===previous&&previousLabel?previousLabel:"Source inconnue");
  const sharedNames=new Map([...tracked,...stories].filter(x=>x.source_name).map(x=>[x.source,x.source_name]));
- const sources=[...new Set([...data.rows.map(x=>x.source),...stories.map(x=>x.source),...tracked.map(x=>x.source),...(data.promo_code_copies||[]).map(x=>x.source),...(data.campaign_metrics||[]).map(x=>x.source)])].sort();
+ const sources=[...new Set([...(previous?[previous]:[]),...data.rows.map(x=>x.source),...stories.map(x=>x.source),...tracked.map(x=>x.source),...(data.promo_code_copies||[]).map(x=>x.source),...(data.campaign_metrics||[]).map(x=>x.source)])].sort();
  $("source").replaceChildren(new Option("Toutes les sources",""),...sources.map(x=>new Option(sourceName(x),x)));if(sources.includes(previous))$("source").value=previous;
+ const sourceLabel=$("source").selectedOptions[0]?.textContent||"Toutes les sources",periodLabel="du "+range.start.split("-").reverse().join("/")+" au "+range.end.split("-").reverse().join("/");
+ $("source").title=sourceLabel;$("statistics-filter-context").textContent="Période "+periodLabel+" · "+sourceLabel;
+ $("analysis-empty").textContent="Aucune activité mesurée "+periodLabel+(previous?" pour la source « "+sourceLabel+" »":"")+". Les sections restent accessibles ci-dessous.";
+
  const source=$("source").value,rows=data.rows.filter(x=>!source||x.source===source),storyRows=stories.filter(x=>!source||x.source===source),trackedRows=tracked.filter(x=>!source||x.source===source),days=new Map(),bySource=new Map(),byLink=new Map(),linkSources=new Map(),labels=new Map(),byStory=new Map();
  const sharedDays=new Map(),copyDays=new Map(),campaignDays=new Map(),trackedDays=new Map();
  const addDay=(map,day,total,index=1)=>{const pair=map.get(day)||[0,0];pair[index]+=total;map.set(day,pair)};
@@ -167,9 +195,9 @@ async function loadStats(force=false){if(force===true)reportCache.clear();const 
  $("statistics-tracked-openings").textContent=fmt.format(trackedRows.reduce((total,row)=>total+row.total,0));
  $("statistics-campaign-openings").textContent=fmt.format(storyRows.reduce((total,row)=>total+row.total,0));
  $("story-total").textContent=$("statistics-campaign-openings").textContent;
- const sharedMetrics=entries=>entries.map(([,item])=>{
+ const sharedMetrics=entries=>entries.map(([key,item])=>{
    const sourceBreakdown=[...item.sources].sort((a,b)=>b[1]-a[1]).map(([key,total])=>({key,label:sharedNames.get(key)||sourceName(key),total}));
-   return {name:item.label,total:item.total,unit:"ouvertures",sourceBreakdown,details:sourceBreakdown.map(({label,total})=>label+" : "+fmt.format(total))};
+   return {name:item.label,total:item.total,unit:"ouvertures",entity:key.startsWith("tracked:")?{type:"tracked",id:key.slice(8)}:statisticsEntities.has(key)?{type:"content",id:key}:null,sourceBreakdown,details:sourceBreakdown.map(({label,total})=>label+" : "+fmt.format(total))};
  });
  metricRows("tracked-stat-list",sharedMetrics([...byStory].filter(([key])=>key.startsWith("tracked:"))),"Aucun lien suivi ouvert sur cette période.");
  metricRows("story-list",sharedMetrics([...byStory].filter(([key])=>!key.startsWith("tracked:"))),"Aucune campagne partagée ouverte sur cette période.");
@@ -185,12 +213,13 @@ async function loadStats(force=false){if(force===true)reportCache.clear();const 
  const campaignIds=new Set(campaignRows.map(row=>row.id));for(const row of data.campaign_metrics||[])if(row.kind==="click"&&campaignIds.has(row.id)&&(!source||row.source===source))addDay(campaignDays,row.day,row.total,0);
  analysisDays.public=[...days].map(([day,value])=>[day,...value]);for(const [scope,map] of [["shared",sharedDays],["copies",copyDays],["campaigns",campaignDays],["tracked",trackedDays]])analysisDays[scope]=[...days.keys()].map(day=>[day,...(map.get(day)||[0,0])]);analysisDays.sharedSplit=[...days.keys()].map(day=>[day,trackedDays.get(day)?.[1]||0,campaignDays.get(day)?.[1]||0]);const sorted=map=>[...map].sort((a,b)=>b[1]-a[1]);metricRows("top-links",sorted(byLink).map(([key,value])=>{
    const sourceBreakdown=[...linkSources.get(key)].sort((a,b)=>b[1]-a[1]).map(([source,total])=>({key:source,label:sourceName(source),total}));
-   return {name:labels.get(key)||key,total:value,unit:"clics publics",sourceBreakdown,details:sourceBreakdown.map(({label,total})=>label+" : "+fmt.format(total))};
+   return {name:labels.get(key)||key,total:value,unit:"clics publics",entity:key.startsWith("block:")&&statisticsEntities.has(key.slice(6))?{type:"content",id:key.slice(6)}:null,sourceBreakdown,details:sourceBreakdown.map(({label,total})=>label+" : "+fmt.format(total))};
   }),"Aucun clic public sur cette période.");
  sourceRows=sorted(bySource).map(([key,value])=>[sourceName(key),value,key]);latestTrackedRows=trackedRows;
+ document.querySelectorAll(".statistics-kpis strong").forEach(node=>node.classList.toggle("is-long-number",node.textContent.length>8));
  drawSources();syncAnalysis();renderedData=data;renderedSource=source;
 
- }catch(error){say(error.message,true)}}
+ }catch(error){$("stats-range-error").textContent="Actualisation impossible. Les derniers résultats affichés correspondent au filtre précédent.";say(error.message,true)}finally{if(request===statsRequest)$("analysis-grid").setAttribute("aria-busy","false")}}
 $("filters").onsubmit=event=>event.preventDefault();
 $("period").addEventListener("change",()=>{const custom=$("period").value==="custom";document.querySelectorAll("[data-custom-period]").forEach(node=>node.hidden=!custom);if(custom&&!$("stats-start").value){$("period").value="14";const range=dates();$("stats-start").value=range.start;$("stats-end").value=range.end;$("period").value="custom"}loadStats()});
 $("stats-start").onchange=loadStats;$("stats-end").onchange=loadStats;$("source").addEventListener("change",loadStats);new ResizeObserver(()=>{const width=$("chart").clientWidth;if(width>0&&width!==chartRenderedWidth&&state.chart.length)chart(state.chart,state.chartLabels)}).observe($("chart"));
@@ -350,10 +379,11 @@ const iconPaths={
 document.querySelectorAll("[data-icon]").forEach(node=>{node.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${iconPaths[node.dataset.icon]||""}</svg>`});
 async function loadCampaigns(metrics=new Map(),request=0){try{
  const [current,archived]=await Promise.all([reportApi("/api/content"),reportApi("/api/content?archived=1")]);const campaigns=current.items;if(request&&request!==statsRequest)return;
+ statisticsEntities=new Map([...campaigns,...archived.items].map(item=>[item.id,item]));
  const allCampaigns=new Map([...campaigns,...archived.items].filter(x=>x.type!=="classic").map(x=>[x.id,x]));
  const classicIds=new Set([...campaigns,...archived.items].filter(x=>x.type==="classic").map(x=>x.id));
  for(const [id,value] of metrics){if(!classicIds.has(id)&&!allCampaigns.has(id))allCampaigns.set(id,{id,internal_name:value.name||id,status:"Historique"})}
- campaignRows=[...allCampaigns.values()].map(item=>{const value=metrics.get(item.id)||{};return {id:item.id,name:item.internal_name,metrics:{clicks:value.clicks||0,shared:value.shared||0,impressions:value.impressions||0,copies:value.copies||0},series:[{label:"Clics publics",value:value.clicks||0},{label:"Ouvertures partagées",value:value.shared||0}],details:[item.status,"Impressions : "+fmt.format(value.impressions||0),"Clics publics : "+fmt.format(value.clicks||0),"Ouvertures partagées : "+fmt.format(value.shared||0),"Copies : "+fmt.format(value.copies||0),"CTR page : "+(value.impressions?(value.clicks*100/value.impressions).toLocaleString("fr-FR",{maximumFractionDigits:1})+" %":"—")]}});
+ campaignRows=[...allCampaigns.values()].map(item=>{const value=metrics.get(item.id)||{};return {id:item.id,name:item.internal_name,entity:statisticsEntities.has(item.id)?{type:"content",id:item.id}:null,metrics:{clicks:value.clicks||0,shared:value.shared||0,impressions:value.impressions||0,copies:value.copies||0},series:[{label:"Clics publics",value:value.clicks||0},{label:"Ouvertures partagées",value:value.shared||0}],details:[item.status,"Impressions : "+fmt.format(value.impressions||0),"Clics publics : "+fmt.format(value.clicks||0),"Ouvertures partagées : "+fmt.format(value.shared||0),"Copies : "+fmt.format(value.copies||0),"CTR page : "+(value.impressions?(value.clicks*100/value.impressions).toLocaleString("fr-FR",{maximumFractionDigits:1})+" %":"—")]}});
  drawCampaignRanking();
  const items=campaigns.filter(item=>item.type!=="classic"&&item.status==="Actif").map(item=>{const value=metrics.get(item.id)||{clicks:0,shared:0,impressions:0,copies:0};return {...item,...value,pageClicks:value.clicks,sharedClicks:value.shared,totalClicks:value.clicks+value.shared,ctr:value.impressions?Math.round(value.clicks*1000/value.impressions)/10:null}});
  $("active-campaigns").innerHTML=items.length?items.map(item=>`<article class="campaign-card">${item.image?`<img src="${esc(LinksTheme.asset(item.image))}" alt="" loading="lazy">`:'<span class="type-mark" aria-hidden="true">↗</span>'}<div><strong>${esc(item.internal_name)}</strong><small>${esc(periodText(item.start_at||item.created_at))} → ${esc(periodText(item.end_at))}</small><span class="status active">Actif</span><div class="campaign-metrics"><span><small>Clics publics</small><b>${fmt.format(item.pageClicks||0)}</b></span><span><small>Ouvertures partagées</small><b>${fmt.format(item.sharedClicks||0)}</b></span></div><button type="button" data-open-statistics="campaigns">Statistiques</button></div><button type="button" data-open-content aria-label="Gérer ${esc(item.internal_name)}">→</button></article>`).join(""):'<p class="empty">Aucune campagne en cours.</p>';
