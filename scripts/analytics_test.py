@@ -170,6 +170,54 @@ class AnalyticsTests(unittest.TestCase):
         selected=next(row for row in json.loads(self.request(admin+'/api/tracking-sources')[1])['items'] if row['id']==source['id'])
         self.assertEqual(selected['clicks'],2)
 
+    def test_report_resolves_configured_source_keys_and_unambiguous_aliases(self):
+        rules=[{'key':'youtube-post','label':'YouTube Post','aliases':['track.194726hflqjr','old-youtube','ambiguous'],'domains':[]},
+               {'key':'partner','label':'Partenaire','aliases':['ambiguous','youtube-post'],'domains':[]}]
+        day='2026-10-25'
+        with self.a.connection() as db:
+            self.a.instance.put(db,'analytics.source_rules',json.dumps(rules))
+        for key in ['track.194726hflqjr','old-youtube','ambiguous','track.unknown']:
+            self.a.record('view',key,'',day)
+        before=json.loads(self.a.export_backup())['tables']
+        report=self.a.report(day,day)
+        self.assertEqual(report['source_names']['track.194726hflqjr'],'YouTube Post')
+        self.assertEqual(report['source_names']['youtube-post'],'YouTube Post')
+        self.assertEqual(report['source_names']['old-youtube'],'YouTube Post')
+        self.assertNotIn('ambiguous',report['source_names'])
+        self.assertNotIn('track.unknown',report['source_names'])
+        self.assertEqual({row['source'] for row in report['rows']},
+                         {'track.194726hflqjr','old-youtube','ambiguous','track.unknown'})
+        self.assertEqual(sum(row['total'] for row in self.a.report(day,day,'track.194726hflqjr')['rows']),1)
+        self.assertEqual(json.loads(self.a.export_backup())['tables'],before)
+
+    def test_report_shared_sources_use_stable_bindings_without_guessing_history(self):
+        campaign=self.promo();token=self.a.story_link(campaign)['url'].rsplit('/',1)[-1]
+        day='2026-10-25'
+        with self.a.connection() as db:
+            source_id=db.execute("SELECT source_id FROM tracking_source_keys WHERE key='youtube'").fetchone()[0]
+            db.execute("UPDATE tracking_sources SET name='YouTube Post renommé',active=0 WHERE id=?",(source_id,))
+            # A new namesake must not take ownership of the old identity.
+            db.execute("INSERT INTO tracking_sources VALUES(?,?,1,0,?)",('a'*32,'YouTube Post',self.a.now_iso()))
+            link=self.a.tracked_links.create_link(db,{'name':'Lien suivi','url':'https://shop.example/report'},self.a.story_url_valid,self.a.now_iso())
+            other=db.execute("SELECT id FROM tracking_sources WHERE name='YouTube Description'").fetchone()[0]
+            tracked=self.a.tracked_links.token_link(db,link['id'],other,self.a.ORIGIN,self.a.now_iso())
+        keys=['youtube','tracked:'+source_id,'instagram-story','shared-unknown','tracked:'+'b'*32]
+        for key in keys:self.a.record('story',key,'story:'+token+':10',day)
+        self.a.record('tracked','tracked:'+other,'tracked:'+tracked['token']+':10',day)
+        self.a.record('click','youtube','block:'+campaign,day)
+        before=json.loads(self.a.export_backup())['tables']
+        report=self.a.report(day,day);stories={row['source']:row for row in report['stories']}
+        for key in keys[:2]:self.assertEqual(stories[key]['source_name'],'YouTube Post renommé')
+        for key in keys[2:]:self.assertIsNone(stories[key]['source_name'])
+        self.assertNotIn('youtube',report['source_names'])  # Public traffic remains generic YouTube.
+        self.assertEqual(report['tracked'][0]['source_name'],'YouTube Description')
+        self.assertEqual(sum(row['total'] for row in report['stories']),5)
+        self.assertEqual(len(self.a.report(day,day,'youtube')['stories']),1)
+        self.assertEqual(json.loads(self.a.export_backup())['tables'],before)
+        with self.a.connection() as db:db.execute("UPDATE tracking_source_keys SET source_id=NULL WHERE key='youtube'")
+        unresolved=next(row for row in self.a.report(day,day)['stories'] if row['source']=='youtube')
+        self.assertIsNone(unresolved['source_name'])  # Do not guess from the new namesake.
+
     def test_zero_click_source_with_published_token_is_archived(self):
         admin=self.server(True);public=self.server()
         link=json.loads(self.request(admin+'/api/tracked-links',{'name':'Sans clic','url':'https://shop.example/item'})[1])

@@ -125,20 +125,22 @@ async function loadStats(force=false){if(force===true)reportCache.clear();const 
  if(request!==statsRequest)return;
  if(renderedData===data&&renderedSource===$("source").value){syncAnalysis();return}
  const trackedNames=new Map([...Object.entries(data.source_names||{}),...tracked.map(x=>[x.source,x.source_name])]);
+ const sourceName=key=>trackedNames.get(key)||(Object.hasOwn(names,key)?names[key]:"Source inconnue");
+ const sharedNames=new Map([...tracked,...stories].filter(x=>x.source_name).map(x=>[x.source,x.source_name]));
  const sources=[...new Set([...data.rows.map(x=>x.source),...stories.map(x=>x.source),...tracked.map(x=>x.source),...(data.promo_code_copies||[]).map(x=>x.source),...(data.campaign_metrics||[]).map(x=>x.source)])].sort();
- $("source").replaceChildren(new Option("Toutes les sources",""),...sources.map(x=>new Option(trackedNames.get(x)||names[x]||x,x)));if(sources.includes(previous))$("source").value=previous;
+ $("source").replaceChildren(new Option("Toutes les sources",""),...sources.map(x=>new Option(sourceName(x),x)));if(sources.includes(previous))$("source").value=previous;
  const source=$("source").value,rows=data.rows.filter(x=>!source||x.source===source),storyRows=stories.filter(x=>!source||x.source===source),trackedRows=tracked.filter(x=>!source||x.source===source),days=new Map(),bySource=new Map(),byLink=new Map(),linkSources=new Map(),labels=new Map(),byStory=new Map();
  const sharedDays=new Map(),copyDays=new Map(),campaignDays=new Map();
  const addDay=(map,day,total,index=1)=>{const pair=map.get(day)||[0,0];pair[index]+=total;map.set(day,pair)};
  for(let d=new Date(range.start+"T12:00Z");d<=new Date(range.end+"T12:00Z");d.setUTCDate(d.getUTCDate()+1))days.set(d.toISOString().slice(0,10),[0,0]);
  let views=0,clicks=0,storyClicks=0;
  for(const row of rows){labels.set(row.link,row.label||row.link);const pair=days.get(row.day);if(!pair)continue;if(row.kind==="view"){views+=row.total;pair[0]+=row.total;bySource.set(row.source,(bySource.get(row.source)||0)+row.total)}else if(row.kind==="click"){clicks+=row.total;pair[1]+=row.total;byLink.set(row.link,(byLink.get(row.link)||0)+row.total);const sources=linkSources.get(row.link)||new Map();sources.set(row.source,(sources.get(row.source)||0)+row.total);linkSources.set(row.link,sources)}}
- for(const row of trackedRows){addDay(sharedDays,row.day,row.total);storyClicks+=row.total;const key="tracked:"+row.link_id,item=byStory.get(key)||{label:row.label+" · Lien suivi",total:0,sources:new Map()};item.total+=row.total;item.sources.set(row.source_name,(item.sources.get(row.source_name)||0)+row.total);byStory.set(key,item);bySource.set(row.source,(bySource.get(row.source)||0)+row.total)}
+ for(const row of trackedRows){addDay(sharedDays,row.day,row.total);storyClicks+=row.total;const key="tracked:"+row.link_id,item=byStory.get(key)||{label:row.label+" · Lien suivi",total:0,sources:new Map()};item.total+=row.total;item.sources.set(row.source,(item.sources.get(row.source)||0)+row.total);byStory.set(key,item);bySource.set(row.source,(bySource.get(row.source)||0)+row.total)}
  for(const row of storyRows){addDay(sharedDays,row.day,row.total);addDay(campaignDays,row.day,row.total);storyClicks+=row.total;const item=byStory.get(row.promotion_id)||{label:row.label,total:0,sources:new Map()};item.total+=row.total;item.sources.set(row.source,(item.sources.get(row.source)||0)+row.total);byStory.set(row.promotion_id,item);bySource.set(row.source,(bySource.get(row.source)||0)+row.total)}
  $("views").textContent=fmt.format(views);$("clicks").textContent=fmt.format(clicks);$("ratio").textContent=views?(clicks*100/views).toLocaleString("fr-FR",{maximumFractionDigits:1})+" %":"—";
  $("story-clicks").textContent=fmt.format(storyClicks);$("story-promos").textContent=fmt.format(byStory.size);$("story-total").textContent=fmt.format(storyClicks);$("story-total").parentElement.title=fmt.format(byStory.size)+" lien(s) ou campagne(s)";
  metricRows("story-list",[...byStory.values()].sort((a,b)=>b.total-a.total).map(item=>{
-   const sourceBreakdown=[...item.sources].sort((a,b)=>b[1]-a[1]).map(([key,total])=>({key,label:names[key]||key,total}));
+   const sourceBreakdown=[...item.sources].sort((a,b)=>b[1]-a[1]).map(([key,total])=>({key,label:sharedNames.get(key)||sourceName(key),total}));
    return {name:item.label,total:item.total,unit:"ouvertures",sourceBreakdown,details:sourceBreakdown.map(({label,total})=>label+" : "+fmt.format(total))};
   }),"Aucun lien partagé ouvert sur cette période.");
  const campaignStats=new Map(),copyStats=new Map();
@@ -152,10 +154,10 @@ async function loadStats(force=false){if(force===true)reportCache.clear();const 
  await loadCampaigns(campaignStats,request);if(request!==statsRequest)return;
  const campaignIds=new Set(campaignRows.map(row=>row.id));for(const row of data.campaign_metrics||[])if(row.kind==="click"&&campaignIds.has(row.id)&&(!source||row.source===source))addDay(campaignDays,row.day,row.total,0);
  analysisDays.public=[...days].map(([day,value])=>[day,...value]);for(const [scope,map] of [["shared",sharedDays],["copies",copyDays],["campaigns",campaignDays]])analysisDays[scope]=[...days.keys()].map(day=>[day,...(map.get(day)||[0,0])]);const sorted=map=>[...map].sort((a,b)=>b[1]-a[1]);metricRows("top-links",sorted(byLink).map(([key,value])=>{
-   const sourceBreakdown=[...linkSources.get(key)].sort((a,b)=>b[1]-a[1]).map(([source,total])=>({key:source,label:trackedNames.get(source)||names[source]||source,total}));
+   const sourceBreakdown=[...linkSources.get(key)].sort((a,b)=>b[1]-a[1]).map(([source,total])=>({key:source,label:sourceName(source),total}));
    return {name:labels.get(key)||key,total:value,unit:"clics publics",sourceBreakdown,details:sourceBreakdown.map(({label,total})=>label+" : "+fmt.format(total))};
   }),"Aucun clic public sur cette période.");
- sourceRows=sorted(bySource).map(([key,value])=>[trackedNames.get(key)||names[key]||key,value]);
+ sourceRows=sorted(bySource).map(([key,value])=>[sourceName(key),value]);
  drawSources();syncAnalysis();renderedData=data;renderedSource=source;
 
  }catch(error){say(error.message,true)}}
