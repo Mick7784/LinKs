@@ -2574,3 +2574,62 @@ main:has(> #statistics.active) { max-width: none; width: 100%; }
   #statistics #filters > .statistics-filter-field:last-child { flex: 1.25 1 0; }
   #statistics #filters select { min-height: 44px; padding-inline: 8px; font-size: .8rem; }
 }
+
+/* Readability refinement, using the validated palette and page structure. */
+#statistics .statistics-section h3 { font-size: 1.15rem; }
+#statistics .statistics-kpis .kpi-label { font-size: .9rem; min-height: 42px; }
+#statistics .statistics-kpis strong { font-size: clamp(2.1rem, 2.8vw, 3rem); }
+#statistics .statistics-kpis strong.is-long-number { font-size: clamp(1.5rem, 2vw, 2.2rem); }
+#statistics .statistics-kpis small, #statistics .kpi-note,
+#statistics .panel-helper, #statistics .statistics-color-key,
+#statistics .statistics-chart-control, #statistics #campaign-metric-control,
+#statistics .source-overview > span, #statistics .source-inspector { font-size: .9rem; line-height: 1.6; }
+#statistics button, #statistics select, #statistics input,
+#statistics .statistics-sections-nav a, #statistics .collection-pagination { font-size: .9rem; }
+#statistics .collection-rows { display: block; }
+#statistics .collection-rows .engagement-row {
+  grid-template-columns: minmax(180px, 1fr) minmax(140px, 1.6fr) minmax(100px, max-content);
+  grid-template-areas: "name bars value" "details details details";
+  gap: 8px 24px; align-items: center; padding: 20px 0;
+  border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent;
+}
+#statistics .engagement-row:last-child { border-bottom: 0; }
+#statistics #promo-copy-list .engagement-row { grid-template-columns: minmax(0, 1fr) max-content; grid-template-areas: "name value" "details details"; }
+#statistics .source-row small { font-size: .85rem; }
+#statistics .engagement-copy { grid-area: name; }
+#statistics .engagement-copy > strong { font-size: 1rem; line-height: 1.55; }
+#statistics .engagement-value { grid-area: value; text-align: right; max-width: 180px; }
+#statistics .engagement-value strong { font-size: 1.6rem; line-height: 1.2; font-variant-numeric: tabular-nums; }
+#statistics .engagement-value small, #statistics .ranking-series small { font-size: .9rem; line-height: 1.5; }
+#statistics .ranking-bars { grid-area: bars; min-width: 0; margin: 0; }
+#statistics .ranking-track { height: 14px; border-radius: 4px; }
+#statistics .statistics-entity-shortcut { min-height: 44px; padding: 6px 0; border-color: transparent; background: transparent; font-size: .9rem; }
+#statistics .statistics-entity-shortcut:hover { background: var(--hover); }
+#statistics .collection-rows .engagement-details { grid-area: details; width: 100%; margin: 0; }
+#statistics .collection-rows details > summary { width: fit-content; max-width: 100%; min-height: 44px; padding: 10px 0; font-size: .9rem; color: var(--accent); }
+#statistics .collection-rows details > small { font-size: .95rem; line-height: 1.8; margin: 0 0 8px; }
+#statistics .engagement-source-list { margin-bottom: 8px; }
+#statistics .engagement-source-name, #statistics .source-stat-row { font-size: .95rem; }
+#statistics .engagement-source-figures strong { font-size: 1.05rem; }
+#statistics .engagement-source-figures small, #statistics .source-provenance-note { font-size: .85rem; }
+#statistics .time-legend .series-toggle { font-size: .95rem; }
+#statistics .time-axis { font-size: 14px; }
+#statistics .time-tooltip { font-size: .95rem; }
+#statistics .time-reading { display: grid; grid-template-columns: minmax(0, 1fr) minmax(170px, 220px); align-items: center; gap: 12px 20px; padding-top: 14px; border-top: 1px solid var(--line); }
+#statistics .time-inspector { display: flex; flex-wrap: wrap; gap: 8px 20px; margin: 0; padding: 0; background: transparent; border: 0; font-size: .95rem; line-height: 1.6; }
+#statistics .time-inspector > strong { flex-basis: 100%; font-size: 1rem; }
+#statistics .time-navigation { margin: 0; gap: 8px; }
+@media (max-width: 1100px) {
+  #statistics .collection-rows .engagement-row { grid-template-columns: minmax(150px, 1fr) minmax(100px, 1.2fr) minmax(80px, max-content); gap: 8px 16px; }
+  #statistics .time-reading { grid-template-columns: 1fr; }
+  #statistics .time-navigation { max-width: 440px; width: 100%; }
+}
+@media (max-width: 760px) {
+  #statistics .statistics-kpis article { padding: 16px 12px; }
+  #statistics .statistics-kpis strong { font-size: 2.1rem; }
+  #statistics .statistics-kpis strong.is-long-number { font-size: 1.5rem; }
+  #statistics .collection-rows .engagement-row { grid-template-columns: minmax(0, 1fr) minmax(75px, max-content); grid-template-areas: "name value" "bars bars" "details details"; padding: 18px 0; gap: 10px 12px; }
+  #statistics .engagement-value { max-width: 110px; }
+  #statistics .engagement-value strong { font-size: 1.4rem; }
+  #statistics .time-inspector { gap: 8px 16px; }
+}

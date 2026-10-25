@@ -73,7 +73,7 @@ function timeSeries(root,detail,days,series,{mode='line',active=()=>true}={}){
   const grid=Array.from({length:5},(_,i)=>{const value=i*step,at=y(value);return `<line class="time-grid" x1="${left}" x2="${right}" y1="${at}" y2="${at}"/><text class="time-axis" x="${left-10}" y="${at+4}" text-anchor="end">${esc(axisFmt.format(value))}</text>`}).join('');
   const crossesYear=days.length>1&&days[0][0].slice(0,4)!==days[days.length-1][0].slice(0,4);
   const axisDate=day=>crossesYear?new Intl.DateTimeFormat('fr-FR',{day:'numeric',month:'short',year:'2-digit',timeZone:'UTC'}).format(new Date(day+'T12:00:00Z')):dayLabel(day);
-  const labels=days.map((row,i)=>i===0||i===days.length-1||i%stride===0&&days.length-1-i>=stride*.65?`<text class="time-axis" text-anchor="middle" x="${x(i)}" y="${bottom+27}">${esc(axisDate(row[0]))}</text>`:'').join('');
+  const labels=days.map((row,i)=>i===0||i===days.length-1||i%stride===0&&days.length-1-i>=stride*.65?`<text class="time-axis" text-anchor="${i===0?'start':i===days.length-1?'end':'middle'}" x="${i===0?left+3:i===days.length-1?right-3:x(i)}" y="${bottom+27}">${esc(axisDate(row[0]))}</text>`:'').join('');
   let marks='';
   if(mode==='line')for(let j=0;j<visible.length;j++){
    const s=visible[j],parts=[];let current=[];
@@ -88,9 +88,9 @@ function timeSeries(root,detail,days,series,{mode='line',active=()=>true}={}){
   if(mode==='bars'){const axis=document.createElement('div');axis.className='time-fixed-axis';axis.setAttribute('aria-hidden','true');axis.innerHTML=`<svg width="${left}" height="${bottom+48}" viewBox="0 0 ${left} ${bottom+48}"><rect class="time-axis-backdrop" width="${left}" height="${bottom+48}"/>${Array.from({length:5},(_,i)=>`<text class="time-axis" x="${left-10}" y="${y(i*step)+4}" text-anchor="end">${esc(axisFmt.format(i*step))}</text>`).join('')}</svg>`;frame.append(axis)}
   root.append(frame);
   const tooltip=document.createElement('div');tooltip.className='chart-tooltip time-tooltip';tooltip.hidden=true;tooltip.setAttribute('role','tooltip');root.append(tooltip);
-  const inspector=document.createElement('div');inspector.className='time-inspector';inspector.setAttribute('role','status');inspector.setAttribute('aria-live','polite');root.append(inspector);
+  const inspector=document.createElement('div');inspector.className='time-inspector';inspector.setAttribute('role','status');inspector.setAttribute('aria-live','polite');const reading=document.createElement('div');reading.className='time-reading';reading.append(inspector);root.append(reading);
   const navigation=document.createElement('div');navigation.className='time-navigation';
-  const previous=document.createElement('button'),next=document.createElement('button'),slider=document.createElement('input');previous.type=next.type='button';previous.textContent='←';next.textContent='→';previous.setAttribute('aria-label','Jour précédent');next.setAttribute('aria-label','Jour suivant');slider.type='range';slider.min='0';slider.max=String(Math.max(0,days.length-1));slider.step='1';slider.setAttribute('aria-label','Jour à examiner');navigation.append(previous,slider,next);root.append(navigation);
+  const previous=document.createElement('button'),next=document.createElement('button'),slider=document.createElement('input');previous.type=next.type='button';previous.textContent='←';next.textContent='→';previous.setAttribute('aria-label','Jour précédent');next.setAttribute('aria-label','Jour suivant');slider.type='range';slider.min='0';slider.max=String(Math.max(0,days.length-1));slider.step='1';slider.setAttribute('aria-label','Jour à examiner');navigation.append(previous,slider,next);reading.append(navigation);
   const show=(index,{pointer=false,focus=false}={})=>{
    if(!days.length)return;index=Math.max(0,Math.min(days.length-1,index));state.selected=days[index][0];slider.value=String(index);slider.setAttribute('aria-valuetext',dayLabel(days[index][0],true));previous.disabled=index===0;next.disabled=index===days.length-1;
    const title=dayLabel(days[index][0],true),numbers=visible.map((s,j)=>({s,text:s.label+' : '+(values[index][j]===null?'Non disponible':fmt.format(values[index][j]))}));

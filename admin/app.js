@@ -67,16 +67,14 @@ function metricRows(id,items,empty){
    const visual=item.series||([{label:item.unit,value:item.total,tone:id==="top-links"?"public":id==="tracked-stat-list"||id==="partner-stat-list"?"tracked":"campaigns"}]);
    if(id!=="promo-copy-list")row.append(StudioCharts.ranking(visual,item.series?context.seriesMax:context.max));
    if(!context.preview&&item.details.length){
-     const details=document.createElement("details"),summary=document.createElement("summary");summary.textContent="Détails";details.append(summary);
-     details.open=true;
+     const details=document.createElement("details"),summary=document.createElement("summary");summary.textContent=item.sourceBreakdown?"Sources de publication":"Indicateurs détaillés";details.append(summary);
      details.addEventListener("toggle",()=>{
       if(!details.open||details.dataset.loaded)return;
       details.dataset.loaded="true";
       if(item.sourceBreakdown)details.append(renderSourceBreakdown(item.sourceBreakdown,item.total));
       else{const text=document.createElement("small");text.textContent=item.details.join(" · ");details.append(text)}
      });
-     if(item.sourceBreakdown){details.className="engagement-source-details";row.insertBefore(details,row.querySelector(".ranking-bars"))}
-     else row.querySelector(".engagement-copy").append(details);
+     details.className="engagement-details"+(item.sourceBreakdown?" engagement-source-details":"");row.append(details);
     }
    return row;
   }}));
