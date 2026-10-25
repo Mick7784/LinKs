@@ -1,5 +1,44 @@
 # Changelog
 
+## V1.320
+
+### ✨ Provenances regroupées par plateforme
+
+- Vue par plateforme pour les sources clairement identifiées : YouTube Post et Description, Instagram Story et Bio, Discord, Facebook, TikTok et autres plateformes reconnues.
+- Associations explicites prioritaires et libellés historiques strictement reconnus ; les provenances ambiguës restent dans « Autres » ou « Source inconnue ». L’ancienne clé incertaine `instagram-story` n’est pas attribuée à Instagram par son seul nom.
+- Sources individuelles toujours consultables et filtrables sur place, avec conservation de leurs clés, de leurs distinctions et des filtres de période/source.
+- Détails chargés à l’ouverture et paginés pour les grandes listes. Les contributions de chaque source sont conservées une seule fois ; le total d’une plateforme correspond à la somme de ses sources.
+
+### 📊 Lisibilité et visualisations
+
+- Textes, chiffres, dates, légendes et commandes agrandis ; classements de liens alignés en lignes comparatives et détails secondaires repliables.
+- Comparaisons des campagnes par points sur une même échelle, avec valeurs visibles, formes distinctes et séries activables.
+- Anneaux interactifs pour quelques catégories et barres pour les listes nombreuses ou les libellés longs ; valeurs absolues et pourcentages affichés.
+- Couleurs stables, variantes adaptées aux thèmes clair/sombre et repères supplémentaires : tracés, formes, textures et numéros associés aux légendes.
+- Lecture quotidienne des courbes et histogrammes plus compacte ; survol, toucher, clavier et navigation entre jours conservés.
+- Indicateurs sur une colonne sur les petits écrans ; dispositions et détails vérifiés à 320, 390, 768 et 1920 px sans débordement horizontal.
+
+### 🤝 Attribution des ouvertures aux partenaires
+
+- Classement fondé sur les associations explicites actuelles des liens et les événements de la période/source sélectionnées, sans utiliser les compteurs cumulés ni déduire un partenaire du domaine.
+- Répartition entre ouvertures attribuées, liens sans partenaire déclaré et attributions non identifiables ; liens concernés consultables directement.
+- Les URL affiliées directes sans partenaire restent un cas légitime. L’interface indique que les événements historiques ne conservent pas le partenaire au jour du clic ni l’intention d’une absence d’association.
+- Une indisponibilité des métadonnées affiche un classement temporairement indisponible, sans être présentée comme zéro ouverture ou une absence de partenaire.
+
+### 🔒 Conservation et compatibilité
+
+- Aucun changement du schéma de données, des événements enregistrés, des calculs de métriques ou des API existantes.
+- Aucune fusion de sources, modification d’identifiant, réécriture d’historique ou attribution artificielle.
+- Liens courts, redirections, paramètres, archives, configuration et compatibilité PulSe préservés ; page publique inchangée.
+
+### ⬆️ Mise à jour depuis V1.319
+
+- Image `ghcr.io/mick7784/links:V1.320`, également publiée sous `latest`, pour AMD64 et ARM64.
+- Aucun nouveau paramètre Compose ou `.env` et aucune migration de données requise.
+- Conserver le fichier Compose, les variables, les secrets et le volume `/data` existants, sans changer le nom du volume. Effectuer une sauvegarde avant la mise à jour.
+- Si `IMAGE_TAG` ou le tag de l’image est épinglé sur V1.319, sélectionner `V1.320`. Avec `latest`, récupérer la nouvelle image puis recréer manuellement le service LinKs.
+- Aucun déploiement automatique ni intervention sur le VPS.
+
 ## V1.319
 
 ### ✨ Statistiques sur une seule page
