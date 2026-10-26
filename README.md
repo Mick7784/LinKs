@@ -38,13 +38,15 @@ LinKs est une page de liens auto-hébergée, personnalisable et accompagnée d�
 
 - Une seule page, organisée en vue globale, liens suivis, page publique et campagnes, avec six indicateurs distincts.
 - Visites, clics publics, ouvertures des liens suivis, ouvertures des campagnes, impressions, CTR et copies de codes conservés séparément.
-- Courbes d’évolution, histogramme quotidien avec axe fixe, classements horizontaux de liens et partenaires, comparaisons de campagnes par points et répartitions en anneaux ou barres selon les données.
+- Courbes d’évolution, histogramme quotidien avec axe fixe, classements horizontaux de liens et partenaires, classement compact des campagnes par métrique et répartitions en anneaux ou barres selon les données.
 - Valeurs exactes au survol, au toucher et au clavier ; séries activables, inspecteur de date et navigation quotidienne.
+- Détail des clics du jour depuis les graphiques ou un choix de date : liens publics, liens suivis indépendants et campagnes partagées séparés, provenances détaillées et fiches disponibles sur place.
+- Campagnes classées par ouvertures partagées par défaut, avec choix de la métrique et section repliable pour celles sans activité.
 - Vue de 14 jours par défaut ; périodes de 7, 30, 90 jours ou dates personnalisées jusqu’à 400 jours, sans suppression des historiques.
 - Provenances regroupées par plateforme lorsque l’identification est fiable, avec totaux sans double comptage, détails historiques et filtres individuels conservés. Les sources inconnues ou incertaines restent signalées, sans attribution supposée.
 - Classement partenaires selon les associations explicites actuelles ; ouvertures sans partenaire déclaré et attributions non identifiables distinguées et consultables.
 - Filtres de période et de source communs et conservés lors de la navigation, même sans activité ; recherche, tri, pagination et accès directs aux fiches existantes.
-- Palette claire/sombre, disposition responsive et focus clavier visibles. Visites cyan, clics publics bleus, liens suivis violets et campagnes roses ; catégories de provenance de couleurs stables, complétées par des textures et repères numérotés.
+- Palette claire/sombre, disposition responsive et focus clavier visibles. Visites cyan, clics publics bleus, liens suivis violets et campagnes roses ; catégories de provenance de couleurs stables, sans textures et complétées par des repères numérotés.
 
 ### Back office
 
