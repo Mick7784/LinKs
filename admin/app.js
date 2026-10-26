@@ -32,7 +32,7 @@ function dates(){
 
 const analyticCollections=new Map(),analyticRows=new Map();
 let latestTrackedRows=[],partnerReportRows=null,partnerPending=false,partnerUnavailable=false;
-const hiddenCampaignSeries=new Set();
+let dailyReportData=null,dailyIndex=new Map(),dailySourceName=()=>"Source inconnue",dailyDay="",dailyRange=null;
 let statisticsEntities=new Map();
 let sourceMetadata=null;
 let campaignRows=[],sourceRows=[],analysisDays={},renderedData=null,renderedSource="";
@@ -43,6 +43,7 @@ function readableSourceName({key,label}){
  return label;
 }
 function renderRawSourceBreakdown(sources,total,{filterable=false}={}){
+ if(sources.length>20){const host=document.createElement("div");host.className="platform-member-list";host.setAttribute("aria-label","Sources de publication");StudioCollection.create(host,{pageSize:20,renderRow:source=>{const item=renderRawSourceBreakdown([source],total,{filterable}).firstElementChild;item.removeAttribute("role");return item}}).setRows(sources.map(source=>({...source,name:source.label})),{sort:"input"});return host}
  const list=document.createElement("div");list.className="engagement-source-list";list.setAttribute("role","list");
  for(const source of sources){
   const item=document.createElement("div");item.className="engagement-source-item";item.setAttribute("role","listitem");
@@ -74,11 +75,12 @@ function metricRows(id,items,empty){
   analyticCollections.set(id,StudioCollection.create(node,{empty,renderRow:(item,context)=>{
    const row=document.createElement("div");row.className="engagement-row";
    row.innerHTML=`<div class="engagement-copy"><strong>${esc(item.name)}</strong></div><div class="engagement-value"><strong>${fmt.format(item.total)}</strong><small>${esc(item.unit)}</small></div>`;
-   if(item.entity&&!context.preview){const button=document.createElement("button");button.type="button";button.className="statistics-entity-shortcut";button.dataset.statisticsEntity=item.entity.type;button.dataset.entityId=item.entity.id;button.textContent=item.entity.type==="partner"?"Fiche partenaire ↗":item.entity.type==="tracked"?"Fiche du lien ↗":statisticsEntities.get(item.entity.id)?.type==="classic"?"Fiche du lien ↗":"Fiche campagne ↗";button.setAttribute("aria-label",button.textContent+" · "+item.name);row.querySelector(".engagement-copy").append(button)}
-   const visual=item.series||([{label:item.unit,value:item.total,key:id==="top-links"?"public-clicks":undefined,tone:id==="top-links"?"public":id==="tracked-stat-list"||id.startsWith("partner-")?"tracked":"campaigns"}]);
+   if(item.entity&&!context.preview){const button=document.createElement("button");button.type="button";button.className="statistics-entity-shortcut";button.dataset.statisticsEntity=item.entity.type;button.dataset.entityId=item.entity.id;const label=item.entity.type==="partner"?"Fiche partenaire":["tracked","button"].includes(item.entity.type)?"Fiche du lien":statisticsEntities.get(item.entity.id)?.type==="classic"?"Fiche du lien":"Fiche campagne";button.textContent="Fiche ↗";button.setAttribute("aria-label",label+" · "+item.name);button.title=label;row.append(button)}
+   if(item.secondary){const extra=document.createElement("small");extra.className="engagement-secondary";extra.textContent=item.secondary;row.querySelector(".engagement-copy").append(extra)}
+   const visual=item.series||([{label:item.unit,value:item.total,key:id==="top-links"?"public-clicks":undefined,tone:item.tone||(id==="top-links"||id==="daily-public-list"?"public":id==="tracked-stat-list"||id==="daily-tracked-list"||id.startsWith("partner-")?"tracked":"campaigns")}]);
    if(id!=="promo-copy-list")row.append(StudioCharts.ranking(visual,item.series?context.seriesMax:context.max,{comparison:Boolean(item.series)}));
    if(!context.preview&&item.details.length){
-     const details=document.createElement("details"),summary=document.createElement("summary");summary.textContent=item.detailLabel||(item.sourceBreakdown?"Sources de publication":"Indicateurs détaillés");details.append(summary);
+     const details=document.createElement("details"),summary=document.createElement("summary");summary.textContent=item.detailLabel||(item.sourceBreakdown?"Provenance":"Détails");details.append(summary);
      const renderDetails=()=>{
       if(!details.open||details.dataset.loaded)return;
       details.dataset.loaded="true";
@@ -90,12 +92,50 @@ function metricRows(id,items,empty){
    return row;
   }}));
  }
- const options=collectionOptions();analyticCollections.get(id).setRows(options.preview?items.filter(item=>item.total>0||item.series?.some(entry=>entry.value>0)):items,options);
+ const options=collectionOptions();if(id.startsWith("daily-"))options.pageSize=10;analyticCollections.get(id).setRows(options.preview?items.filter(item=>item.total>0||item.series?.some(entry=>entry.value>0)):items,options);
 }
 function drawCampaignRanking(){
  const metric=$("campaign-metric").value,units={clicks:"clics publics",shared:"ouvertures partagées",impressions:"impressions",copies:"copies de codes"};
- metricRows("campaign-details",campaignRows.map(row=>({...row,total:row.metrics[metric]||0,unit:units[metric],series:row.series.map((entry,index)=>({...entry,key:index?"campaign-openings":"campaign-clicks",tone:index?"campaigns":"public"})).filter((entry,index)=>!hiddenCampaignSeries.has(index))})),"Aucune campagne sur cette période.");
+ const rows=campaignRows.map(row=>({...row,total:row.metrics[metric]||0,unit:units[metric],tone:metric==="clicks"?"public":"campaigns",secondary:[metric!=="shared"?fmt.format(row.metrics.shared)+" ouvertures partagées":"",metric!=="clicks"?fmt.format(row.metrics.clicks)+" clics publics":""].filter(Boolean).join(" · ")}));
+ const active=rows.filter(row=>Object.values(row.metrics).some(value=>value>0)),inactive=rows.filter(row=>!Object.values(row.metrics).some(value=>value>0));
+ metricRows("campaign-details",active,"Aucune campagne avec activité pour cette période et cette source.");
+ const details=$("campaign-inactive");details.hidden=!inactive.length;$("campaign-inactive-count").textContent=fmt.format(inactive.length);
+ analyticRows.set("campaign-inactive-list",inactive);
+ if(details.open)metricRows("campaign-inactive-list",inactive,"Aucune campagne sans activité.");
+ else $("campaign-inactive-list").replaceChildren();
 }
+$("campaign-inactive").addEventListener("toggle",()=>{if($("campaign-inactive").open)drawCampaignRanking()});
+function selectDailyDay(day){
+ if(!dailyRange||!/^\d{4}-\d{2}-\d{2}$/.test(day))return;
+ dailyDay=day<dailyRange.start?dailyRange.start:day>dailyRange.end?dailyRange.end:day;
+ drawDailyDetail();StudioCharts.selectDay($("chart"),dailyDay);StudioCharts.selectDay($("public-daily-chart"),dailyDay);
+}
+function moveDailyDay(delta){const date=new Date(dailyDay+"T12:00:00Z");date.setUTCDate(date.getUTCDate()+delta);selectDailyDay(date.toISOString().slice(0,10))}
+function dailyEntity(category,key){
+ if(!key)return null;
+ if(category==="tracked")return {type:"tracked",id:key};
+ if(category==="public"&&key.startsWith("button:"))return {type:"button",id:key.slice(7)};
+ const id=category==="public"&&key.startsWith("block:")?key.slice(6):category==="campaigns"?key:null;
+ return statisticsEntities.has(id)?{type:"content",id}:null;
+}
+function dailyProvenance(sources){
+ const labels=sources.slice(0,2).map(readableSourceName);
+ if(sources.length>2)labels.push("+"+fmt.format(sources.length-2)+" autres sources");
+ return labels.join(" · ");
+}
+function drawDailyDetail(){
+ if(!dailyRange||!$("statistics").classList.contains("active"))return;
+ const input=$("daily-date");input.min=dailyRange.start;input.max=dailyRange.end;input.value=dailyDay;
+ $("daily-previous").disabled=dailyDay<=dailyRange.start;$("daily-next").disabled=dailyDay>=dailyRange.end;
+ $("daily-filter-context").textContent=new Intl.DateTimeFormat("fr-FR",{dateStyle:"full",timeZone:"UTC"}).format(new Date(dailyDay+"T12:00:00Z"))+" · "+($("source").selectedOptions[0]?.textContent||"Toutes les sources");
+ const result=StudioDailyReport.select(dailyIndex,dailyDay,$("source").value,dailySourceName);
+ for(const category of ["public","tracked","campaigns"]){
+  const data=result[category];$("daily-"+category+"-total").textContent=fmt.format(data.total);
+  metricRows("daily-"+category+"-list",data.rows.map(row=>({name:row.name,total:row.total,unit:category==="public"?"clics publics":"ouvertures",tone:category==="public"?"public":category==="tracked"?"tracked":"campaigns",entity:dailyEntity(category,row.key),sourceBreakdown:row.sourceBreakdown,secondary:dailyProvenance(row.sourceBreakdown),details:row.sourceBreakdown.map(source=>source.label)})),category==="public"?"Aucun clic public enregistré ce jour pour cette source.":category==="tracked"?"Aucune ouverture de lien suivi enregistrée ce jour pour cette source.":"Aucune ouverture de campagne partagée enregistrée ce jour pour cette source.");
+ }
+}
+$("daily-date").onchange=()=>{if($("daily-date").validity.valid&&$("daily-date").value)selectDailyDay($("daily-date").value)};
+$("daily-previous").onclick=()=>moveDailyDay(-1);$("daily-next").onclick=()=>moveDailyDay(1);
 function drawSources(){
  const options=collectionOptions(),raw=sourceRows.map(([label,total,key])=>({key,label,total})),total=raw.reduce((sum,source)=>sum+source.total,0),platforms=$("source-level").value==="platforms";
  if(options.preview){$("platform-source-details").hidden=true;StudioCharts.donut($("sources"),sourceRows,{preview:true});return}
@@ -141,22 +181,22 @@ async function loadPartnerRanking(){
   partnerPending=false;renderPartnerReport(report);
  }catch{if(rows!==latestTrackedRows)return;partnerPending=false;partnerUnavailable=true;$("partner-attribution-summary").hidden=true;$("partner-unattributed").hidden=true;note.textContent="Associations partenaires indisponibles. Les ouvertures des liens restent visibles ci-dessus ; aucune attribution ne peut être vérifiée actuellement.";analyticRows.set("partner-stat-list",[]);const error=document.createElement("p");error.className="empty";error.textContent="Classement temporairement indisponible. Actualisez les statistiques pour réessayer.";$("partner-stat-list").replaceChildren(error)}
 }
-$("campaign-series-controls").querySelectorAll("button").forEach((button,index)=>button.addEventListener("click",()=>{hiddenCampaignSeries.has(index)?hiddenCampaignSeries.delete(index):hiddenCampaignSeries.add(index);button.setAttribute("aria-pressed",String(!hiddenCampaignSeries.has(index)));$("campaign-series-empty").hidden=hiddenCampaignSeries.size!==2;drawCampaignRanking()}));
+
 function syncAnalysis(){
  const statistics=$("statistics").classList.contains("active"),scope=analysisScope();if(statistics)queueStatisticsLocation();
- $("analysis-empty").hidden=sourceRows.some(row=>row[1]>0)||[...analyticRows].filter(([id])=>!id.startsWith("partner-")).some(([,rows])=>rows.some(row=>row.total>0||row.series?.some(entry=>entry.value>0)));
+ $("analysis-empty").hidden=sourceRows.some(row=>row[1]>0)||[...analyticRows].filter(([id])=>!id.startsWith("partner-")&&!id.startsWith("daily-")).some(([,rows])=>rows.some(row=>row.total>0||Object.values(row.metrics||{}).some(value=>value>0)));
  $("analysis-history").hidden=false;
  (statistics?$("statistics-chart"):$("dashboard-chart")).append($("traffic-chart"));
  if(!statistics)$("public-daily-chart").replaceChildren();
  if(analysisDays.public){
   const series=statisticsSeries(scope),days=scope==="shared"?analysisDays.sharedSplit:analysisDays[scope];
   chart(statistics?(days||analysisDays.public):analysisDays.public,statistics?series.map(row=>row.label):undefined);
-  if(statistics){StudioCharts.timeSeries($("public-daily-chart"),null,analysisDays.public,statisticsSeries("public"),{mode:"bars",active:()=>$("statistics").classList.contains("active")});loadPartnerRanking()}
+  if(statistics){StudioCharts.timeSeries($("public-daily-chart"),null,analysisDays.public,statisticsSeries("public"),{mode:"bars",active:()=>$("statistics").classList.contains("active"),onSelectDay:selectDailyDay,selectedDay:dailyDay});drawDailyDetail();loadPartnerRanking()}
  }
 
 }
 function filterAnalysis(){
- for(const [id,collection] of analyticCollections){if(id!=="campaign-details"&&!(id.startsWith("partner-")&&(partnerPending||partnerUnavailable))){const options=collectionOptions(),rows=analyticRows.get(id)||[];collection.setRows(options.preview?rows.filter(row=>row.total>0):rows,options)}}
+ for(const [id,collection] of analyticCollections){if(!["campaign-details","campaign-inactive-list"].includes(id)&&!(id.startsWith("partner-")&&(partnerPending||partnerUnavailable))){const options=collectionOptions(),rows=analyticRows.get(id)||[];if(id.startsWith("daily-"))options.pageSize=10;collection.setRows(options.preview?rows.filter(row=>row.total>0):rows,options)}}
  drawCampaignRanking();drawSources();syncAnalysis();
 }
 $("analysis-controls").onsubmit=event=>event.preventDefault();
@@ -179,11 +219,12 @@ function focusStatisticsSection(id){$("statistics").style.setProperty("--statist
 $("statistics").querySelectorAll('.statistics-sections-nav a').forEach(link=>link.addEventListener("click",event=>{event.preventDefault();focusStatisticsSection(link.hash.slice(1))}));
 $("statistics").addEventListener("click",async event=>{
  const button=event.target.closest('[data-statistics-entity]');if(!button)return;
- const {statisticsEntity:type,entityId:id}=button.dataset;button.disabled=true;
+ const {statisticsEntity:type,entityId:id}=button.dataset,origin=button.closest("[id]")?.id;button.disabled=true;
  try{
   if(type==="tracked"||type==="partner")await window.LinksTracking.openEntity(type,id);
+  else if(type==="button"){const lists=await Promise.all([api("/api/buttons"),api("/api/buttons?archived=1")]),item=lists.flatMap(list=>list.items).find(item=>item.id===id);if(!item)throw Error("Cette fiche historique n’est plus disponible.");openButton(item)}
   else{const item=statisticsEntities.get(id);if(!item)throw Error("Cette fiche historique n’est plus disponible.");openBlock(item)}
-  const dialog=document.querySelector('dialog[open]');if(dialog)dialog.addEventListener("close",async()=>{await loadStats();const replacement=[...document.querySelectorAll('[data-statistics-entity]')].find(node=>node.dataset.statisticsEntity===type&&node.dataset.entityId===id);(replacement||$("statistics-tracked-title")).focus({preventScroll:true})},{once:true});
+  const dialog=document.querySelector('dialog[open]');if(dialog)dialog.addEventListener("close",async()=>{await loadStats();const replacement=[...(document.getElementById(origin)||$("statistics")).querySelectorAll('[data-statistics-entity]')].find(node=>node.dataset.statisticsEntity===type&&node.dataset.entityId===id);(replacement||$("statistics-tracked-title")).focus({preventScroll:true})},{once:true});
  }catch(error){say(error.message,true)}finally{button.disabled=false}
 });
 document.addEventListener("click",event=>{const button=event.target.closest("[data-open-statistics]");if(button){
@@ -192,7 +233,7 @@ document.addEventListener("click",event=>{const button=event.target.closest("[da
  focusStatisticsSection(({shared:"statistics-tracked",public:"statistics-public",campaigns:"statistics-campaigns",copies:"statistics-campaigns"})[scope]||"statistics-overview");
 }});
 let chartRenderedWidth=0;
-function chart(days,labels=["Visites","Clics publics"]){const statistics=$("statistics").classList.contains("active"),kind=statistics?"studio:"+analysisScope():"dashboard";$("chart-detail").hidden=statistics;if(state.chart===days&&state.chartKind===kind&&state.chartLabels?.join("|")===labels.join("|")&&chartRenderedWidth===$("chart").clientWidth&&$("chart").children.length)return;state.chart=days;state.chartKind=kind;state.chartLabels=labels;chartRenderedWidth=$("chart").clientWidth;if(statistics)StudioCharts.timeSeries($("chart"),$("chart-detail"),days,statisticsSeries(analysisScope()),{active:()=>$("statistics").classList.contains("active")});else StudioCharts.timeline($("chart"),$("chart-detail"),days,labels)}
+function chart(days,labels=["Visites","Clics publics"]){const statistics=$("statistics").classList.contains("active"),kind=statistics?"studio:"+analysisScope():"dashboard";$("chart-detail").hidden=statistics;if(state.chart===days&&state.chartKind===kind&&state.chartLabels?.join("|")===labels.join("|")&&chartRenderedWidth===$("chart").clientWidth&&$("chart").children.length)return;state.chart=days;state.chartKind=kind;state.chartLabels=labels;chartRenderedWidth=$("chart").clientWidth;if(statistics)StudioCharts.timeSeries($("chart"),$("chart-detail"),days,statisticsSeries(analysisScope()),{active:()=>$("statistics").classList.contains("active"),onSelectDay:selectDailyDay,selectedDay:dailyDay});else StudioCharts.timeline($("chart"),$("chart-detail"),days,labels)}
 
 let statsRequest=0;
 async function loadStats(force=false){if(force===true)reportCache.clear();const request=++statsRequest;let range;
@@ -218,7 +259,7 @@ async function loadStats(force=false){if(force===true)reportCache.clear();const 
  for(let d=new Date(range.start+"T12:00Z");d<=new Date(range.end+"T12:00Z");d.setUTCDate(d.getUTCDate()+1))days.set(d.toISOString().slice(0,10),[0,0]);
  let views=0,clicks=0,storyClicks=0;
  for(const row of rows){labels.set(row.link,row.label||row.link);const pair=days.get(row.day);if(!pair)continue;if(row.kind==="view"){views+=row.total;pair[0]+=row.total;bySource.set(row.source,(bySource.get(row.source)||0)+row.total)}else if(row.kind==="click"){clicks+=row.total;pair[1]+=row.total;byLink.set(row.link,(byLink.get(row.link)||0)+row.total);const sources=linkSources.get(row.link)||new Map();sources.set(row.source,(sources.get(row.source)||0)+row.total);linkSources.set(row.link,sources)}}
- for(const row of trackedRows){addDay(trackedDays,row.day,row.total);addDay(sharedDays,row.day,row.total);storyClicks+=row.total;const key="tracked:"+row.link_id,item=byStory.get(key)||{label:row.label+" · Lien suivi",total:0,sources:new Map()};item.total+=row.total;item.sources.set(row.source,(item.sources.get(row.source)||0)+row.total);byStory.set(key,item);bySource.set(row.source,(bySource.get(row.source)||0)+row.total)}
+ for(const row of trackedRows){addDay(trackedDays,row.day,row.total);addDay(sharedDays,row.day,row.total);storyClicks+=row.total;const key="tracked:"+row.link_id,item=byStory.get(key)||{label:row.label,total:0,sources:new Map()};item.total+=row.total;item.sources.set(row.source,(item.sources.get(row.source)||0)+row.total);byStory.set(key,item);bySource.set(row.source,(bySource.get(row.source)||0)+row.total)}
  for(const row of storyRows){addDay(sharedDays,row.day,row.total);addDay(campaignDays,row.day,row.total);storyClicks+=row.total;const item=byStory.get(row.promotion_id)||{label:row.label,total:0,sources:new Map()};item.total+=row.total;item.sources.set(row.source,(item.sources.get(row.source)||0)+row.total);byStory.set(row.promotion_id,item);bySource.set(row.source,(bySource.get(row.source)||0)+row.total)}
  $("views").textContent=fmt.format(views);$("clicks").textContent=fmt.format(clicks);$("ratio").textContent=views?(clicks*100/views).toLocaleString("fr-FR",{maximumFractionDigits:1})+" %":"—";
  $("story-clicks").textContent=fmt.format(storyClicks);$("story-promos").textContent=fmt.format(byStory.size);
@@ -248,6 +289,7 @@ async function loadStats(force=false){if(force===true)reportCache.clear();const 
    return {name:labels.get(key)||key,total:value,unit:"clics publics",entity:key.startsWith("block:")&&statisticsEntities.has(key.slice(6))?{type:"content",id:key.slice(6)}:null,sourceBreakdown,details:sourceBreakdown.map(({label,total})=>label+" : "+fmt.format(total))};
   }),"Aucun clic public sur cette période.");
  sourceRows=sorted(bySource).map(([key,value])=>[sourceName(key),value,key]);latestTrackedRows=trackedRows;
+ if(dailyReportData!==data){dailyIndex=StudioDailyReport.index(data);dailyReportData=data}dailySourceName=sourceName;dailyRange=range;dailyDay=dailyDay>=range.start&&dailyDay<=range.end?dailyDay:range.end;
  document.querySelectorAll(".statistics-kpis strong").forEach(node=>node.classList.toggle("is-long-number",node.textContent.length>8));
  drawSources();syncAnalysis();renderedData=data;renderedSource=source;
 
@@ -415,7 +457,7 @@ async function loadCampaigns(metrics=new Map(),request=0){try{
  const allCampaigns=new Map([...campaigns,...archived.items].filter(x=>x.type!=="classic").map(x=>[x.id,x]));
  const classicIds=new Set([...campaigns,...archived.items].filter(x=>x.type==="classic").map(x=>x.id));
  for(const [id,value] of metrics){if(!classicIds.has(id)&&!allCampaigns.has(id))allCampaigns.set(id,{id,internal_name:value.name||id,status:"Historique"})}
- campaignRows=[...allCampaigns.values()].map(item=>{const value=metrics.get(item.id)||{};return {id:item.id,name:item.internal_name,entity:statisticsEntities.has(item.id)?{type:"content",id:item.id}:null,metrics:{clicks:value.clicks||0,shared:value.shared||0,impressions:value.impressions||0,copies:value.copies||0},series:[{label:"Clics publics",value:value.clicks||0},{label:"Ouvertures partagées",value:value.shared||0}],details:[item.status,"Impressions : "+fmt.format(value.impressions||0),"Clics publics : "+fmt.format(value.clicks||0),"Ouvertures partagées : "+fmt.format(value.shared||0),"Copies : "+fmt.format(value.copies||0),"CTR page : "+(value.impressions?(value.clicks*100/value.impressions).toLocaleString("fr-FR",{maximumFractionDigits:1})+" %":"—")]}});
+ campaignRows=[...allCampaigns.values()].map(item=>{const value=metrics.get(item.id)||{};return {id:item.id,name:item.internal_name,entity:statisticsEntities.has(item.id)?{type:"content",id:item.id}:null,metrics:{clicks:value.clicks||0,shared:value.shared||0,impressions:value.impressions||0,copies:value.copies||0},details:[item.status,"Impressions : "+fmt.format(value.impressions||0),"Clics publics : "+fmt.format(value.clicks||0),"Ouvertures partagées : "+fmt.format(value.shared||0),"Copies : "+fmt.format(value.copies||0),"CTR page : "+(value.impressions?(value.clicks*100/value.impressions).toLocaleString("fr-FR",{maximumFractionDigits:1})+" %":"—")]}});
  drawCampaignRanking();
  const items=campaigns.filter(item=>item.type!=="classic"&&item.status==="Actif").map(item=>{const value=metrics.get(item.id)||{clicks:0,shared:0,impressions:0,copies:0};return {...item,...value,pageClicks:value.clicks,sharedClicks:value.shared,totalClicks:value.clicks+value.shared,ctr:value.impressions?Math.round(value.clicks*1000/value.impressions)/10:null}});
  $("active-campaigns").innerHTML=items.length?items.map(item=>`<article class="campaign-card">${item.image?`<img src="${esc(LinksTheme.asset(item.image))}" alt="" loading="lazy">`:'<span class="type-mark" aria-hidden="true">↗</span>'}<div><strong>${esc(item.internal_name)}</strong><small>${esc(periodText(item.start_at||item.created_at))} → ${esc(periodText(item.end_at))}</small><span class="status active">Actif</span><div class="campaign-metrics"><span><small>Clics publics</small><b>${fmt.format(item.pageClicks||0)}</b></span><span><small>Ouvertures partagées</small><b>${fmt.format(item.sharedClicks||0)}</b></span></div><button type="button" data-open-statistics="campaigns">Statistiques</button></div><button type="button" data-open-content aria-label="Gérer ${esc(item.internal_name)}">→</button></article>`).join(""):'<p class="empty">Aucune campagne en cours.</p>';
