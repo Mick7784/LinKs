@@ -1,5 +1,33 @@
 # Changelog
 
+## V1.321
+
+### 📅 Détail des clics du jour
+
+- Sélection d’une date directement sur les courbes et histogrammes, au clic, au toucher ou au clavier. Le survol consulte les valeurs sans remplacer le jour choisi.
+- Nouveau panneau intégré aux statistiques avec choix de date et navigation jour précédent/suivant, dans les limites de la période sélectionnée.
+- Trois classements distincts : clics des liens publics, ouvertures des liens suivis indépendants et ouvertures des campagnes partagées. Les visites, impressions et copies de codes ne sont pas présentées comme des clics.
+- Titres, volumes, provenances, plateformes et sources historiques consultables sur place ; accès aux fiches disponibles, y compris les raccourcis publics et les campagnes archivées.
+- Filtres de période/source conservés, messages explicites pour les journées sans activité et pagination des grandes listes de liens et de provenances.
+- Calcul de lecture exclusivement à partir des événements quotidiens du rapport existant. Les clics de campagne déjà présents parmi les liens publics ne sont jamais ajoutés une seconde fois. Aucun suivi individuel ni attribution historique supposée.
+
+### 📊 Graphiques et classements plus sobres
+
+- Anneaux et barres de répartition en couleurs unies, sans hachures, pois ni textures. Couleurs stables, séparations nettes, légendes numérotées, valeurs et pourcentages conservés.
+- Classement compact des campagnes par barres horizontales, avec les ouvertures partagées comme métrique initiale. Clics publics et ouvertures restent distincts ; impressions et copies restent sélectionnables.
+- Campagnes sans activité accessibles dans une section repliable, sans suppression des campagnes actives, archivées ou historiques.
+- Espacement resserré des classements publics et suivis ; titres lisibles, chiffres alignés, provenance et fiches accessibles sans quitter les statistiques.
+- Synchronisation de la date entre les graphiques et le détail quotidien, y compris sur les longues périodes. Navigation clavier fondée sur le jour ayant le focus.
+- Palette générale du back-office conservée ; vérifications à 320, 390, 768 et 1920 px dans les thèmes clair et sombre, au clavier et au toucher.
+
+### 🔒 Conservation et mise à jour depuis V1.320
+
+- Aucun changement d’API, de schéma, d’identifiant, d’association partenaire ou des calculs statistiques existants. Le serveur sert uniquement un nouveau composant JavaScript du back-office.
+- Historiques, liens courts, redirections, sauvegardes, paramètres et intégration PulSe préservés. Page publique inchangée.
+- Image `ghcr.io/mick7784/links:V1.321`, également publiée sous `latest`, pour AMD64 et ARM64.
+- Aucune migration et aucun nouveau paramètre Compose ou `.env`. Si le tag est épinglé sur V1.320, sélectionner `V1.321`.
+- Sauvegarder puis conserver impérativement le volume `/data` existant, son nom, les paramètres et les secrets lors de la mise à jour manuelle. Aucun déploiement sur le VPS n’est effectué par cette publication.
+
 ## V1.320
 
 ### ✨ Provenances regroupées par plateforme
