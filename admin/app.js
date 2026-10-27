@@ -71,7 +71,7 @@ function collectionOptions(){const preview=!$("statistics").classList.contains("
 function metricRows(id,items,empty){
  analyticRows.set(id,items);
  if(!analyticCollections.has(id)){
-  const node=$(id);node.setAttribute("aria-label",node.closest("section").querySelector("h3,h4").textContent);
+  const node=$(id);node.setAttribute("aria-label",node.closest("section,details.panel").querySelector("h3,h4").textContent);
   analyticCollections.set(id,StudioCollection.create(node,{empty,renderRow:(item,context)=>{
    const row=document.createElement("div");row.className="engagement-row";
    row.innerHTML=`<div class="engagement-copy"><strong>${esc(item.name)}</strong></div><div class="engagement-value"><strong>${fmt.format(item.total)}</strong><small>${esc(item.unit)}</small></div>`;
