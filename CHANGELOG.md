@@ -1,5 +1,25 @@
 # Changelog
 
+## V1.322
+
+### Statistiques plus compactes et lisibles
+
+- Six indicateurs compacts, avec des icônes colorées et des libellés complets. Aucun delta de croissance inventé.
+- Courbe initiale présentant séparément les visites, clics publics, ouvertures de liens suivis et ouvertures de campagnes. Bascule de chaque série, valeurs exactes et sélection du jour conservées.
+- Détail quotidien central, avec calendrier, navigation entre jours, filtre de catégorie, provenance et accès aux fiches. Cinq liens par page ; tous les résultats restent accessibles.
+- Classements publics, suivis et campagnes rapprochés sur grand écran, avec cinq résultats par page. Ouvertures partagées en premier pour les campagnes ; clics publics, impressions, copies et archives restent consultables.
+- Histogramme public et provenance des campagnes accessibles dans des volets repliables pour réduire les répétitions à l’ouverture.
+- Logo officiel fourni affiché intégralement dans le back-office, avec son fond d’origine, en clair et sombre. Favicon et identité de la page publique préservées.
+- Mise en page vérifiée à 320, 390, 768, 1024, 1440 et 1920 px, dans les deux thèmes, au clavier et au toucher.
+
+### Conservation et mise à jour depuis V1.321
+
+- Réutilisation des composants, filtres et rapports existants. Aucune modification du schéma, des calculs du serveur, des événements, des identifiants ou des associations historiques.
+- Historiques, liens courts, redirections, sauvegardes, paramètres et compatibilité PulSe préservés. Le serveur ajoute uniquement la ressource du logo officiel.
+- Image `ghcr.io/mick7784/links:V1.322`, également publiée sous `latest`, pour AMD64 et ARM64.
+- Aucune migration ni nouveau paramètre Compose ou `.env`. Pour une installation épinglée, sélectionner le tag `V1.322`.
+- Conserver le volume `/data`, son nom, les configurations et les secrets lors de la mise à jour manuelle. Aucun déploiement sur le VPS n’est effectué par cette publication.
+
 ## V1.321
 
 ### 📅 Détail des clics du jour
