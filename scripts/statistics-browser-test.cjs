@@ -24,7 +24,7 @@ db=sqlite3.connect(sys.argv[1]);day=datetime.now(ZoneInfo('Europe/Paris')).date(
 db.executemany('INSERT INTO counts VALUES(?,?,?,?,?)',[(day,source,'tracked','tracked:'+sys.argv[3]+':10',4),(day,source,'tracked','tracked:'+sys.argv[4]+':10',3)]);db.execute('UPDATE tracked_tokens SET click_total=999');db.commit()`,database,publication.id,linkedToken.token,otherToken.token]);
   browser=await chromium.launch({headless:true,executablePath:process.env.CHROMIUM_PATH,args:['--no-sandbox']});const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[],requests=[];page.on('pageerror',e=>errors.push(e.message));page.on('request',r=>requests.push(new URL(r.url()).pathname));
   await page.goto(origin);await page.locator('#chart svg').waitFor();await page.waitForFunction(()=>document.querySelector('#story-clicks').textContent==='39');
-  const openDetails=async selector=>{if(selector==='#story-list'&&await page.locator('.stories-card:not([open]) > summary').count())await page.locator('.stories-card > summary').click();while(await page.locator(selector+' details:not([open]) > summary').count())await page.locator(selector+' details:not([open]) > summary').first().click()};
+  const openDetails=async selector=>{if(selector==='#story-list'&&await page.locator('.stories-card:not([open]) > summary').count())await page.locator('.stories-card > summary').click();let opened=0;while(await page.locator(selector+' details:not([open]) > summary').count()){if(++opened>100)throw Error('Provenance details did not settle: '+selector);await page.locator(selector+' details:not([open]) > summary').first().click()}};
   const mountDistribution=async target=>target.evaluate(()=>{const root=document.createElement('div');root.id='distribution-probe';root.className='panel';root.style.maxWidth='520px';document.querySelector('#statistics-overview').append(root);StudioCharts.distribution(root,[['YouTube',5,'youtube'],['Instagram',3,'instagram'],['Site',2,'site']])});
   const fmt=new Intl.NumberFormat('fr-FR'),expectedClicks=(503*504)/2+18,requestCount=requests.filter(x=>x==='/api/stats').length;
   await page.locator('[data-open-statistics=all]').click();await page.locator('#statistics #chart svg').waitFor();
@@ -124,7 +124,7 @@ db.executemany('INSERT INTO counts VALUES(?,?,?,?,?)',[(day,source,'tracked','tr
   await page.selectOption('#source-level','platforms');await mountDistribution(page);
   for(const width of [1920,1440,1024,768,390,320]){await page.setViewportSize({width,height:1000});for(const theme of ['light','dark']){
    await page.selectOption('#theme-select',theme);await page.waitForFunction(()=>document.documentElement.scrollWidth<=innerWidth);assert.equal(await page.locator('#statistics .statistics-section:visible').count(),4);
-   await page.evaluate(()=>Promise.all(document.getAnimations().filter(animation=>animation.playState==='running'&&animation.effect?.target?.closest('#statistics')).map(animation=>animation.finished.catch(()=>{}))));
+   await page.evaluate(async()=>{const animations=document.getAnimations().filter(animation=>animation.playState==='running'&&animation.effect?.target?.closest('#statistics'));let timer;try{await Promise.race([Promise.all(animations.map(animation=>animation.finished.catch(()=>{}))),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Statistics animations did not settle')),10000)})])}finally{clearTimeout(timer)}});
    const contrastFailures=await page.evaluate(()=>{
     const parse=s=>s.match(/[\d.]+/g)?.map(Number)||[0,0,0,0],blend=(a,b)=>a.slice(0,3).map((v,i)=>v*(a[3]??1)+b[i]*(1-(a[3]??1))),lum=a=>a.slice(0,3).map(v=>{v/=255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4}).reduce((sum,v,i)=>sum+v*[.2126,.7152,.0722][i],0);
     return [...document.querySelectorAll('#statistics h1,#statistics h2,#statistics .kpi-label,#statistics .series-toggle,#statistics .statistics-sections-nav a,#statistics .time-axis,#statistics .engagement-source-name,#statistics .source-provenance-note,#statistics .engagement-secondary,#statistics .daily-categories h4,#statistics .daily-categories header span')].filter(n=>n.getClientRects().length&&!n.closest('[hidden]')).flatMap(n=>{const chain=[];for(let p=n;p;p=p.parentElement)chain.unshift(p);const bg=chain.reduce((c,p)=>blend(parse(getComputedStyle(p).backgroundColor),c),[255,255,255]),s=getComputedStyle(n),fg=parse(n.classList.contains('time-axis')?s.fill:s.color),a=lum(fg),b=lum(bg),ratio=(Math.max(a,b)+.05)/(Math.min(a,b)+.05);return ratio<4.5?[{text:n.textContent.slice(0,40),ratio}]:[]});
@@ -144,10 +144,10 @@ db.executemany('INSERT INTO counts VALUES(?,?,?,?,?)',[(day,source,'tracked','tr
      const bounds=label.getBoundingClientRect();
      return label.scrollWidth>label.clientWidth||[...label.children].some(child=>{const r=child.getBoundingClientRect();return r.left<bounds.left-1||r.right>bounds.right+1})?[{label:label.textContent,client:label.clientWidth,scroll:label.scrollWidth}]:[];
     }));assert.deepEqual(overflow,[],`KPI title/icon overflow ${context}`);
-    if(width===320)assert(await page.locator('#statistics .statistics-kpis article > strong').evaluateAll(numbers=>numbers.every(n=>n.getBoundingClientRect().height<=parseFloat(getComputedStyle(n).lineHeight)+1)),`KPI numbers remain on one line ${context}`);
+    assert(await page.locator('#statistics .statistics-kpis article > strong').evaluateAll(numbers=>numbers.every(n=>n.getBoundingClientRect().height<=parseFloat(getComputedStyle(n).lineHeight)+1&&n.scrollWidth<=n.clientWidth)),`KPI numbers remain readable on one line ${context}`);
    };
    await checkKpiLabels(`${width} ${theme}`);
-   if(width===320){
+   if(width===320||width===390){
     // Reproduce the wider fallback-font metrics that exposed the Linux overflow.
     const font=await page.evaluate(()=>{const saved=document.documentElement.style.fontFamily;document.documentElement.style.fontFamily='Arial, sans-serif';return saved});
     try{await checkKpiLabels(`${width} ${theme} Arial`);assert(await page.locator('#statistics').evaluate(e=>e.scrollWidth<=e.clientWidth),`statistics overflow ${width} ${theme} Arial`)}
