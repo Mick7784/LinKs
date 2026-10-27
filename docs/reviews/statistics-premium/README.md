@@ -18,6 +18,7 @@ Base : `main` / V1.321 (`7eea062`). Le cahier des charges `04_SPEC_TECHNIQUE_WOR
 - Parcours statistiques : filtres partagés, quatre séries et valeurs exactes, couleurs distinctes, provenance, archives et campagnes à zéro, recherche, tris, pagination, fiches et retour du focus, données absentes, sources longues/inconnues, périodes de 400 jours, sélection quotidienne sans requête supplémentaire.
 - 320, 390, 768, 1024, 1440 et 1920 px, thèmes clair et sombre : aucun débordement de page ni de conteneur statistique ; courbe sans défilement horizontal ; contraste du texte et des graphiques contrôlé. Navigation clavier, toucher et réduction des animations vérifiés.
 - Parcours back-office et éditeurs : thèmes système/clair/sombre, persistance, dialogues, duplication, paramètres et configuration publique inchangée.
+- Parcours calendrier réussi : création, déplacement, redimensionnement, chevauchements et mobile. Le scénario tactile passe désormais au mois suivant lorsque sa date de test le nécessite, comme le faisait déjà le scénario ordinateur ; aucun changement du calendrier applicatif.
 - La CI du dépôt doit également réussir ses parcours complets, son démarrage Docker et ses validations AMD64/ARM64 avant fusion et publication.
 
 ## Captures comparatives
