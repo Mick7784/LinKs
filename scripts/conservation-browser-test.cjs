@@ -46,7 +46,7 @@ const {readFileSync,mkdtempSync,rmSync,mkdirSync}=require('node:fs'),{join,resol
    if(process.env.V1310_SCREENSHOTS&&[1440,390].includes(width)&&theme!=='system'){mkdirSync(process.env.V1310_SCREENSHOTS,{recursive:true});await page.screenshot({path:join(process.env.V1310_SCREENSHOTS,'admin-'+theme+'-'+width+'.png'),fullPage:true})}
   }}
   await page.setViewportSize({width:1440,height:1000});await page.locator('[data-tab=tracked-links]').click();const trackedRow=page.locator(`#tracked-list [data-tracked-id="${tracked.id}"]`);await trackedRow.waitFor();
-  await trackedRow.locator('[data-open-statistics=shared]').click();await page.locator('#statistics.active').waitFor();assert.equal(await page.locator('#analysis-scope').inputValue(),'shared');await page.selectOption('#period','7');await page.locator('#story-list').waitFor();
+  await trackedRow.locator('[data-open-statistics=shared]').click();await page.locator('#statistics.active').waitFor();assert.equal(await page.locator('#analysis-scope').inputValue(),'shared');await page.selectOption('#period','7');await page.locator('.stories-card > summary').click();await page.locator('#story-list').waitFor();
 
   await page.locator('[data-tab=appearance]').click();await page.getByRole('button',{name:'Créer un thème',exact:true}).click();
   // Enum controls must update without referencing the image upload guard.

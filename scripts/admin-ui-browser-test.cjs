@@ -33,7 +33,7 @@ assert.equal(await page.locator('#story-total').textContent(),'42');assert.equal
 await page.locator('#chart .chart-bucket').last().hover();assert(await page.locator('#chart .chart-tooltip').isVisible());assert.match(await page.locator('#chart .chart-tooltip').textContent(),/Visites.*Clics/);
 assert.equal(await page.locator('#sources .source-detail').count(),0);assert.equal(await page.locator('#sources svg').getAttribute('role'),'group');
 assert.equal(await page.locator('#chart .time-line').count(),2);assert.equal(await page.locator('#chart .time-line.is-dashed').count(),1);
-assert.equal(await page.locator('#chart .time-grid').count(),5);assert.equal(await page.locator('#public-daily-chart .daily-bar').count(),28);await page.evaluate(()=>{document.activeElement.blur();scrollTo(0,0)});
+await page.locator('.statistics-daily-panel > summary').click();await page.locator('#public-daily-chart .daily-bar').first().waitFor();assert.equal(await page.locator('#chart .time-grid').count(),5);assert.equal(await page.locator('#public-daily-chart .daily-bar').count(),28);await page.evaluate(()=>{document.activeElement.blur();scrollTo(0,0)});
 const publicBefore=await fetch('http://127.0.0.1:3003/api/public-config').then(r=>r.json());
 const overflow=async()=>assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'horizontal overflow');
 const nav=async id=>{if(await page.locator('#menu-toggle').isVisible())await page.locator('#menu-toggle').click();await page.locator(`[data-tab="${id}"]`).click();await page.locator(`#${id}.active`).waitFor()};

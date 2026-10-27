@@ -1149,7 +1149,7 @@ class Handler(BaseHTTPRequestHandler):
             ready=instance.get(db,'app.setup_completed')=='true';mode=instance.get(db,'auth.mode','local');session=instance.session(db,self.headers)
         if path=='/api/auth/status':
             self.json(200,{'setup_completed':ready,'mode':mode,'authenticated':ready and (mode=='external' or bool(session)),'csrf':session['csrf'] if session else ''});return True
-        if path in {'/brand.svg','/brand-light.svg','/mark.svg'}:return False
+        if path in {'/brand.svg','/brand-light.svg','/mark.svg','/brand-official.png'}:return False
         if path in {'/access.js','/access.css'}:
             self.file(ADMIN/path[1:]);return True
         if path in {'/setup','/login'}:
@@ -1270,6 +1270,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.pulse_bridge_get()
         if self.server.admin and self.auth_get():return
         url=urlsplit(self.path)
+        if self.server.admin and url.path == "/brand-official.png":return self.file(ADMIN/"brand-official.png","image/png")
         if self.server.admin and url.path in {"/brand.svg","/brand-light.svg","/mark.svg"}:return self.file(ADMIN/url.path[1:],"image/svg+xml")
         if url.path.startswith('/go/'):
             token=url.path.removeprefix('/go/')
