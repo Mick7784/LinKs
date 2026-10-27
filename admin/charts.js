@@ -48,7 +48,7 @@ function plotModel(days,series,hidden=new Set()){
  return {visible,values,peak,step,max:step*4};
 }
 const dayLabel=(day,long=false)=>new Intl.DateTimeFormat('fr-FR',{day:'numeric',month:long?'long':'short',...(long?{year:'numeric'}:{}),timeZone:'UTC'}).format(new Date(day+'T12:00:00Z'));
-function timeSeries(root,detail,days,series,{mode='line',active=()=>true,onSelectDay,selectedDay}={}){
+function timeSeries(root,detail,days,series,{mode='line',active=()=>true,onSelectDay,selectedDay,navigation:showNavigation=true}={}){
  // The main root is shared with timeline(). Replacing children does not detach
  // its delegated handlers, which close over a different report and date range.
  root.onclick=root.onpointerover=root.onkeydown=root.onpointerleave=null;
@@ -62,7 +62,7 @@ function timeSeries(root,detail,days,series,{mode='line',active=()=>true,onSelec
   state.width=root.clientWidth;
   const model=plotModel(state.days,state.series,state.hidden),{visible,values,peak,step,max}=model;
   const outerWidth=Math.max(200,root.clientWidth),width=mode==='bars'?Math.max(outerWidth,days.length*Math.max(26,visible.length*12)+76):outerWidth;
-  const height=outerWidth<500?235:300,left=62,right=width-18,top=24,bottom=top+height,slot=(right-left)/Math.max(1,days.length),x=i=>left+slot*(i+.5),y=value=>bottom-value/max*height;
+  const height=outerWidth<500?200:230,left=62,right=width-18,top=24,bottom=top+height,slot=(right-left)/Math.max(1,days.length),x=i=>left+slot*(i+.5),y=value=>bottom-value/max*height;
   root.classList.add('statistics-time-chart');root.dataset.chartMode=mode;
   root.replaceChildren();
   const legend=document.createElement('div');legend.className='time-legend';legend.setAttribute('role','group');legend.setAttribute('aria-label','Séries du graphique');
@@ -94,7 +94,7 @@ function timeSeries(root,detail,days,series,{mode='line',active=()=>true,onSelec
   const tooltip=document.createElement('div');tooltip.className='chart-tooltip time-tooltip';tooltip.hidden=true;tooltip.setAttribute('role','tooltip');root.append(tooltip);
   const inspector=document.createElement('div');inspector.className='time-inspector';inspector.setAttribute('role','status');inspector.setAttribute('aria-live','polite');const reading=document.createElement('div');reading.className='time-reading';reading.append(inspector);root.append(reading);
   const navigation=document.createElement('div');navigation.className='time-navigation';
-  const previous=document.createElement('button'),next=document.createElement('button'),slider=document.createElement('input');previous.type=next.type='button';previous.textContent='←';next.textContent='→';previous.setAttribute('aria-label','Jour précédent');next.setAttribute('aria-label','Jour suivant');slider.type='range';slider.min='0';slider.max=String(Math.max(0,days.length-1));slider.step='1';slider.setAttribute('aria-label','Jour à examiner');navigation.append(previous,slider,next);reading.append(navigation);
+  const previous=document.createElement('button'),next=document.createElement('button'),slider=document.createElement('input');previous.type=next.type='button';previous.textContent='←';next.textContent='→';previous.setAttribute('aria-label','Jour précédent');next.setAttribute('aria-label','Jour suivant');slider.type='range';slider.min='0';slider.max=String(Math.max(0,days.length-1));slider.step='1';slider.setAttribute('aria-label','Jour à examiner');navigation.append(previous,slider,next);if(showNavigation)reading.append(navigation);
   const show=(index,{pointer=false,focus=false,commit=false}={})=>{
    if(!days.length)return;index=Math.max(0,Math.min(days.length-1,index));state.selected=days[index][0];slider.value=String(index);slider.setAttribute('aria-valuetext',dayLabel(days[index][0],true));previous.disabled=index===0;next.disabled=index===days.length-1;
    const title=dayLabel(days[index][0],true),numbers=visible.map((s,j)=>({s,text:s.label+' : '+(values[index][j]===null?'Non disponible':fmt.format(values[index][j]))}));
