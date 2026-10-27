@@ -1,5 +1,20 @@
 # Changelog
 
+## V1.323
+
+### Fidélité graphique des statistiques
+
+- Icônes des six indicateurs agrandies sur des fonds légèrement teintés ; chiffres et libellés mieux hiérarchisés, avec adaptation aux écrans étroits.
+- Accents cyan pour la page publique, bleus pour les clics et les sources, violets pour les liens suivis et roses pour les campagnes. Séries, légendes, anneau et barres restent distincts et lisibles dans les deux thèmes.
+- Relief discret des cartes, bordures plus douces et pictogrammes de panneaux cohérents avec la maquette validée. Le logo officiel existant est conservé.
+- Mise en page, filtres et fonctionnalités statistiques préservés. Aucune modification des données, API, historiques, redirections ou de PulSe.
+
+### Mise à jour depuis V1.322
+
+- Image `ghcr.io/mick7784/links:V1.323`, également publiée sous `latest`, pour AMD64 et ARM64.
+- Aucune migration ni modification des paramètres Compose ou `.env`. Pour une installation épinglée, sélectionner le tag `V1.323`.
+- Conserver le volume `/data`, les configurations et les historiques. Aucun déploiement sur le VPS n’est effectué par cette publication.
+
 ## V1.322
 
 ### Statistiques plus compactes et lisibles
