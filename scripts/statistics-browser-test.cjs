@@ -147,7 +147,7 @@ db.executemany('INSERT INTO counts VALUES(?,?,?,?,?)',[(day,source,'tracked','tr
     assert(await page.locator('#statistics .statistics-kpis article > strong').evaluateAll(numbers=>numbers.every(n=>n.getBoundingClientRect().height<=parseFloat(getComputedStyle(n).lineHeight)+1&&n.scrollWidth<=n.clientWidth)),`KPI numbers remain readable on one line ${context}`);
    };
    await checkKpiLabels(`${width} ${theme}`);
-   if(width===320){
+   if(width===320||width===390){
     // Reproduce the wider fallback-font metrics that exposed the Linux overflow.
     const font=await page.evaluate(()=>{const saved=document.documentElement.style.fontFamily;document.documentElement.style.fontFamily='Arial, sans-serif';return saved});
     try{await checkKpiLabels(`${width} ${theme} Arial`);assert(await page.locator('#statistics').evaluate(e=>e.scrollWidth<=e.clientWidth),`statistics overflow ${width} ${theme} Arial`)}

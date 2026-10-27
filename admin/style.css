@@ -3030,7 +3030,7 @@ body:has(#statistics.active) main { padding: 20px 24px 32px; }
   #statistics .statistics-kpis .kpi-label { min-height: 42px; gap: 9px; }
   #statistics .statistics-kpis .kpi-label [data-icon] { width: 40px; height: 40px; }
   #statistics .statistics-kpis .kpi-label svg { width: 23px; height: 23px; }
-  #statistics .statistics-kpis article > strong { margin-left: 49px; font-size: 27px; }
+  #statistics .statistics-kpis article > strong { margin-left: 0; font-size: 27px; }
   #statistics .statistics-kpis article > strong.is-long-number { font-size: 19px; }
-  #statistics .statistics-kpis article > small { margin-left: 49px; }
+  #statistics .statistics-kpis article > small { margin-left: 0; }
 }
