@@ -53,6 +53,7 @@ LinKs est une page de liens auto-hébergée, personnalisable et accompagnée d�
 L’administration possède sa propre identité LinKs ; votre page publique conserve votre identité.
 
 - Navigation latérale sur ordinateur et menu compact sur mobile.
+- Pages **Campagnes** (gestion, planning, aperçu de sélection) et **Liens permanents** (liens classiques et classement). **Page publique** conserve les réglages de sections et de vidéo pendant la transition ; **Liens suivis** reste indépendant. Les archives communes conservent les historiques et les redirections.
 - Thèmes clair, sombre et système, avec préférence conservée.
 - Dashboard avec visites, clics, CTR, Stories, copies promo et campagnes en cours.
 - Cartes Stories et copies promo harmonisées : totaux en en-tête, métriques alignées et détails secondaires.
