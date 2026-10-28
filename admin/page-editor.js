@@ -95,7 +95,7 @@ window.LinksPageEditor=(()=>{
    frame.contentWindow.addEventListener('links:rendered',()=>{
     if(request!==generation)return;
     decorate(doc);bind(doc);busy=false;update();
-    const video=doc.getElementById('latest-video');observer=new MutationObserver(()=>{if(video.querySelector('.video-card')){video.hidden=false;video.classList.remove('layout-empty');video.querySelector('.layout-empty-note')?.remove()}});observer.observe(video,{childList:true});
+    const video=doc.getElementById('latest-video');observer=new MutationObserver(()=>{if(video.hidden)video.hidden=false;if(video.querySelector('.video-card')){video.classList.remove('layout-empty');video.querySelector('.layout-empty-note')?.remove()}});observer.observe(video,{childList:true,attributes:true,attributeFilter:['hidden']});
     resize=new ResizeObserver(()=>{frame.style.height=Math.ceil(doc.querySelector('main').getBoundingClientRect().height+4)+'px'});resize.observe(doc.querySelector('main'));
    },{once:true});
    const script=doc.createElement('script');script.src='/preview/app.js';doc.body.append(script);
