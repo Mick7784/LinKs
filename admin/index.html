@@ -12,6 +12,8 @@
  <button data-tab="dashboard" class="active"><span class="nav-icon" data-icon="dashboard" aria-hidden="true"></span><span>Tableau de bord</span></button>
  <button data-tab="statistics"><span class="nav-icon" data-icon="chart" aria-hidden="true"></span><span>Statistiques</span></button>
  <button data-tab="content"><span class="nav-icon" data-icon="globe" aria-hidden="true"></span><span>Page publique</span></button>
+ <button data-tab="campaigns"><span class="nav-icon" data-icon="story" aria-hidden="true"></span><span>Campagnes</span></button>
+ <button data-tab="permanent-links"><span class="nav-icon" data-icon="external" aria-hidden="true"></span><span>Liens permanents</span></button>
  <button data-tab="tracked-links"><span class="nav-icon" data-icon="links" aria-hidden="true"></span><span>Liens suivis</span></button>
  <button data-tab="buttons"><span class="nav-icon" data-icon="buttons" aria-hidden="true"></span><span>Réseaux &amp; raccourcis</span></button>
  <button data-tab="appearance"><span class="nav-icon" data-icon="settings" aria-hidden="true"></span><span>Apparence</span></button>
@@ -134,10 +136,18 @@
  </div>
 </section>
 <section class="view" id="content">
- <div class="section-head"><div><h2>Page publique</h2><p>Organisez les sections dans l’administration et les éléments de chacune. Cet ordre ne change pas celui des sections publiques.</p></div><div class="profile-image-actions"><button class="primary" data-action="new-block">Ajouter un lien</button><button data-action="new-campaign">Créer une campagne</button></div></div>
+ <div class="section-head"><div><h2>Page publique</h2><p>Organisez les sections dans l’administration et réglez la visibilité de la vidéo. Cet ordre ne change pas celui des sections publiques.</p></div></div>
+ <div id="content-list" class="sortable-list"></div>
+</section>
+<section class="view" id="permanent-links">
+ <div class="section-head"><div><h2>Liens permanents</h2><p>Gérez vos liens classiques et leur classement sur la page publique.</p></div><div class="profile-image-actions"><button class="primary" data-action="new-block">Ajouter un lien</button><button type="button" data-open-view="archives">Archives</button></div></div>
+ <section class="content-section" aria-labelledby="permanent-links-title"><header class="content-section-header"><h3 id="permanent-links-title">Bibliothèque des liens permanents</h3></header><div id="permanent-links-list" class="sortable-list section-items"></div></section>
+</section>
+<section class="view" id="campaigns">
+ <div class="section-head"><div><h2>Campagnes</h2><p>Gérez vos campagnes, leur programmation et leurs priorités d’affichage.</p></div><div class="profile-image-actions"><button class="primary" data-action="new-campaign">Créer une campagne</button><button type="button" data-open-view="archives">Archives</button></div></div>
  <section class="panel planning-panel"><div class="panel-title"><h3>Planning des promotions</h3><div class="timeline-controls"><button type="button" id="agenda-month" aria-pressed="true">Mois</button><button type="button" id="agenda-week" aria-pressed="false">Semaine</button><button type="button" id="agenda-today">Aujourd’hui</button><button type="button" id="timeline-prev" aria-label="Période précédente">←</button><strong id="timeline-month"></strong><button type="button" id="timeline-next" aria-label="Période suivante">→</button><button type="button" data-open-content>Gérer</button></div></div><div id="promo-planning"></div></section>
  <section class="panel campaign-preview-panel" aria-labelledby="campaign-preview-title"><div class="panel-title"><div><h3 id="campaign-preview-title">Aperçu de la sélection</h3><p class="panel-helper">Choisissez un instant pour voir les campagnes affichées et en attente.</p></div></div><form id="campaign-preview-form" class="campaign-preview-controls"><label>Date<input id="campaign-preview-date" type="date" required></label><label>Heure<input id="campaign-preview-time" type="time" step="60" required></label><button type="submit">Voir la sélection</button><small id="campaign-preview-zone"></small></form><div id="campaign-preview-result" role="status" aria-live="polite"></div></section>
- <div id="content-list" class="sortable-list"></div>
+ <section class="content-section" aria-labelledby="campaigns-list-title"><header class="content-section-header"><h3 id="campaigns-list-title">Campagnes et priorités</h3></header><div id="campaigns-list" class="sortable-list section-items"></div></section>
 
 </section>
 <section class="view" id="tracked-links">
