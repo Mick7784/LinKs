@@ -331,12 +331,32 @@ def content_list(archived=False):
         now=datetime.now(timezone.utc)
         rows=list(db.execute("SELECT * FROM content_blocks ORDER BY CASE WHEN type IN ('promo','featured') THEN 0 ELSE 1 END,position,created_at,id"))
         states={item['id']:item for item in select_campaigns(rows,now)['items']}
+        rows=sorted((r for r in rows if r['type'] in CAMPAIGN_TYPES),key=campaign_order)+[r for r in rows if r['type'] not in CAMPAIGN_TYPES]
         clicks=totals(db);timed=json.loads(instance.get(db,"admin.calendar_timed") or "[]")
         return [{**serialize(r,clicks,now),**states.get(r['id'],{}),"calendar_timed":r['id'] in timed} for r in rows if bool(r['archived'])==archived]
 
 
 CAMPAIGN_TYPES={'promo','featured'}
 CAMPAIGN_LIMIT=3
+CAMPAIGN_FALLBACK='/assets/link-shopping.webp'
+
+def campaign_image_value(value):
+    if not isinstance(value,str) or (value and not re.fullmatch(r'/uploads/[a-f0-9-]{36}\.(png|jpg|webp)',value)):
+        raise ValueError('Importer un visuel PNG, JPEG ou WebP de cette installation')
+    return value
+
+def campaign_image_settings(db):
+    value=instance.get(db,'appearance.campaign_image','')
+    return {'image':value,'fallback':CAMPAIGN_FALLBACK,'resolved_image':value or CAMPAIGN_FALLBACK}
+
+def save_campaign_image(data):
+    value=campaign_image_value(data.get('image',''))
+    with connection() as db:
+        db.execute('BEGIN IMMEDIATE')
+        storage.require_file(UPLOADS,value,db)
+        if value:user_images.validate((UPLOADS/value[9:]).read_bytes(),Path(value).suffix)
+        instance.put(db,'appearance.campaign_image',value)
+        return campaign_image_settings(db)
 
 def campaign_duration(row):
     # Preserve open historical intervals and visual types, especially featured.
@@ -360,7 +380,7 @@ def select_campaigns(rows,at=None):
         if is_eligible:
             eligible.append(row['id'])
             state='visible' if len(eligible)<=CAMPAIGN_LIMIT else 'waiting'
-        items.append({'id':row['id'],'duration_type':campaign_duration(row),'selection_state':state,
+        items.append({'id':row['id'],'title':row['title'],'duration_type':campaign_duration(row),'selection_state':state,
                       'eligible':is_eligible,'visible':state=='visible'})
     return {'at':at.isoformat().replace('+00:00','Z'),'limit':CAMPAIGN_LIMIT,'items':items,
             'eligible_ids':eligible,'visible_ids':eligible[:CAMPAIGN_LIMIT],'waiting_ids':eligible[CAMPAIGN_LIMIT:]}
@@ -460,6 +480,7 @@ def public_config(snapshot=False):
         now=datetime.now(timezone.utc)
         rows=list(db.execute("SELECT * FROM content_blocks WHERE retired=0 AND archived=0 ORDER BY CASE WHEN type IN ('promo','featured') THEN 0 ELSE 1 END,CASE WHEN priority='high' THEN 0 ELSE 1 END,position,created_at,id"))
         selection=select_campaigns(rows,now)
+        default_image=campaign_image_settings(db)['resolved_image']
         # Keep all eligible campaigns in links for existing PulSe consumers.
         # Only visible_campaign_ids is capped. Snapshot order also supports the
         # existing date-filtered static fallback through future slot changes.
@@ -474,6 +495,9 @@ def public_config(snapshot=False):
         boundaries=[stamp for row in db.execute("SELECT start_at,end_at FROM content_blocks WHERE retired=0 AND archived=0 AND active=1 AND draft=0 AND type IN ('promo','featured')") for key in ("start_at","end_at") if (stamp:=instant(row[key])) and stamp>now]
         result["next_campaign_change"]=min(boundaries).isoformat().replace("+00:00","Z") if boundaries else None
         if not snapshot:result['visible_campaign_ids']=selection['visible_ids']
+        result['campaign_default_image']=default_image
+        for item in result['links']:
+            if item['type'] in CAMPAIGN_TYPES:item['effective_image']=item['image'] or default_image
         result["appearance"]=themes.public(db)
         result["profile"]["footer_quote"]=quote["text"] if quote else ""
     if result["profile"]["video_enabled"]:result["latestVideo"]={"enabled":True}
@@ -544,6 +568,7 @@ def supported_image(value):
 
 def block_data(data,allow_legacy_image=False):
     kind=data.get("type","classic")
+    if kind in CAMPAIGN_TYPES and not data.get('internal_name'):data={**data,'internal_name':data.get('title','')}
     if "calendar_timed" in data and not isinstance(data["calendar_timed"],bool):raise ValueError("Mode horaire invalide")
     if kind not in TYPES:raise ValueError("Type invalide")
     url=required(data,"url",2000)
@@ -553,7 +578,9 @@ def block_data(data,allow_legacy_image=False):
     if badge not in BADGES:raise ValueError("Badge invalide")
     if priority not in {"normal","high"}:raise ValueError("Priorité invalide")
     if image.startswith("system:") and image[7:] not in themes.BACKGROUNDS:raise ValueError("Fond système inconnu")
-    if image and not supported_image(image) and not (allow_legacy_image and valid_url(image)):raise ValueError("Image non prise en charge : importer une image locale ou choisir un fond LinKs")
+    remote=urlsplit(image) if image else None
+    campaign_remote=kind in CAMPAIGN_TYPES and remote and remote.scheme=='https' and remote.hostname and not remote.username and not remote.password and not any(ord(c)<=32 or c=='\\' for c in image)
+    if image and not supported_image(image) and not campaign_remote and not (allow_legacy_image and valid_url(image)):raise ValueError("Image non prise en charge : importer une image locale ou choisir une URL HTTPS pour une campagne")
     start,end=instant(data.get("start_at"),strict=not allow_legacy_image),instant(data.get("end_at"),strict=not allow_legacy_image)
     if start and end and end<=start:raise ValueError("La fin doit suivre le début")
     return {**({"calendar_timed":data["calendar_timed"]} if "calendar_timed" in data else {}),"type":kind,"internal_name":required(data,"internal_name"),"title":required(data,"title"),"description":optional(data,"description"),"url":url,"icon":icon,"image":image,"badge":badge,"cta":optional(data,"cta",80),**({"promo_code":optional(data,"promo_code",80)} if "promo_code" in data else {}),"priority":priority,"active":1 if data.get("active",True) else 0,"draft":1 if data.get("draft",False) else 0,"start_at":start.isoformat().replace("+00:00","Z") if start else None,"end_at":end.isoformat().replace("+00:00","Z") if end else None}
@@ -665,7 +692,7 @@ def export_backup():
         tables={table:[dict(row) for row in db.execute('SELECT * FROM '+table)] for table in BACKUP_TABLES}
         references={r['image'] for r in tables['content_blocks']}
         references.update(r['custom_icon'] for r in tables['top_buttons'])
-        references.update(r['value'] for r in tables['settings'] if r['key'] in {'profile.avatar','profile.logo'})
+        references.update(r['value'] for r in tables['settings'] if r['key'] in {'profile.avatar','profile.logo','appearance.campaign_image'})
         references.update(themes.references(themes.state(db)['items'][1:]))
         images={};size=0
         for ref in references:
@@ -951,7 +978,9 @@ def restore_backup(data,preview=False):
                     if row['custom_icon'] not in mapping:raise ValueError('Icône personnelle manquante')
                     row['custom_icon']=mapping[row['custom_icon']]
             for row in tables['settings']:
-                if row['key'] in {'profile.avatar','profile.logo'} and row['value'].startswith('/uploads/'):
+                if row['key'] in {'profile.avatar','profile.logo','appearance.campaign_image'} and row['value'].startswith('/uploads/'):
+                    if row['key']=='appearance.campaign_image' and row['key'] not in setting_keys:
+                        storage.require_file(UPLOADS,row['value'],db);continue
                     if row['value'] not in mapping:raise ValueError('Image de profil manquante')
                     row['value']=mapping[row['value']]
             for theme in theme_rows:
@@ -961,7 +990,7 @@ def restore_backup(data,preview=False):
                         theme['tokens'][key]=mapping[ref]
             for row in tables['settings']:
                 if row['key']=='appearance.themes':row['value']=json.dumps(theme_rows)
-            refs=[r['image'] for r in tables['content_blocks']]+[r['value'] for r in tables['settings'] if r['key'] in {'profile.logo','profile.avatar'}]
+            refs=[r['image'] for r in tables['content_blocks']]+[r['value'] for r in tables['settings'] if r['key'] in {'profile.logo','profile.avatar','appearance.campaign_image'}]
             for ref in refs:
                 if ref.startswith('/assets/') and not (STATIC/ref[1:]).is_file() and not (DATA_DIR/ref[1:]).is_file() and ref[8:] not in asset_bytes:raise ValueError('Asset référencé manquant')
             summary={'blocks':len(tables['content_blocks']),'buttons':len(tables['top_buttons']),'images':len(images),
@@ -1015,6 +1044,7 @@ def validate_settings(values):
         if not isinstance(order,list) or len(order)!=3 or any(not isinstance(x,str) for x in order) or set(order)!={'classic','video','highlight'}:raise ValueError('Ordre des sections invalide')
     if 'site.url' in values:values['site.url']=instance.site_url(values['site.url'],allow_empty=True)
     if 'app.timezone' in values:instance.timezone_name(values['app.timezone'])
+    if 'appearance.campaign_image' in values:campaign_image_value(values['appearance.campaign_image'])
     if 'analytics.source_rules' in values:instance.source_rules(values['analytics.source_rules'])
     for key in ['analytics.enabled','video.enabled','app.setup_completed']:
         if key in values and values[key] not in {'true','false'}:raise ValueError('Valeur booléenne invalide')
@@ -1379,7 +1409,7 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError:size=0
             if 0<size<=BACKUP_LIMIT:self.rfile.read(size)
             self.body_read=True
-        self.send_response(status);self.send_header("Content-Type",mime);self.send_header("Content-Length",str(len(body)));self.send_header("Cache-Control","no-store");self.send_header("X-Content-Type-Options","nosniff");self.send_header("Content-Security-Policy","default-src 'self';script-src 'self';style-src 'self';img-src 'self' data: https://i.ytimg.com;object-src 'none';frame-ancestors 'none';base-uri 'none'");self.end_headers();self.wfile.write(body)
+        self.send_response(status);self.send_header("Content-Type",mime);self.send_header("Content-Length",str(len(body)));self.send_header("Cache-Control","no-store");self.send_header("X-Content-Type-Options","nosniff");self.send_header("Content-Security-Policy","default-src 'self';script-src 'self';style-src 'self';img-src 'self' data: https:;object-src 'none';frame-ancestors 'none';base-uri 'none'");self.end_headers();self.wfile.write(body)
     def json(self,status,data):self.send(status,json.dumps(data,ensure_ascii=False).encode())
     def body(self,limit=8*1024*1024):
         size=int(self.headers.get("Content-Length","0"))
@@ -1428,6 +1458,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if url.path=="/api/appearance":
                 with connection() as db:return self.json(200,themes.state(db))
+            if url.path=='/api/appearance/campaign-image':
+                with connection() as db:return self.json(200,campaign_image_settings(db))
             if url.path=="/api/appearance/export":
                 with connection() as db:
                     target=parse_qs(url.query).get("id",[themes.ORIGINAL])[0]
@@ -1494,6 +1526,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             data=self.body(BACKUP_LIMIT if path in {'/api/restore','/api/restore/preview'} else themes.MAX_BYTES if path=="/api/appearance/import" else 8*1024*1024)
             if path=="/api/appearance/css":return self.json(200,themes.css_import(data.get("css")))
+            if path=='/api/appearance/campaign-image':return self.json(200,save_campaign_image(data))
             if path=="/api/appearance/css-export":return self.json(200,{'css':themes.css_export(themes.record(data.get('theme')))})
             if path=="/api/appearance":
                 with connection() as db:result=themes.save(db,data,UPLOADS)
@@ -1677,10 +1710,12 @@ class Handler(BaseHTTPRequestHandler):
             item_id=save_content(db,item)
         return self.json(201,{"id":item_id})
     def update_content(self,item_id,data):
-        item=block_data(data)
         with connection() as db:
             db.execute("BEGIN IMMEDIATE")
-            if not db.execute("SELECT 1 FROM content_blocks WHERE id=?",(item_id,)).fetchone():return self.send(404)
+            old=db.execute("SELECT image,type,internal_name FROM content_blocks WHERE id=?",(item_id,)).fetchone()
+            if not old:return self.send(404)
+            data={'type':old['type'],'internal_name':old['internal_name'],**data}
+            item=block_data(data,allow_legacy_image=bool(old['image'] and old['image']==data.get('image')))
             save_content(db,item,item_id)
         return self.send(204)
     def replace_promotion(self,data):
@@ -1732,6 +1767,8 @@ class Handler(BaseHTTPRequestHandler):
             changed=db.execute("UPDATE top_buttons SET icon=?,label=?,url=?,active=?,updated_at=?,custom_icon=? WHERE id=?",(item["icon"],item["label"],item["url"],item["active"],now_iso(),item["custom_icon"],item_id)).rowcount
         return self.send(204) if changed else self.send(404)
     def upload(self,data):
+        if data.get('purpose')=='campaign-default' and data.get('type') not in {'image/png','image/jpeg','image/webp'}:
+            raise ValueError('PNG, JPEG ou WebP uniquement pour le visuel par défaut')
         mime=data.get("type","");encoded=data.get("data","")
         if mime not in IMAGE_TYPES or not isinstance(encoded,str):raise ValueError("Format d’image non pris en charge")
         raw=base64.b64decode(encoded.split(",",1)[-1],validate=True)

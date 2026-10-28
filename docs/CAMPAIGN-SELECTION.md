@@ -2,6 +2,8 @@
 
 Base : `main`, V1.324. Cette étape conserve la version de production et l’affiliation. Le formulaire garde sa structure ; seul le message de disponibilité indique désormais que les chevauchements sont autorisés. Le [cycle de vie automatique de l’étape 2](CAMPAIGN-LIFECYCLE.md) complète désormais les règles d’archivage et de suppression.
 
+La [gestion visuelle de l’étape 3](CAMPAIGN-MANAGEMENT.md) adapte ensuite le formulaire, le visuel par défaut et le planning à ce moteur.
+
 ## Données et ordre
 
 Les campagnes restent dans `content_blocks`, avec leurs identifiants, URL, statistiques et liens suivis. `promo` et `featured` restent des types visuels historiques acceptés ; ils participent tous les deux au même moteur. Aucune conversion de type, réécriture de dates, suppression de données ou migration de schéma n’est nécessaire.

@@ -66,6 +66,7 @@ def references(db):
     values = {row['key']: row['value'] for row in db.execute('SELECT key,value FROM settings')}
     for key, label in [('profile.logo', 'Logo'), ('profile.avatar', 'Avatar')]:
         add(values.get(key), label, 'profile')
+    add(values.get('appearance.campaign_image'), 'Visuel par défaut des campagnes', 'campaigns')
     for theme in json.loads(values.get('appearance.themes', '[]')):
         for value in theme.get('tokens', {}).values():
             add(value, 'Thème : ' + theme['name'], 'themes')
@@ -78,7 +79,7 @@ def references(db):
             for child in value:walk(child, label)
         elif file_key(value):add(value, label, 'other')
     for key, value in values.items():
-        if key in {'profile.logo','profile.avatar','appearance.themes'}:continue
+        if key in {'profile.logo','profile.avatar','appearance.themes','appearance.campaign_image'}:continue
         try:walk(json.loads(value), key)
         except (ValueError, TypeError):walk(value, key)
     return refs
