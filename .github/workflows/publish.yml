@@ -46,8 +46,12 @@ jobs:
           python3 scripts/storage_test.py
           python3 scripts/images_test.py
           python3 scripts/analytics_test.py
+          python3 scripts/campaign_selection_test.py
+          python3 scripts/campaign_lifecycle_test.py
+          python3 scripts/campaign_visual_test.py
           python3 scripts/pulse_bridge_test.py
           python3 scripts/affiliate_partners_test.py
+          python3 scripts/campaign_affiliation_test.py
           python3 scripts/tracked_duplicates_test.py
           python3 scripts/platform_sources_test.py
           python3 scripts/conservation_test.py
@@ -65,9 +69,11 @@ jobs:
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/tracked-library-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/affiliate-partners-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/affiliate-detection-browser-test.cjs
+          NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/campaign-affiliation-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/tracked-duplicates-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/platform-sources-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/calendar-browser-test.cjs
+          NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/campaign-management-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/settings-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/targeted-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/public-browser-test.cjs

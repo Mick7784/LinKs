@@ -59,8 +59,8 @@ const { join, resolve } = require('node:path');
   await page.setViewportSize({width:1440,height:1000});await nav('content');
   const campaign=page.locator(`[data-id="${promo.id}"]`);
   await campaign.locator('[data-action="edit"]').click();
-  for(const field of ['description','icon','badge','cta'])assert(await page.locator('#block-form [name="'+field+'"]').isHidden(),'Hidden promo field '+field);
-  for(const field of ['internal_name','title','promo_code','url','start_at','end_at','active','draft','priority'])assert(await page.locator('#block-form [name="'+field+'"]').isVisible(),'Kept promo field '+field);
+  for(const field of ['type','internal_name','priority','icon','badge','cta'])assert(await page.locator('#block-form [name="'+field+'"]').isHidden(),'Hidden promo field '+field);
+  for(const field of ['title','description','promo_code','url','start_at','end_at','active','draft','permanent'])assert(await page.locator('#block-form [name="'+field+'"]').isVisible(),'Kept promo field '+field);
   const preview=page.frameLocator('#block-preview iframe');
   assert.equal(await preview.locator('.offer-title').textContent(),'Offre partenaire');
   assert((await preview.locator('.offer-code').textContent()).includes('TEST10'));
@@ -68,11 +68,11 @@ const { join, resolve } = require('node:path');
   await preview.locator('.offer-code').waitFor({state:'detached'});assert.equal(await preview.locator('.offer-code').count(),0);
   await page.locator('#block-form [name="promo_code"]').fill('TEST10');
   if(process.env.ADMIN_SCREENSHOTS){for(const width of [390,1440]){await page.setViewportSize({width,height:1000});await page.locator('#block-dialog').screenshot({path:join(process.env.ADMIN_SCREENSHOTS,'promo-editor-'+width+'.png')})}await page.setViewportSize({width:1440,height:1000})}
-  await page.locator('#block-form [name="internal_name"]').fill('Promo renommée');
+  await page.locator('#block-form [name="title"]').fill('Offre renommée');
   await page.locator('#block-dialog button[value="default"]').click();await page.waitForFunction(()=>!document.getElementById('block-dialog').open);
-  const kept=(await request('/api/content',undefined,'GET')).items.find(x=>x.id===promo.id);assert.equal(kept.title,'Offre partenaire');assert.equal(kept.promo_code,'TEST10');assert.equal(kept.description,'Description historique conservée');assert.equal(kept.cta,'CTA historique');assert.equal(kept.badge,'Partenaire');
+  const kept=(await request('/api/content',undefined,'GET')).items.find(x=>x.id===promo.id);assert.equal(kept.title,'Offre renommée');assert.equal(kept.internal_name,longName);assert.equal(kept.promo_code,'TEST10');assert.equal(kept.description,'Description historique conservée');assert.equal(kept.cta,'CTA historique');assert.equal(kept.badge,'Partenaire');
   await page.locator('[data-action="new-block"]').click();assert(await page.locator('#block-dialog').isVisible(),await page.locator('#notice').textContent());await page.selectOption('#block-form [name="type"]','promo');
-  await page.locator('#block-form [name="internal_name"]').fill('Nouvelle promo minimale');await page.locator('#block-form [name="url"]').fill('https://partner.example/new');await page.locator('#block-form [name="draft"]').check();
+  await page.locator('#block-form [name="title"]').fill('Nouvelle promo minimale');await page.locator('#block-form [name="url"]').fill('https://partner.example/new');await page.locator('#block-form [name="draft"]').check();
   await page.locator('#block-dialog button[value="default"]').click();await page.waitForFunction(()=>!document.getElementById('block-dialog').open);
   assert.equal((await request('/api/content',undefined,'GET')).items.find(x=>x.internal_name==='Nouvelle promo minimale').title,'Nouvelle promo minimale');
   // Both offer types share the simplified editor for creation and editing.
@@ -81,17 +81,16 @@ const { join, resolve } = require('node:path');
       const fixture=existing?await request('/api/content',{type,internal_name:'Editor '+type,title:'Titre '+type,url:'https://example.com/'+type,promo_code:'CODE',description:'Historique',icon:'home',badge:'Partenaire',cta:'Ancien CTA',draft:true}):null;
       if(existing){await nav('content');await page.locator(`[data-id="${fixture.id}"] [data-action="edit"]`).click()}
       else{await page.locator('[data-action="new-block"]').click();assert(await page.locator('#block-dialog').isVisible(),await page.locator('#notice').textContent());await page.selectOption('#block-form [name="type"]',type)}
-      for(const field of ['description','icon','badge','cta'])assert(await page.locator('#block-form [name="'+field+'"]').isHidden(),type+' hidden '+field);
+      for(const field of ['type','internal_name','priority','icon','badge','cta'])assert(await page.locator('#block-form [name="'+field+'"]').isHidden(),type+' hidden '+field);
       for(const field of ['title','promo_code'])assert(await page.locator('#block-form [name="'+field+'"]').isVisible(),type+' visible '+field);
       const offer=page.frameLocator('#block-preview iframe');
       await offer.locator('.offer-title').waitFor();assert.equal(await offer.locator('.offer-cta').count(),0);
-      await page.locator('#block-form [name="internal_name"]').fill('Fallback '+type);
-      await page.locator('#block-form [name="title"]').fill('');
+      await page.locator('#block-form [name="title"]').fill('Titre public '+type);
       await page.locator('#block-form [name="url"]').fill('https://example.com/'+type);
       await page.locator('#block-form [name="draft"]').check();
       await page.locator('#block-dialog button[value="default"]').click();await page.waitForFunction(()=>!document.getElementById('block-dialog').open);
-      const saved=(await request('/api/content',undefined,'GET')).items.find(x=>existing?x.id===fixture.id:x.internal_name==='Fallback '+type);
-      assert.equal(saved.title,'Fallback '+type);
+      const saved=(await request('/api/content',undefined,'GET')).items.find(x=>existing?x.id===fixture.id:x.internal_name==='Titre public '+type);
+      assert.equal(saved.title,'Titre public '+type);assert.equal(saved.type,type);if(existing)assert.equal(saved.internal_name,'Editor '+type);
       if(existing){assert.equal(saved.description,'Historique');assert.equal(saved.cta,'Ancien CTA');assert.equal(saved.promo_code,'CODE')}
     }
   }

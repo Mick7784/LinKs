@@ -24,6 +24,8 @@ ORIGIN=os.environ.get("ANALYTICS_ORIGIN","").rstrip("/")
 ADMIN=ROOT/"admin"; UPLOADS=Path(os.environ.get("UPLOAD_DIR","/data/uploads"))
 CONFIG=json.loads((ROOT/"links.json").read_text(encoding="utf-8"))
 DATA_LOCK=threading.RLock()
+CAMPAIGN_WAKE=threading.Event()
+CAMPAIGN_POLL_SECONDS=30
 PARIS=ZoneInfo("UTC")
 DATA_DIR=Path(DB).parent
 STATIC=ROOT/"site" if (ROOT/"site").exists() else Path("/usr/share/nginx/html")
@@ -47,13 +49,20 @@ def connection():
         finally:
             db.close()
 def now_iso(): return datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
-def instant(value):
+def instant(value,strict=False,zone=None):
     if not value:return None
     if not isinstance(value,str):raise ValueError("Date invalide")
+    zone=zone or PARIS
     try:
         result=datetime.fromisoformat(value.strip().replace("Z","+00:00"))
-        return (result if result.tzinfo else result.replace(tzinfo=PARIS)).astimezone(timezone.utc)
     except ValueError as exc: raise ValueError("Date invalide") from exc
+    if strict and result.tzinfo is None:
+        # A local wall time at a DST transition needs an explicit offset.
+        candidates={local.astimezone(timezone.utc) for fold in (0,1)
+                    for local in [result.replace(tzinfo=zone,fold=fold)]
+                    if local.astimezone(timezone.utc).astimezone(zone).replace(tzinfo=None)==result}
+        if len(candidates)!=1:raise ValueError("Heure locale ambiguë ou inexistante : préciser le décalage UTC")
+    return (result if result.tzinfo else result.replace(tzinfo=zone)).astimezone(timezone.utc)
 def init():
     global ORIGIN,PARIS
     Path(DB).parent.mkdir(parents=True,exist_ok=True); UPLOADS.mkdir(parents=True,exist_ok=True)
@@ -147,16 +156,21 @@ def record_promo_copy(data):
     code=data.get("code")
     if not isinstance(key,str) or not key.startswith("block:") or not isinstance(code,str) or not code.strip() or len(code)>80:raise ValueError()
     with connection() as db:
+        db.execute('BEGIN IMMEDIATE')
         row=db.execute("SELECT id,internal_name,type FROM content_blocks WHERE id=?",(key[6:],)).fetchone()
         if not row or row["type"] not in {"promo","featured"}:raise ValueError()
         stamp=datetime.now(timezone.utc).replace(minute=0,second=0,microsecond=0).isoformat()
         snapshot=json.dumps({"id":row["id"],"name":row["internal_name"],"code":code,"timestamp":stamp},sort_keys=True,ensure_ascii=False)
         increment(db,"promo_code_copy",source_of(data),snapshot,datetime.now(PARIS).date().isoformat())
 
-def record(kind,source,link,day=None):
+def record(kind,source,link,day=None,validate=False):
     if not analytics_enabled():return
     day=day or datetime.now(PARIS).date().isoformat()
     with connection() as db:
+        db.execute('BEGIN IMMEDIATE')
+        # Validation and collection share the cleanup's SQLite write lock. A
+        # successful request cannot leave a metric pointing to a deleted row.
+        if validate and kind in {'click','impression'} and not valid_metric(link,db):raise ValueError()
         increment(db,kind,source,link,day)
 def increment(db,kind,source,link,day):
     db.execute("INSERT INTO counts VALUES(?,?,?,?,1) ON CONFLICT(day,source,kind,link) DO UPDATE SET total=total+1",(day,source,kind,link))
@@ -299,8 +313,8 @@ def status_of(row,at=None):
     if start and start>at:return "Programmé"
     if end and end<=at:return "Expiré"
     return "Actif"
-def serialize(row,totals=None):
-    item=dict(row); item.update(active=bool(item["active"]),draft=bool(item["draft"]),archived=bool(item["archived"]),status=status_of(row))
+def serialize(row,totals=None,at=None):
+    item=dict(row); item.update(active=bool(item["active"]),draft=bool(item["draft"]),archived=bool(item["archived"]),status=status_of(row,at))
     if totals is not None:
         item["clicks"]=totals.get(("click","block:"+item["id"]),0)
         item["impressions"]=totals.get(("impression","block:"+item["id"]),0)
@@ -314,7 +328,148 @@ def totals(db):
     return result
 def content_list(archived=False):
     with connection() as db:
-        clicks=totals(db); timed=json.loads(instance.get(db,"admin.calendar_timed") or "[]"); return [{**serialize(r,clicks),"calendar_timed":r["id"] in timed} for r in db.execute("SELECT * FROM content_blocks WHERE archived=? ORDER BY CASE WHEN type IN ('promo','featured') THEN 0 ELSE 1 END,position,created_at",(1 if archived else 0,))]
+        now=datetime.now(timezone.utc)
+        rows=list(db.execute("SELECT * FROM content_blocks ORDER BY CASE WHEN type IN ('promo','featured') THEN 0 ELSE 1 END,position,created_at,id"))
+        states={item['id']:item for item in select_campaigns(rows,now)['items']}
+        rows=sorted((r for r in rows if r['type'] in CAMPAIGN_TYPES),key=campaign_order)+[r for r in rows if r['type'] not in CAMPAIGN_TYPES]
+        clicks=totals(db);timed=json.loads(instance.get(db,"admin.calendar_timed") or "[]")
+        return [{**serialize(r,clicks,now),**states.get(r['id'],{}),"calendar_timed":r['id'] in timed,**(affiliate_partners.campaign_metadata(db,r['id'],r['url']) if r['type'] in CAMPAIGN_TYPES else {})} for r in rows if bool(r['archived'])==archived]
+
+
+CAMPAIGN_TYPES={'promo','featured'}
+CAMPAIGN_LIMIT=3
+CAMPAIGN_FALLBACK='/assets/link-shopping.webp'
+
+def campaign_image_value(value):
+    if not isinstance(value,str) or (value and not re.fullmatch(r'/uploads/[a-f0-9-]{36}\.(png|jpg|webp)',value)):
+        raise ValueError('Importer un visuel PNG, JPEG ou WebP de cette installation')
+    return value
+
+def campaign_image_settings(db):
+    value=instance.get(db,'appearance.campaign_image','')
+    return {'image':value,'fallback':CAMPAIGN_FALLBACK,'resolved_image':value or CAMPAIGN_FALLBACK}
+
+def save_campaign_image(data):
+    value=campaign_image_value(data.get('image',''))
+    with connection() as db:
+        db.execute('BEGIN IMMEDIATE')
+        storage.require_file(UPLOADS,value,db)
+        if value:user_images.validate((UPLOADS/value[9:]).read_bytes(),Path(value).suffix)
+        instance.put(db,'appearance.campaign_image',value)
+        return campaign_image_settings(db)
+
+def campaign_duration(row):
+    # Preserve open historical intervals and visual types, especially featured.
+    return 'one_off' if row['end_at'] else 'permanent'
+
+def campaign_order(row):
+    # position is appended on creation and persisted by the existing reorder API.
+    # The old high/normal editorial priority never overrides duration or order.
+    return (campaign_duration(row)!='one_off',row['position'],instant(row['created_at']),row['id'])
+
+def select_campaigns(rows,at=None):
+    """Read-only selection at one instant; eligibility is independent of capacity."""
+    at=instant(at,strict=True) if isinstance(at,str) else at or datetime.now(timezone.utc)
+    if at.tzinfo is None:raise ValueError('Préciser le fuseau de la date de sélection')
+    at=at.astimezone(timezone.utc)
+    items=[];eligible=[]
+    for row in sorted((r for r in rows if r['type'] in CAMPAIGN_TYPES),key=campaign_order):
+        state=('retired' if row['retired'] else {'Archivé':'archived','Brouillon':'draft',
+               'Désactivé':'disabled','Programmé':'scheduled','Expiré':'ended','Actif':'eligible'}[status_of(row,at)])
+        is_eligible=state=='eligible'
+        if is_eligible:
+            eligible.append(row['id'])
+            state='visible' if len(eligible)<=CAMPAIGN_LIMIT else 'waiting'
+        items.append({'id':row['id'],'title':row['title'],'duration_type':campaign_duration(row),'selection_state':state,
+                      'eligible':is_eligible,'visible':state=='visible'})
+    return {'at':at.isoformat().replace('+00:00','Z'),'limit':CAMPAIGN_LIMIT,'items':items,
+            'eligible_ids':eligible,'visible_ids':eligible[:CAMPAIGN_LIMIT],'waiting_ids':eligible[CAMPAIGN_LIMIT:]}
+
+def campaign_selection(at=None):
+    with connection() as db:return select_campaigns(list(db.execute('SELECT * FROM content_blocks')),at)
+
+
+def campaign_references(db):
+    """All lifetime metric identities and published references, without a date filter."""
+    retained={r[0] for r in db.execute('SELECT promotion_id FROM story_links')}
+    aliases=json.loads(instance.get(db,'analytics.metric_aliases','{}'))
+    retained.update(value[6:] for value in aliases.values() if value.startswith('block:'))
+    for metric in db.execute('SELECT DISTINCT kind,link FROM counts'):
+        key=aliases.get(metric['link'],metric['link'])
+        if key.startswith('block:'):retained.add(key[6:])
+        if metric['kind']=='promo_code_copy':
+            snapshot=json.loads(metric['link'])
+            if not isinstance(snapshot,dict) or not isinstance(snapshot.get('id'),str):
+                raise ValueError('Historique de copie illisible : nettoyage suspendu')
+            retained.add(snapshot['id'])
+    # Also honor declared incoming references, including ON DELETE CASCADE:
+    # cleanup must preserve their owner instead of implicitly deleting children.
+    def quoted(name):return '"'+name.replace('"','""')+'"'
+    for table in list(db.execute("SELECT name FROM sqlite_master WHERE type='table'")):
+        if table['name']=='campaign_partners':continue  # Owned provenance, cascaded only for truly unused campaigns.
+        for reference in db.execute('PRAGMA foreign_key_list('+quoted(table['name'])+')'):
+            if reference['table']=='content_blocks' and reference['to'] in (None,'id'):
+                retained.update(r[0] for r in db.execute('SELECT '+quoted(reference['from'])+' FROM '+quoted(table['name'])))
+    # story_links protects both the long redirect and every short alias pointing
+    # to it, including zero-click, deleted or revoked historical publications.
+    return retained
+
+
+def cleanup_campaigns(at=None):
+    """Archive expired campaigns with history/references; delete only unused ones.
+
+    Never unlink media here. Existing reference-aware storage maintenance gives
+    newly orphaned files its normal grace period and protects shared images.
+    """
+    result={'archived_ids':[],'deleted_ids':[],'skipped_ids':[],'next_delay':CAMPAIGN_POLL_SECONDS}
+    with DATA_LOCK:
+        with connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            zone=ZoneInfo(instance.get(db,'app.timezone','UTC'))
+            now=instant(at,strict=True,zone=zone) if isinstance(at,str) else at or datetime.now(timezone.utc)
+            if now.tzinfo is None:raise ValueError('Préciser le fuseau de la date de nettoyage')
+            now=now.astimezone(timezone.utc);expired=[]
+            rows=db.execute("""SELECT id,end_at FROM content_blocks WHERE type IN ('promo','featured')
+                               AND end_at IS NOT NULL AND end_at!='' AND archived=0 AND retired=0 AND draft=0
+                               ORDER BY id""")
+            for row in rows:
+                try:end=instant(row['end_at'],zone=zone)
+                except ValueError:
+                    result['skipped_ids'].append(row['id']);continue
+                if end<=now:expired.append(row['id'])
+                else:result['next_delay']=min(result['next_delay'],(end-now).total_seconds())
+            if expired:
+                retained=campaign_references(db)
+                stamp=now.isoformat().replace('+00:00','Z')
+                for ident in expired:
+                    if ident in retained:
+                        db.execute('UPDATE content_blocks SET archived=1,updated_at=? WHERE id=?',(stamp,ident))
+                        result['archived_ids'].append(ident)
+                    else:
+                        db.execute('DELETE FROM content_blocks WHERE id=?',(ident,))
+                        result['deleted_ids'].append(ident)
+                if result['deleted_ids']:
+                    timed=json.loads(instance.get(db,'admin.calendar_timed','[]'))
+                    deleted=set(result['deleted_ids'])
+                    updated=[ident for ident in timed if ident not in deleted]
+                    if updated!=timed:instance.put(db,'admin.calendar_timed',json.dumps(updated))
+        # Commit first, then refresh the existing public-only fallback atomically.
+        # Retry even on an unchanged pass if an earlier file write had failed.
+        write_public_fallback()
+    return result
+
+
+def campaign_worker(stop=None):
+    stop=stop or threading.Event()
+    while not stop.is_set():
+        CAMPAIGN_WAKE.clear()
+        try:delay=cleanup_campaigns()['next_delay']
+        except (OSError,sqlite3.Error,ValueError,TypeError):
+            print('Links : nettoyage des campagnes temporairement indisponible.',flush=True)
+            delay=CAMPAIGN_POLL_SECONDS
+        CAMPAIGN_WAKE.wait(max(.05,delay))
+
+
 def button_list(archived=False):
     with connection() as db:
         clicks=totals(db); result=[]
@@ -323,16 +478,27 @@ def button_list(archived=False):
         return result
 def public_config(snapshot=False):
     with connection() as db:
-        blocks=[serialize(r) for r in db.execute("SELECT * FROM content_blocks WHERE retired=0 AND archived=0 ORDER BY CASE WHEN type IN ('promo','featured') THEN 0 ELSE 1 END,CASE WHEN priority='high' THEN 0 ELSE 1 END,position,created_at") if snapshot or status_of(r)=="Actif"]
+        now=datetime.now(timezone.utc)
+        rows=list(db.execute("SELECT * FROM content_blocks WHERE retired=0 AND archived=0 ORDER BY CASE WHEN type IN ('promo','featured') THEN 0 ELSE 1 END,CASE WHEN priority='high' THEN 0 ELSE 1 END,position,created_at,id"))
+        selection=select_campaigns(rows,now)
+        default_image=campaign_image_settings(db)['resolved_image']
+        # Keep all eligible campaigns in links for existing PulSe consumers.
+        # Only visible_campaign_ids is capped. Snapshot order also supports the
+        # existing date-filtered static fallback through future slot changes.
+        ordered=sorted((r for r in rows if r['type'] in CAMPAIGN_TYPES),key=campaign_order)+[r for r in rows if r['type'] not in CAMPAIGN_TYPES]
+        blocks=[serialize(r,at=now) for r in ordered if snapshot or status_of(r,now)=="Actif"]
         if snapshot:blocks=[x for x in blocks if x['active'] and not x['draft']]
         quote=db.execute("SELECT text FROM footer_quotes WHERE active=1 ORDER BY " + ("created_at,id" if snapshot else "RANDOM()") + " LIMIT 1").fetchone()
         buttons=[dict(r) for r in db.execute("SELECT * FROM top_buttons WHERE active=1 AND retired=0 ORDER BY position,created_at")]
         result={"profile":profile(db),"socials":[{"id":x["id"],"platform":x["icon"],"custom_icon":x["custom_icon"],"label":x["label"],"url":x["url"],"metricKey":"button:"+x["id"]} for x in buttons],
                 "links":[{"id":x["id"],"type":x["type"],"title":x["title"],"description":x["description"],"url":x["url"],"icon":x["icon"],"image":x["image"],"badge":x["badge"],"cta":x["cta"],"priority":x["priority"],"start_at":x["start_at"],"end_at":x["end_at"],"promo_code":x["promo_code"],"metricKey":"block:"+x["id"]} for x in blocks]}
         # Expose only the next public schedule boundary, never future private content.
-        now=datetime.now(timezone.utc)
         boundaries=[stamp for row in db.execute("SELECT start_at,end_at FROM content_blocks WHERE retired=0 AND archived=0 AND active=1 AND draft=0 AND type IN ('promo','featured')") for key in ("start_at","end_at") if (stamp:=instant(row[key])) and stamp>now]
         result["next_campaign_change"]=min(boundaries).isoformat().replace("+00:00","Z") if boundaries else None
+        if not snapshot:result['visible_campaign_ids']=selection['visible_ids']
+        result['campaign_default_image']=default_image
+        for item in result['links']:
+            if item['type'] in CAMPAIGN_TYPES:item['effective_image']=item['image'] or default_image
         result["appearance"]=themes.public(db)
         result["profile"]["footer_quote"]=quote["text"] if quote else ""
     if result["profile"]["video_enabled"]:result["latestVideo"]={"enabled":True}
@@ -403,6 +569,7 @@ def supported_image(value):
 
 def block_data(data,allow_legacy_image=False):
     kind=data.get("type","classic")
+    if kind in CAMPAIGN_TYPES and not data.get('internal_name'):data={**data,'internal_name':data.get('title','')}
     if "calendar_timed" in data and not isinstance(data["calendar_timed"],bool):raise ValueError("Mode horaire invalide")
     if kind not in TYPES:raise ValueError("Type invalide")
     url=required(data,"url",2000)
@@ -412,12 +579,14 @@ def block_data(data,allow_legacy_image=False):
     if badge not in BADGES:raise ValueError("Badge invalide")
     if priority not in {"normal","high"}:raise ValueError("Priorité invalide")
     if image.startswith("system:") and image[7:] not in themes.BACKGROUNDS:raise ValueError("Fond système inconnu")
-    if image and not supported_image(image) and not (allow_legacy_image and valid_url(image)):raise ValueError("Image non prise en charge : importer une image locale ou choisir un fond LinKs")
-    start,end=instant(data.get("start_at")),instant(data.get("end_at"))
+    remote=urlsplit(image) if image else None
+    campaign_remote=kind in CAMPAIGN_TYPES and remote and remote.scheme=='https' and remote.hostname and not remote.username and not remote.password and not any(ord(c)<=32 or c=='\\' for c in image)
+    if image and not supported_image(image) and not campaign_remote and not (allow_legacy_image and valid_url(image)):raise ValueError("Image non prise en charge : importer une image locale ou choisir une URL HTTPS pour une campagne")
+    start,end=instant(data.get("start_at"),strict=not allow_legacy_image),instant(data.get("end_at"),strict=not allow_legacy_image)
     if start and end and end<=start:raise ValueError("La fin doit suivre le début")
     return {**({"calendar_timed":data["calendar_timed"]} if "calendar_timed" in data else {}),"type":kind,"internal_name":required(data,"internal_name"),"title":required(data,"title"),"description":optional(data,"description"),"url":url,"icon":icon,"image":image,"badge":badge,"cta":optional(data,"cta",80),**({"promo_code":optional(data,"promo_code",80)} if "promo_code" in data else {}),"priority":priority,"active":1 if data.get("active",True) else 0,"draft":1 if data.get("draft",False) else 0,"start_at":start.isoformat().replace("+00:00","Z") if start else None,"end_at":end.isoformat().replace("+00:00","Z") if end else None}
 def promotion_rows(db,exclude_id=None):
-    query="SELECT * FROM content_blocks WHERE type IN ('promo','featured') AND active=1 AND draft=0 AND archived=0"
+    query="SELECT * FROM content_blocks WHERE type IN ('promo','featured') AND active=1 AND draft=0 AND archived=0 AND retired=0"
     params=[]
     if exclude_id:query+=" AND id<>?";params.append(exclude_id)
     return list(db.execute(query,params))
@@ -429,6 +598,7 @@ def promotion_snapshot(row,now):
     age=max(0,(now-(start or datetime.fromisoformat(row["created_at"].replace("Z","+00:00")))).days) if status_of(row,now)=="Actif" else None
     return {"id":row["id"],"internal_name":row["internal_name"],"status":status_of(row,now),"start_at":row["start_at"],"end_at":row["end_at"],"active_days":age}
 def concurrency(existing,start,end):
+    if end<=start:return 0,[],[]
     overlap=[]
     for row in existing:
         rs,re=promotion_interval(row,datetime.now(timezone.utc))
@@ -450,25 +620,15 @@ def promotion_check(item,exclude_id=None,db=None):
         with connection() as conn:return promotion_check(item,exclude_id,conn)
     now=datetime.now(timezone.utc)
     rows=promotion_rows(db,exclude_id)
-    all_rows=list(db.execute("SELECT * FROM content_blocks WHERE type IN ('promo','featured') AND archived=0"))
+    all_rows=list(db.execute("SELECT * FROM content_blocks WHERE type IN ('promo','featured') AND archived=0 AND retired=0"))
     active=sum(status_of(row,now)=="Actif" for row in all_rows);programmed=sum(status_of(row,now)=="Programmé" for row in all_rows)
     if item["type"] not in {"promo","featured"} or not item["active"] or item["draft"]:
         return {"allowed":True,"maximum":0,"overlaps":[],"segments":[],"next_start":None,"active":active,"programmed":programmed}
     start,end=promotion_interval(item,now)
     maximum,overlap,segments=concurrency(rows,start,end)
-    duration=None if end==float("inf") else end-start
-    next_start=None
-    if maximum>3:
-        candidates=sorted({start}|{re for row in rows for _,re in [promotion_interval(row,now)] if re!=float("inf") and re>=start})
-        for candidate in candidates:
-            candidate_end=float("inf") if duration is None else candidate+duration
-            if concurrency(rows,candidate,candidate_end)[0]<=3:
-                next_start=datetime.fromtimestamp(candidate,timezone.utc).isoformat().replace("+00:00","Z");break
-    return {"allowed":maximum<=3,"maximum":maximum,"overlaps":[promotion_snapshot(row,now) for row,_,_ in overlap],"segments":segments,"next_start":next_start,"active":active,"programmed":programmed}
-def ensure_promotion_capacity(item,exclude_id=None,db=None):
-    check=promotion_check(item,exclude_id,db)
-    if not check["allowed"]:raise ValueError("Limite de 3 promotions simultanées dépassée")
-    return check
+    # Preserve the advisory contract; overlaps never prevent a save.
+    return {"allowed":True,"maximum":maximum,"overlaps":[promotion_snapshot(row,now) for row,_,_ in overlap],"segments":segments,"next_start":None,"active":active,"programmed":programmed}
+
 def button_data(data):
     icon=data.get("icon","website");icon="mail" if icon=="email" else icon;url=required(data,"url",2000)
     custom_icon=optional(data,"custom_icon",200)
@@ -478,16 +638,16 @@ def button_data(data):
         if not re.fullmatch(r"#[A-Za-z][\w:-]*",url):raise ValueError("Ancre invalide")
     elif not valid_url(url):raise ValueError("URL invalide")
     return {"icon":icon,"custom_icon":custom_icon,"label":required(data,"label",100),"url":url,"active":1 if data.get("active",True) else 0}
-def valid_metric(key):
+def valid_metric(key,db=None):
     if key=="latest-video":return True
     table,prefix=("content_blocks","block:") if key.startswith("block:") else (("top_buttons","button:") if key.startswith("button:") else (None,None))
     if table:
+        if db is not None:return db.execute(f"SELECT 1 FROM {table} WHERE id=?",(key.removeprefix(prefix),)).fetchone() is not None
         with connection() as db:return db.execute(f"SELECT 1 FROM {table} WHERE id=?",(key.removeprefix(prefix),)).fetchone() is not None
     return (key.startswith("social:") or key.startswith("link:")) and len(key)<=2048
 
 def save_content(db,item,item_id=None):
     storage.require_file(UPLOADS,item.get("image"),db,DATA_DIR/"assets",STATIC/"assets")
-    ensure_promotion_capacity(item,item_id,db)
     item=dict(item);timed=item.pop("calendar_timed",None)
     stamp=now_iso()
     if item_id:
@@ -507,12 +667,33 @@ def save_content(db,item,item_id=None):
         instance.put(db,"admin.calendar_timed",json.dumps(sorted(ids)))
     return item_id
 
+def save_content_request(db,data,ident=None):
+    current=db.execute('SELECT * FROM content_blocks WHERE id=?',(ident,)).fetchone() if ident else None
+    if ident and not current:raise ValueError('Bloc introuvable')
+    if current:data={'type':current['type'],'internal_name':current['internal_name'],**data}
+    result=None
+    # A legacy GET/PUT roundtrip may echo the new read-only metadata. Only an
+    # explicit affiliation operation enters the preview/confirmation protocol.
+    explicit=('expected_url' in data or 'apply_partner' in data or data.get('detect') is True or
+              ('partner_id' in data and (not current or data['partner_id']!=affiliate_partners.campaign_metadata(db,ident,current['url'])['partner_id'])))
+    if data.get('type') in CAMPAIGN_TYPES and explicit:
+        result=affiliate_partners.preview_campaign(db,data,ident,valid_url)
+        affiliate_partners.check_campaign_preview(data,result)
+    fields={**data,'url':result['url']} if result else data
+    item=block_data(fields,allow_legacy_image=bool(current and current['image'] and current['image']==data.get('image')))
+    saved=save_content(db,item,ident)
+    if result:affiliate_partners.save_campaign_metadata(db,saved,result)
+    elif current and (current['url']!=item['url'] or item['type'] not in CAMPAIGN_TYPES):
+        db.execute('DELETE FROM campaign_partners WHERE campaign_id=?',(saved,))
+    return saved
+
 LEGACY_BACKUP_TABLES=('content_blocks','top_buttons','settings','counts','story_links','footer_quotes')
 TRACKING_BACKUP_TABLES=('tracking_sources','tracked_links','tracked_tokens')
 SHORT_BACKUP_TABLES=('short_aliases',)
 SOURCE_BACKUP_TABLES=('tracking_source_keys',)
 PARTNER_BACKUP_TABLES=('affiliate_partners','tracked_link_partners')
-BACKUP_TABLES=LEGACY_BACKUP_TABLES+TRACKING_BACKUP_TABLES+SHORT_BACKUP_TABLES+SOURCE_BACKUP_TABLES+PARTNER_BACKUP_TABLES
+CAMPAIGN_PARTNER_BACKUP_TABLES=('campaign_partners',)
+BACKUP_TABLES=LEGACY_BACKUP_TABLES+TRACKING_BACKUP_TABLES+SHORT_BACKUP_TABLES+SOURCE_BACKUP_TABLES+PARTNER_BACKUP_TABLES+CAMPAIGN_PARTNER_BACKUP_TABLES
 BACKUP_LIMIT=64*1024*1024
 UPLOAD_NAME=re.compile(r'[a-f0-9-]{36}\.(jpg|png|webp|gif)')
 
@@ -533,7 +714,7 @@ def export_backup():
         tables={table:[dict(row) for row in db.execute('SELECT * FROM '+table)] for table in BACKUP_TABLES}
         references={r['image'] for r in tables['content_blocks']}
         references.update(r['custom_icon'] for r in tables['top_buttons'])
-        references.update(r['value'] for r in tables['settings'] if r['key'] in {'profile.avatar','profile.logo'})
+        references.update(r['value'] for r in tables['settings'] if r['key'] in {'profile.avatar','profile.logo','appearance.campaign_image'})
         references.update(themes.references(themes.state(db)['items'][1:]))
         images={};size=0
         for ref in references:
@@ -585,6 +766,8 @@ def restore_backup(data,preview=False):
         if missing_partners!=set(PARTNER_BACKUP_TABLES):raise ValueError('Sauvegarde de partenaires incomplète')
         with connection() as db:
             for table in PARTNER_BACKUP_TABLES:tables[table]=[dict(row) for row in db.execute('SELECT * FROM '+table)]
+    if 'campaign_partners' not in tables:
+        with connection() as db:tables['campaign_partners']=[dict(row) for row in db.execute('SELECT * FROM campaign_partners')]
     if set(tables)!=set(BACKUP_TABLES):raise ValueError('Sauvegarde incomplète')
     assets=data.get('assets',{})
     if not isinstance(assets,dict):raise ValueError('Assets invalides')
@@ -644,6 +827,10 @@ def restore_backup(data,preview=False):
                     elif table=='tracked_link_partners':
                         if any(not re.fullmatch(r'[a-f0-9]{32}',row[key]) for key in ('link_id','partner_id')):raise ValueError('Association de partenaire invalide')
                         if row['original_url'] and (len(row['original_url'])>2000 or not affiliate_partners.http_url(row['original_url'])):raise ValueError('URL d’origine invalide')
+                    elif table=='campaign_partners':
+                        if not row['campaign_id'] or (row['partner_id'] is not None and not re.fullmatch(r'[a-f0-9]{32}',row['partner_id'])):raise ValueError('Association de campagne invalide')
+                        if not valid_url(row['original_url']) or not valid_url(row['final_url']):raise ValueError('URL de campagne invalide')
+                        if row['partner_id'] is not None and not affiliate_partners.http_url(row['original_url']):raise ValueError('URL affiliée invalide')
                     elif table=='content_blocks':
                         block_data(row,allow_legacy_image=True)
                         if any(row[k] not in (0,1) for k in ['active','draft','archived','retired']):raise ValueError('État invalide')
@@ -776,6 +963,7 @@ def restore_backup(data,preview=False):
             tracked_tokens={r['token'] for r in tables['tracked_tokens']}
             if any(r['kind']=='tracked' and r['link'].split(':')[1] not in tracked_tokens for r in tables['counts']):raise ValueError('Lien suivi manquant')
             affiliate_partners.merge_backup(db,tables)
+            affiliate_partners.merge_campaign_backup(db,tables)
             # Short codes are never recycled or reassigned after restore.
             aliases={r['code']:r for r in tables['short_aliases']}
             for old in db.execute('SELECT * FROM short_aliases'):
@@ -819,7 +1007,9 @@ def restore_backup(data,preview=False):
                     if row['custom_icon'] not in mapping:raise ValueError('Icône personnelle manquante')
                     row['custom_icon']=mapping[row['custom_icon']]
             for row in tables['settings']:
-                if row['key'] in {'profile.avatar','profile.logo'} and row['value'].startswith('/uploads/'):
+                if row['key'] in {'profile.avatar','profile.logo','appearance.campaign_image'} and row['value'].startswith('/uploads/'):
+                    if row['key']=='appearance.campaign_image' and row['key'] not in setting_keys:
+                        storage.require_file(UPLOADS,row['value'],db);continue
                     if row['value'] not in mapping:raise ValueError('Image de profil manquante')
                     row['value']=mapping[row['value']]
             for theme in theme_rows:
@@ -829,16 +1019,12 @@ def restore_backup(data,preview=False):
                         theme['tokens'][key]=mapping[ref]
             for row in tables['settings']:
                 if row['key']=='appearance.themes':row['value']=json.dumps(theme_rows)
-            refs=[r['image'] for r in tables['content_blocks']]+[r['value'] for r in tables['settings'] if r['key'] in {'profile.logo','profile.avatar'}]
+            refs=[r['image'] for r in tables['content_blocks']]+[r['value'] for r in tables['settings'] if r['key'] in {'profile.logo','profile.avatar','appearance.campaign_image'}]
             for ref in refs:
                 if ref.startswith('/assets/') and not (STATIC/ref[1:]).is_file() and not (DATA_DIR/ref[1:]).is_file() and ref[8:] not in asset_bytes:raise ValueError('Asset référencé manquant')
             summary={'blocks':len(tables['content_blocks']),'buttons':len(tables['top_buttons']),'images':len(images),
                      'retained_content':len(retained_rows),'published_redirects':len(tables['story_links'])+len(tables['tracked_tokens']),
                      'counter_total':sum(row['total'] for row in tables['counts'])}
-            live=[r for r in tables['content_blocks'] if r['type'] in {'promo','featured'} and r['active'] and not r['draft'] and not r['archived'] and not r['retired']]
-            for row in live:
-                start,end=promotion_interval(row,datetime.now(timezone.utc))
-                if concurrency([x for x in live if x['id']!=row['id']],start,end)[0]>3:raise ValueError('Limite de 3 promotions simultanées dépassée')
             canonical={r['token'] for r in tables['story_links']}|{r['token'] for r in tables['tracked_tokens']}
             if any(not r['revoked'] and r['target_token'] not in canonical for r in tables['short_aliases']):raise ValueError('Cible de lien court manquante')
             if preview:
@@ -846,6 +1032,7 @@ def restore_backup(data,preview=False):
                 return summary
             # Backup the current SQLite state only after validation, before replacing rows.
             restore_safety(db)
+            db.execute('DELETE FROM campaign_partners')
             for table in reversed(PARTNER_BACKUP_TABLES):
                 db.execute('DELETE FROM '+table)
             for table in SOURCE_BACKUP_TABLES+SHORT_BACKUP_TABLES:
@@ -856,12 +1043,10 @@ def restore_backup(data,preview=False):
                 db.execute('DELETE FROM '+table)
                 columns=[c['name'] for c in db.execute('PRAGMA table_info('+table+')')]
                 db.executemany('INSERT INTO '+table+' ('+','.join(columns)+') VALUES ('+','.join('?' for _ in columns)+')',[[row[c] for c in columns] for row in tables[table]])
-            for table in TRACKING_BACKUP_TABLES+SHORT_BACKUP_TABLES+SOURCE_BACKUP_TABLES+PARTNER_BACKUP_TABLES:
+            for table in TRACKING_BACKUP_TABLES+SHORT_BACKUP_TABLES+SOURCE_BACKUP_TABLES+PARTNER_BACKUP_TABLES+CAMPAIGN_PARTNER_BACKUP_TABLES:
                 columns=[c['name'] for c in db.execute('PRAGMA table_info('+table+')')]
                 db.executemany('INSERT INTO '+table+' ('+','.join(columns)+') VALUES ('+','.join('?' for _ in columns)+')',[[row[c] for c in columns] for row in tables[table]])
             db.execute("INSERT OR REPLACE INTO settings VALUES('content.initialized','1')")
-            for row in db.execute("SELECT * FROM content_blocks WHERE archived=0 AND active=1 AND draft=0 AND type IN ('promo','featured')"):
-                ensure_promotion_capacity(dict(row),row['id'],db)
             # New filenames ensure that a failed restore cannot overwrite current images.
             for name,raw in decoded.items():
                 target=UPLOADS/name;written.append(target);storage.write(target,raw)
@@ -889,6 +1074,7 @@ def validate_settings(values):
         if not isinstance(order,list) or len(order)!=3 or any(not isinstance(x,str) for x in order) or set(order)!={'classic','video','highlight'}:raise ValueError('Ordre des sections invalide')
     if 'site.url' in values:values['site.url']=instance.site_url(values['site.url'],allow_empty=True)
     if 'app.timezone' in values:instance.timezone_name(values['app.timezone'])
+    if 'appearance.campaign_image' in values:campaign_image_value(values['appearance.campaign_image'])
     if 'analytics.source_rules' in values:instance.source_rules(values['analytics.source_rules'])
     for key in ['analytics.enabled','video.enabled','app.setup_completed']:
         if key in values and values[key] not in {'true','false'}:raise ValueError('Valeur booléenne invalide')
@@ -959,7 +1145,7 @@ def latest_video():
 
 def public_mutation(path):
     return (path.startswith(('/api/content','/api/buttons','/api/settings','/api/restore','/api/setup','/api/promotions/replace'))
-            and path not in {'/api/setup/check','/api/restore/preview'}
+            and path not in {'/api/setup/check','/api/restore/preview','/api/content/preview'}
             or path=='/api/youtube' or (path.startswith('/api/quotes') and path!='/api/quotes/analyze')
             or (path.startswith('/api/appearance') and path not in {'/api/appearance/css','/api/appearance/css-export','/api/appearance/export'}))
 
@@ -1115,6 +1301,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.server.admin and getattr(self,'command','') in {'POST','PUT','DELETE'} and 200<=self.response_status<300:
             path=urlsplit(self.path).path
             if public_mutation(path):
+                CAMPAIGN_WAKE.set()
                 try:storage_state()
                 except (OSError,sqlite3.Error,ValueError):print('Links : suivi des fichiers temporairement indisponible.',flush=True)
             if public_mutation(path):
@@ -1252,7 +1439,7 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError:size=0
             if 0<size<=BACKUP_LIMIT:self.rfile.read(size)
             self.body_read=True
-        self.send_response(status);self.send_header("Content-Type",mime);self.send_header("Content-Length",str(len(body)));self.send_header("Cache-Control","no-store");self.send_header("X-Content-Type-Options","nosniff");self.send_header("Content-Security-Policy","default-src 'self';script-src 'self';style-src 'self';img-src 'self' data: https://i.ytimg.com;object-src 'none';frame-ancestors 'none';base-uri 'none'");self.end_headers();self.wfile.write(body)
+        self.send_response(status);self.send_header("Content-Type",mime);self.send_header("Content-Length",str(len(body)));self.send_header("Cache-Control","no-store");self.send_header("X-Content-Type-Options","nosniff");self.send_header("Content-Security-Policy","default-src 'self';script-src 'self';style-src 'self';img-src 'self' data: https:;object-src 'none';frame-ancestors 'none';base-uri 'none'");self.end_headers();self.wfile.write(body)
     def json(self,status,data):self.send(status,json.dumps(data,ensure_ascii=False).encode())
     def body(self,limit=8*1024*1024):
         size=int(self.headers.get("Content-Length","0"))
@@ -1301,6 +1488,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if url.path=="/api/appearance":
                 with connection() as db:return self.json(200,themes.state(db))
+            if url.path=='/api/appearance/campaign-image':
+                with connection() as db:return self.json(200,campaign_image_settings(db))
             if url.path=="/api/appearance/export":
                 with connection() as db:
                     target=parse_qs(url.query).get("id",[themes.ORIGINAL])[0]
@@ -1322,6 +1511,10 @@ class Handler(BaseHTTPRequestHandler):
             if url.path=="/api/stats":
                 q=parse_qs(url.query);today=datetime.now(PARIS).date();return self.json(200,report(q.get("start",[(today-timedelta(days=29)).isoformat()])[0],q.get("end",[today.isoformat()])[0],q.get("source",[""])[0]))
             if url.path=="/api/content":return self.json(200,{"items":content_list(parse_qs(url.query).get("archived",["0"])[0]=="1")})
+            if url.path=="/api/promotions/selection":
+                values=parse_qs(url.query,keep_blank_values=True).get('at',[None])
+                if len(values)!=1 or values[0]=='':raise ValueError('Une seule date de sélection est requise')
+                return self.json(200,campaign_selection(values[0]))
             if url.path=="/api/buttons":return self.json(200,{"items":button_list(parse_qs(url.query).get('archived',['0'])[0]=='1')})
             if url.path=="/api/settings/overview":
                 with connection() as db:
@@ -1356,13 +1549,14 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 data=self.body(2048);kind,key=data.get("kind"),data.get("link","")
                 if kind=="promo_code_copy":record_promo_copy(data);return self.send(204)
-                if kind not in {"view","click","impression"} or not isinstance(key,str) or (kind in {"click","impression"} and not valid_metric(key)):raise ValueError()
-                record(kind,source_of(data),key if kind in {"click","impression"} else "");return self.send(204)
+                if kind not in {"view","click","impression"} or not isinstance(key,str):raise ValueError()
+                record(kind,source_of(data),key if kind in {"click","impression"} else "",validate=True);return self.send(204)
             except (ValueError,TypeError,json.JSONDecodeError):return self.send(400)
             except (sqlite3.Error,OSError):return self.send(503)
         try:
             data=self.body(BACKUP_LIMIT if path in {'/api/restore','/api/restore/preview'} else themes.MAX_BYTES if path=="/api/appearance/import" else 8*1024*1024)
             if path=="/api/appearance/css":return self.json(200,themes.css_import(data.get("css")))
+            if path=='/api/appearance/campaign-image':return self.json(200,save_campaign_image(data))
             if path=="/api/appearance/css-export":return self.json(200,{'css':themes.css_export(themes.record(data.get('theme')))})
             if path=="/api/appearance":
                 with connection() as db:result=themes.save(db,data,UPLOADS)
@@ -1405,6 +1599,10 @@ class Handler(BaseHTTPRequestHandler):
             match=re.fullmatch(r"/api/tracking-sources/([a-f0-9]{32})/restore",path)
             if match:
                 with connection() as db:return self.json(200,tracked_links.restore_source(db,match.group(1)))
+            if path=='/api/content/preview':
+                ident=data.get('id') or None
+                if ident is not None and (not isinstance(ident,str) or len(ident)>100):raise ValueError('Identifiant de campagne invalide')
+                with connection() as db:return self.json(200,affiliate_partners.preview_campaign(db,data,ident,valid_url))
             if path=="/api/content":return self.create_content(data)
             if path=="/api/promotions/check":
                 item=block_data(data);return self.json(200,promotion_check(item,data.get("id") or None))
@@ -1540,17 +1738,15 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(302);self.send_header('Location',target);self.send_header('Cache-Control','no-store');self.send_header('Referrer-Policy','no-referrer');self.send_header('Content-Length','0');self.end_headers()
         except (sqlite3.Error,OSError):return self.send(503)
     def create_content(self,data):
-        item=block_data(data)
         with connection() as db:
             db.execute("BEGIN IMMEDIATE")
-            item_id=save_content(db,item)
+            item_id=save_content_request(db,data)
         return self.json(201,{"id":item_id})
     def update_content(self,item_id,data):
-        item=block_data(data)
         with connection() as db:
             db.execute("BEGIN IMMEDIATE")
-            if not db.execute("SELECT 1 FROM content_blocks WHERE id=?",(item_id,)).fetchone():return self.send(404)
-            save_content(db,item,item_id)
+            if not db.execute('SELECT 1 FROM content_blocks WHERE id=?',(item_id,)).fetchone():return self.send(404)
+            save_content_request(db,data,item_id)
         return self.send(204)
     def replace_promotion(self,data):
         target=required(data,"replace_id",100)
@@ -1563,7 +1759,7 @@ class Handler(BaseHTTPRequestHandler):
             row=db.execute("SELECT * FROM content_blocks WHERE id=? AND archived=0 AND type IN ('promo','featured')",(target,)).fetchone()
             if not row:raise ValueError("Promotion à remplacer introuvable")
             db.execute("UPDATE content_blocks SET active=0,updated_at=? WHERE id=?",(now_iso(),target))
-            item_id=save_content(db,item,item_id)
+            item_id=save_content_request(db,content,item_id)
         return self.json(200,{"id":item_id})
     def content_action(self,item_id,action):
         with connection() as db:
@@ -1574,15 +1770,15 @@ class Handler(BaseHTTPRequestHandler):
                 new_id=str(uuid.uuid4());stamp=now_iso();pos=db.execute("SELECT COALESCE(MAX(position),-1)+1 FROM content_blocks").fetchone()[0]
                 db.execute("""INSERT INTO content_blocks(id,type,internal_name,title,description,url,icon,image,badge,cta,position,active,draft,start_at,end_at,archived,created_at,updated_at,priority)
                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",(new_id,row["type"],row["internal_name"]+" (copie)",row["title"],row["description"],row["url"],row["icon"],row["image"],row["badge"],row["cta"],pos,0,1,row["start_at"],row["end_at"],0,stamp,stamp,row["priority"]));db.execute('UPDATE content_blocks SET promo_code=? WHERE id=?',(row['promo_code'],new_id))
+                db.execute('INSERT INTO campaign_partners SELECT ?,partner_id,original_url,? FROM campaign_partners WHERE campaign_id=?',(new_id,row['url'],item_id))
                 timed=json.loads(instance.get(db,'admin.calendar_timed') or '[]')
                 if item_id in timed:instance.put(db,'admin.calendar_timed',json.dumps(timed+[new_id]))
                 return self.json(201,{"id":new_id})
-            if action=="restore":ensure_promotion_capacity(dict(row),item_id,db)
             db.execute("UPDATE content_blocks SET archived=?,retired=0,updated_at=? WHERE id=?",(1 if action=="archive" else 0,now_iso(),item_id))
         return self.send(204)
     def reorder(self,table,data):
         ids=data.get("ids")
-        if not isinstance(ids,list) or not ids or len(ids)>500 or len(set(ids))!=len(ids):raise ValueError("Ordre invalide")
+        if not isinstance(ids,list) or not ids or (table!='content_blocks' and len(ids)>500) or len(set(ids))!=len(ids):raise ValueError("Ordre invalide")
         with connection() as db:
             for pos,item_id in enumerate(ids):
                 if not db.execute(f"SELECT 1 FROM {table} WHERE id=?",(item_id,)).fetchone():raise ValueError("Élément inconnu")
@@ -1602,6 +1798,8 @@ class Handler(BaseHTTPRequestHandler):
             changed=db.execute("UPDATE top_buttons SET icon=?,label=?,url=?,active=?,updated_at=?,custom_icon=? WHERE id=?",(item["icon"],item["label"],item["url"],item["active"],now_iso(),item["custom_icon"],item_id)).rowcount
         return self.send(204) if changed else self.send(404)
     def upload(self,data):
+        if data.get('purpose')=='campaign-default' and data.get('type') not in {'image/png','image/jpeg','image/webp'}:
+            raise ValueError('PNG, JPEG ou WebP uniquement pour le visuel par défaut')
         mime=data.get("type","");encoded=data.get("data","")
         if mime not in IMAGE_TYPES or not isinstance(encoded,str):raise ValueError("Format d’image non pris en charge")
         raw=base64.b64decode(encoded.split(",",1)[-1],validate=True)
@@ -1624,4 +1822,4 @@ class Handler(BaseHTTPRequestHandler):
 def serve(port,admin,host):
     server=ThreadingHTTPServer((host,port),Handler);server.admin=admin;return server
 if __name__=="__main__":
-    init();write_public_fallback();threading.Thread(target=storage_worker,daemon=True).start();public=serve(3003,False,"127.0.0.1");threading.Thread(target=public.serve_forever,daemon=True).start();serve(8081,True,"0.0.0.0").serve_forever()
+    init();write_public_fallback();threading.Thread(target=campaign_worker,daemon=True).start();threading.Thread(target=storage_worker,daemon=True).start();public=serve(3003,False,"127.0.0.1");threading.Thread(target=public.serve_forever,daemon=True).start();serve(8081,True,"0.0.0.0").serve_forever()

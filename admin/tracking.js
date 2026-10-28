@@ -257,5 +257,5 @@ async function openEntity(type,id){
  if(!item)throw Error("Cette fiche n’est plus disponible.");
  if(type==="partner")openPartner(item);else await openEditor(item);
 }
-window.LinksTracking={load,campaignOptions,loadPartners,openEntity};
+window.LinksTracking={load,campaignOptions,loadPartners,openEntity,reuseEntity:openReuse};
 })();

@@ -55,10 +55,17 @@ def canonical_destination(url):
             '?' in url.split('#', 1)[0], percent(parsed.fragment), '#' in url)
 
 
-def duplicate_destinations(db, url, exclude=None):
+def duplicate_destinations(db, url, exclude=None, campaigns=False):
     target = canonical_destination(url)
     matches = []
-    for row in db.execute('SELECT id,name,url,archived,enabled FROM tracked_links WHERE id!=? ORDER BY created_at,id', (exclude or '',)):
+    tracked_exclude=exclude if not campaigns else None
+    rows=[dict(row) for row in db.execute('SELECT id,name,url,archived,enabled FROM tracked_links WHERE id!=? ORDER BY created_at,id', (tracked_exclude or '',))]
+    if campaigns:
+        rows=[{**row,'kind':'tracked'} for row in rows]
+        rows.extend(dict(row) for row in db.execute("""SELECT id,internal_name AS name,url,archived,
+            active AND NOT retired AS enabled,'campaign' AS kind FROM content_blocks
+            WHERE type IN ('promo','featured') AND id!=? ORDER BY created_at,id""",(exclude or '',)))
+    for row in rows:
         try:
             equivalent = canonical_destination(row['url']) == target
         except (ValueError, UnicodeError):

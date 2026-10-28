@@ -215,8 +215,13 @@ function renderBlock(item) {
   return a;
 }
 
+function campaignVisual(item) {
+  return item.image||item.effective_image||window.linksCampaignDefaultImage||window.LINKS_PUBLIC_CONFIG?.campaign_default_image||'/assets/link-shopping.webp';
+}
 function renderOffer(item) {
-  item={...item,image:window.LinksTheme?LinksTheme.asset(item.image):item.image};
+  const fallback=window.linksCampaignDefaultImage||window.LINKS_PUBLIC_CONFIG?.campaign_default_image||'/assets/link-shopping.webp';
+  const selected=campaignVisual(item);
+  item={...item,image:window.LinksTheme?LinksTheme.asset(selected):selected};
   const card = document.createElement("article");
   card.className = "card offer-card";
   const visual = text("span", "offer-visual", "");
@@ -231,6 +236,10 @@ function renderOffer(item) {
     backdrop.alt = '';
     backdrop.setAttribute('aria-hidden', 'true');
     visual.append(backdrop, image);
+    for(const img of [image,backdrop]){
+      const alternatives=[fallback,'/assets/link-shopping.webp'].filter(value=>value!==item.image);let next=0;
+      img.addEventListener('error',()=>{if(next<alternatives.length)img.src=alternatives[next++]});
+    }
   }
   const copy = text("div", "offer-copy", ""),
     label = text("span", "offer-kicker", "Offre du moment");

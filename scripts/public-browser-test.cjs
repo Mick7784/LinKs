@@ -154,6 +154,15 @@ const {tmpdir}=require('node:os');
   await load('youtube');assert((await page.locator('#offers').textContent()).includes('Campagne renommée'));
   await request('/api/settings',{name:config.profile.name,tagline:'Accroche de vérification temporaire',description:config.profile.description});await load();assert.equal(await page.locator('#profile-tagline').textContent(),'Accroche de vérification temporaire');
   await request('/api/content/'+future.id,block('Campagne désormais active'),'PUT');await load();assert.equal(await page.locator('.carousel-slide').count(),3);
+  // All eligible campaigns remain in the API; only the server selection is shown.
+  const waiting=await request('/api/content',block('Campagne en attente'));
+  const queued=await request('/api/public-config',undefined,'GET');
+  assert.equal(queued.links.filter(x=>['promo','featured'].includes(x.type)).length,4);
+  assert.deepEqual(queued.visible_campaign_ids,[first.id,second.id,future.id]);
+  await load();assert.equal(await page.locator('.carousel-slide').count(),3);assert.equal(await page.getByText('Campagne en attente',{exact:true}).count(),0);
+  await request('/api/content/'+second.id+'/archive',{});await page.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
+  await page.locator('.offer-title').filter({hasText:'Campagne en attente'}).waitFor();assert.equal(await page.locator('.carousel-slide').count(),3);
+  await request('/api/content/'+second.id+'/restore',{});await request('/api/content/'+waiting.id+'/archive',{});await load();
   // Theme preferences on the admin origin have no effect on public dark colors.
   await page.evaluate(()=>{localStorage.setItem('links-admin-theme','light');document.documentElement.dataset.theme='light'});assert.equal(await page.locator('body').evaluate(n=>getComputedStyle(n).backgroundColor),'rgb(6, 14, 36)');
   await request('/api/content/'+second.id+'/archive',{});await request('/api/content/'+future.id+'/archive',{});await load();assert.equal(await page.locator('.carousel-slide').count(),1);assert(await page.locator('#offers-controls').isHidden());
