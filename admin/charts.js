@@ -62,7 +62,7 @@ function timeSeries(root,detail,days,series,{mode='line',active=()=>true,onSelec
   state.width=root.clientWidth;
   const model=plotModel(state.days,state.series,state.hidden),{visible,values,peak,step,max}=model;
   const outerWidth=Math.max(200,root.clientWidth),width=mode==='bars'?Math.max(outerWidth,days.length*Math.max(26,visible.length*12)+76):outerWidth;
-  const height=outerWidth<500?200:230,left=62,right=width-18,top=24,bottom=top+height,slot=(right-left)/Math.max(1,days.length),x=i=>left+slot*(i+.5),y=value=>bottom-value/max*height;
+  const height=mode==='line'?180:outerWidth<500?200:230,left=62,right=width-18,top=24,bottom=top+height,slot=(right-left)/Math.max(1,days.length),x=i=>left+slot*(i+.5),y=value=>bottom-value/max*height;
   root.classList.add('statistics-time-chart');root.dataset.chartMode=mode;
   root.replaceChildren();
   const legend=document.createElement('div');legend.className='time-legend';legend.setAttribute('role','group');legend.setAttribute('aria-label','Séries du graphique');
@@ -79,7 +79,7 @@ function timeSeries(root,detail,days,series,{mode='line',active=()=>true,onSelec
   if(mode==='line')for(let j=0;j<visible.length;j++){
    const s=visible[j],parts=[];let current=[];
    values.forEach((row,i)=>{if(row[j]===null){if(current.length)parts.push(current);current=[]}else current.push([x(i),y(row[j])])});if(current.length)parts.push(current);
-   marks+=parts.map(points=>`<polyline class="time-line tone-${tone(s.tone)}${s.dashed?' is-dashed':''}" data-series-key="${esc(s.key)}" points="${points.map(p=>p.join(',')).join(' ')}"/>${points.length===1?`<circle class="time-point tone-${tone(s.tone)}" data-series-key="${esc(s.key)}" cx="${points[0][0]}" cy="${points[0][1]}" r="4"/>`:''}`).join('');
+   marks+=parts.map(points=>`<polyline class="time-line tone-${tone(s.tone)}${s.dashed?' is-dashed':''}" data-series-key="${esc(s.key)}" points="${points.map(p=>p.join(',')).join(' ')}"/>${points.length===1||days.length<=31?points.map(([x,y])=>`<circle class="time-point tone-${tone(s.tone)}" data-series-key="${esc(s.key)}" cx="${x}" cy="${y}" r="3"/>`).join(''):''}`).join('');
   }
   if(mode==='bars')values.forEach((row,i)=>row.forEach((value,j)=>{if(value===null)return;const barWidth=Math.min(24,(slot-6)/Math.max(1,visible.length)),s=visible[j];marks+=`<rect class="daily-bar tone-${tone(s.tone)}${s.dashed?' is-dashed':''}" data-series-key="${esc(s.key)}" x="${x(i)+(j-visible.length/2)*barWidth}" y="${y(value)}" width="${Math.max(1,barWidth-2)}" height="${value/max*height}" rx="2"/>`;}));
   const hits=days.map((row,i)=>`<g class="chart-bucket" data-bucket="${i}" tabindex="${i===0?'0':'-1'}" role="button" aria-label="${esc(dayLabel(row[0],true)+', '+visible.map((s,j)=>s.label+' : '+(values[i][j]===null?'non disponible':fmt.format(values[i][j]))).join(', '))}"><rect class="time-hit" x="${left+i*slot}" y="${top}" width="${slot}" height="${height}"/></g>`).join('');
@@ -129,7 +129,7 @@ function distribution(root,items,{query='',sort='input',category='source',onSele
  root.classList.add('source-distribution');
  const total=items.reduce((sum,row)=>sum+row[1],0),positive=items.filter(row=>row[1]>0),ring=positive.length>=2&&positive.length<=6&&positive.every(row=>String(row[0]).length<=42);
  if(!total){root.innerHTML='<p class="empty">Aucune visite ou ouverture mesurée pour cette période et cette source.</p>';return}
- root.innerHTML=`<div class="source-overview"><strong class="source-total">${fmt.format(total)}</strong><span>visites et ouvertures · ${fmt.format(positive.length)} ${esc(category)}(s)</span></div><div class="sources-layout"><div class="donut-wrap" ${ring?'':'hidden'}></div><div class="source-list"></div></div><p class="source-inspector" role="status" aria-live="polite">${ring?'Choisissez un segment ou sa légende pour lire ses valeurs.':'Répartition par '+esc(category)+' · barres proportionnelles au total.'}</p>`;
+ root.innerHTML=`<div class="source-overview"><strong class="source-total">${fmt.format(total)}</strong><span>visites et ouvertures · ${fmt.format(positive.length)} ${esc(category)}(s)</span></div><div class="sources-layout"><div class="donut-wrap" ${ring?'':'hidden'}></div><div class="source-list"></div></div><p class="source-inspector" role="status" aria-live="polite">${ring?'':'Répartition par '+esc(category)+' · barres proportionnelles au total.'}</p>`;
  const pct=value=>value>0&&value/total*100<.1?'<0,1 %':(value/total*100).toLocaleString('fr-FR',{maximumFractionDigits:1})+' %';
  const select=(key,name,value,activate=false)=>{
   root.querySelector('.source-inspector').textContent=name+' : '+fmt.format(value)+' visites et ouvertures · '+pct(value);
@@ -148,7 +148,7 @@ function distribution(root,items,{query='',sort='input',category='source',onSele
   root.querySelector('.donut-wrap').innerHTML=`<svg viewBox="0 0 180 180" role="group" aria-label="Répartition des visites et ouvertures par ${esc(category)}">${segments}${markers.join('')}<text class="donut-total" x="90" y="87" text-anchor="middle">${fmt.format(total)}</text><text class="donut-caption" x="90" y="107" text-anchor="middle">Total</text></svg>`;
   const nodes=[...root.querySelectorAll('.donut-segment')];
   nodes.forEach((node,index)=>{
-   const row=positive[index],show=()=>select(node.dataset.sourceKey,row[0],row[1]);node.onpointerenter=node.onfocus=show;node.onclick=()=>select(node.dataset.sourceKey,row[0],row[1],true);
+   const row=positive[index],show=()=>select(node.dataset.sourceKey,row[0],row[1]);node.onfocus=show;node.onpointerenter=()=>{if(!root.querySelector(':focus-visible'))show()};node.onclick=()=>select(node.dataset.sourceKey,row[0],row[1],true);
    node.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();select(node.dataset.sourceKey,row[0],row[1],true)}else if(['ArrowLeft','ArrowRight','Home','End'].includes(event.key)){event.preventDefault();nodes[event.key==='Home'?0:event.key==='End'?nodes.length-1:(index+(event.key==='ArrowLeft'?-1:1)+nodes.length)%nodes.length].focus()}};
   });
  }
@@ -158,7 +158,7 @@ function distribution(root,items,{query='',sort='input',category='source',onSele
   node.innerHTML=`<span class="source-dot${ring?' source-number':''}" aria-hidden="true">${ring?item.number:''}</span><span class="source-name">${esc(item.name)}</span><strong>${fmt.format(item.total)}</strong><small>${pct(item.total)}</small>${ring?'':'<span class="source-share-track"><i></i></span>'}`;
   node.style.setProperty('--source-color',sourceColor(item.key));
   const bar=node.querySelector('i');if(bar)bar.style.width=(item.total/total*100)+'%';
-  node.onpointerenter=node.onfocus=()=>select(item.key,item.name,item.total);node.onclick=()=>select(item.key,item.name,item.total,true);node.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();select(item.key,item.name,item.total,true)}};return node;
+  node.onfocus=()=>select(item.key,item.name,item.total);node.onpointerenter=()=>{if(!root.querySelector(':focus-visible'))select(item.key,item.name,item.total)};node.onclick=()=>select(item.key,item.name,item.total,true);node.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();select(item.key,item.name,item.total,true)}};return node;
  }}).setRows(rows,{sort,query});
 }
 (typeof window==='undefined'?globalThis:window).StudioCharts={donut,ranking,timeline,timeSeries,distribution,plotModel,sourceColor,selectDay:(root,day)=>chartStates.get(root)?.selectDay?.(day)};
