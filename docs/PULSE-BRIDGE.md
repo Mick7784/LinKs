@@ -14,6 +14,8 @@ Trois endpoints serveur-à-serveur sont ajoutés :
 
 Les campagnes et les liens indépendants conservent leur historique existant : PulSe appelle les méthodes `story_link` et `tracked_links.token_link` déjà utilisées par LinKs. Aucune réattribution ou purge des jetons historiques.
 
+Le [moteur de sélection des campagnes](CAMPAIGN-SELECTION.md) limite l’affichage public à trois campagnes, sans limiter la publication PulSe : `/api/public-config` conserve toutes les campagnes éligibles dans `links` et ajoute `visible_campaign_ids` pour la page publique. Une campagne en attente reste éligible à `POST /api/pulse/story-link`.
+
 ## Sécurité
 
 Toutes les requêtes exigent `Authorization: Bearer <secret>` ; le secret est lu via `PULSE_BRIDGE_TOKEN` dans **l'environnement du conteneur LinKs**. Il doit contenir au moins 32 caractères aléatoires (64 caractères hexadécimaux recommandés).

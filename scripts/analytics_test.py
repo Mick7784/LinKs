@@ -433,7 +433,7 @@ class AnalyticsTests(unittest.TestCase):
         self.assertEqual(self.request(admin+path)[0],200)
         self.assertEqual(self.request(self.server()+path)[0],200)
 
-    def test_promotion_limit_next_slot_and_edit_exclusion(self):
+    def test_promotion_overlap_is_advisory_and_edit_exclusion(self):
         admin=self.server(True)
         base={'type':'promo','internal_name':'Promo','title':'Offre','description':'','url':'https://example.com','icon':'website','image':'','badge':'Promo','cta':'Voir','priority':'normal','active':True,'draft':False,'start_at':'2099-01-01T00:00:00Z'}
         ids=[]
@@ -443,9 +443,9 @@ class AnalyticsTests(unittest.TestCase):
             self.assertEqual(status,201);ids.append(json.loads(body)['id'])
         candidate={**base,'internal_name':'Quatrième','start_at':'2099-01-02T00:00:00Z','end_at':'2099-01-03T00:00:00Z'}
         status,body=self.request(admin+'/api/promotions/check',candidate,{'Content-Type':'application/json'})
-        check=json.loads(body);self.assertEqual(status,200);self.assertFalse(check['allowed']);self.assertEqual(check['maximum'],4)
-        self.assertEqual(check['next_start'],'2099-01-05T00:00:00Z')
-        self.assertEqual(self.request(admin+'/api/content',candidate,{'Content-Type':'application/json'})[0],400)
+        check=json.loads(body);self.assertEqual(status,200);self.assertTrue(check['allowed']);self.assertEqual(check['maximum'],4)
+        self.assertIsNone(check['next_start'])
+        self.assertEqual(self.request(admin+'/api/content',candidate,{'Content-Type':'application/json'})[0],201)
         edited={**candidate,'id':ids[0]}
         self.assertTrue(json.loads(self.request(admin+'/api/promotions/check',edited,{'Content-Type':'application/json'})[1])['allowed'])
 
@@ -477,14 +477,14 @@ class AnalyticsTests(unittest.TestCase):
             self.assertEqual(status,201);ids.append(json.loads(body)['id'])
         self.request(admin+'/api/content/'+ids[0]+'/archive',{})
         status,body=self.request(admin+'/api/content',base);self.assertEqual(status,201)
-        self.assertEqual(self.request(admin+'/api/content/'+ids[0]+'/restore',{})[0],400)
-        self.assertTrue(next(x for x in self.a.content_list(True) if x['id']==ids[0])['archived'])
+        self.assertEqual(self.request(admin+'/api/content/'+ids[0]+'/restore',{})[0],204)
+        self.assertFalse(next(x for x in self.a.content_list() if x['id']==ids[0])['archived'])
         # Failure occurs after disabling the old promotion inside the transaction.
         self.assertEqual(self.request(admin+'/api/promotions/replace',{'replace_id':ids[1],'content':{**base,'id':'missing'}})[0],400)
         self.assertTrue(next(x for x in self.a.content_list() if x['id']==ids[1])['active'])
         self.assertEqual(self.request(admin+'/api/promotions/replace',{'replace_id':ids[1],'content':base})[0],200)
         self.assertFalse(next(x for x in self.a.content_list() if x['id']==ids[1])['active'])
-        self.assertEqual(len([x for x in self.a.content_list() if x['type']=='promo' and x['active']]),3)
+        self.assertEqual(len([x for x in self.a.content_list() if x['type']=='promo' and x['active']]),4)
 
     def test_backup_roundtrip_including_images_and_counts(self):
         name='12345678-1234-1234-1234-123456789abc.png'

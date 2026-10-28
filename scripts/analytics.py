@@ -47,13 +47,19 @@ def connection():
         finally:
             db.close()
 def now_iso(): return datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
-def instant(value):
+def instant(value,strict=False):
     if not value:return None
     if not isinstance(value,str):raise ValueError("Date invalide")
     try:
         result=datetime.fromisoformat(value.strip().replace("Z","+00:00"))
-        return (result if result.tzinfo else result.replace(tzinfo=PARIS)).astimezone(timezone.utc)
     except ValueError as exc: raise ValueError("Date invalide") from exc
+    if strict and result.tzinfo is None:
+        # A local wall time at a DST transition needs an explicit offset.
+        candidates={local.astimezone(timezone.utc) for fold in (0,1)
+                    for local in [result.replace(tzinfo=PARIS,fold=fold)]
+                    if local.astimezone(timezone.utc).astimezone(PARIS).replace(tzinfo=None)==result}
+        if len(candidates)!=1:raise ValueError("Heure locale ambiguë ou inexistante : préciser le décalage UTC")
+    return (result if result.tzinfo else result.replace(tzinfo=PARIS)).astimezone(timezone.utc)
 def init():
     global ORIGIN,PARIS
     Path(DB).parent.mkdir(parents=True,exist_ok=True); UPLOADS.mkdir(parents=True,exist_ok=True)
@@ -299,8 +305,8 @@ def status_of(row,at=None):
     if start and start>at:return "Programmé"
     if end and end<=at:return "Expiré"
     return "Actif"
-def serialize(row,totals=None):
-    item=dict(row); item.update(active=bool(item["active"]),draft=bool(item["draft"]),archived=bool(item["archived"]),status=status_of(row))
+def serialize(row,totals=None,at=None):
+    item=dict(row); item.update(active=bool(item["active"]),draft=bool(item["draft"]),archived=bool(item["archived"]),status=status_of(row,at))
     if totals is not None:
         item["clicks"]=totals.get(("click","block:"+item["id"]),0)
         item["impressions"]=totals.get(("impression","block:"+item["id"]),0)
@@ -314,7 +320,45 @@ def totals(db):
     return result
 def content_list(archived=False):
     with connection() as db:
-        clicks=totals(db); timed=json.loads(instance.get(db,"admin.calendar_timed") or "[]"); return [{**serialize(r,clicks),"calendar_timed":r["id"] in timed} for r in db.execute("SELECT * FROM content_blocks WHERE archived=? ORDER BY CASE WHEN type IN ('promo','featured') THEN 0 ELSE 1 END,position,created_at",(1 if archived else 0,))]
+        now=datetime.now(timezone.utc)
+        rows=list(db.execute("SELECT * FROM content_blocks ORDER BY CASE WHEN type IN ('promo','featured') THEN 0 ELSE 1 END,position,created_at,id"))
+        states={item['id']:item for item in select_campaigns(rows,now)['items']}
+        clicks=totals(db);timed=json.loads(instance.get(db,"admin.calendar_timed") or "[]")
+        return [{**serialize(r,clicks,now),**states.get(r['id'],{}),"calendar_timed":r['id'] in timed} for r in rows if bool(r['archived'])==archived]
+
+
+CAMPAIGN_TYPES={'promo','featured'}
+CAMPAIGN_LIMIT=3
+
+def campaign_duration(row):
+    # Preserve open historical intervals and visual types, especially featured.
+    return 'one_off' if row['end_at'] else 'permanent'
+
+def campaign_order(row):
+    # position is appended on creation and persisted by the existing reorder API.
+    # The old high/normal editorial priority never overrides duration or order.
+    return (campaign_duration(row)!='one_off',row['position'],instant(row['created_at']),row['id'])
+
+def select_campaigns(rows,at=None):
+    """Read-only selection at one instant; eligibility is independent of capacity."""
+    at=instant(at,strict=True) if isinstance(at,str) else at or datetime.now(timezone.utc)
+    if at.tzinfo is None:raise ValueError('Préciser le fuseau de la date de sélection')
+    at=at.astimezone(timezone.utc)
+    items=[];eligible=[]
+    for row in sorted((r for r in rows if r['type'] in CAMPAIGN_TYPES),key=campaign_order):
+        state=('retired' if row['retired'] else {'Archivé':'archived','Brouillon':'draft',
+               'Désactivé':'disabled','Programmé':'scheduled','Expiré':'ended','Actif':'eligible'}[status_of(row,at)])
+        is_eligible=state=='eligible'
+        if is_eligible:
+            eligible.append(row['id'])
+            state='visible' if len(eligible)<=CAMPAIGN_LIMIT else 'waiting'
+        items.append({'id':row['id'],'duration_type':campaign_duration(row),'selection_state':state,
+                      'eligible':is_eligible,'visible':state=='visible'})
+    return {'at':at.isoformat().replace('+00:00','Z'),'limit':CAMPAIGN_LIMIT,'items':items,
+            'eligible_ids':eligible,'visible_ids':eligible[:CAMPAIGN_LIMIT],'waiting_ids':eligible[CAMPAIGN_LIMIT:]}
+
+def campaign_selection(at=None):
+    with connection() as db:return select_campaigns(list(db.execute('SELECT * FROM content_blocks')),at)
 def button_list(archived=False):
     with connection() as db:
         clicks=totals(db); result=[]
@@ -323,16 +367,23 @@ def button_list(archived=False):
         return result
 def public_config(snapshot=False):
     with connection() as db:
-        blocks=[serialize(r) for r in db.execute("SELECT * FROM content_blocks WHERE retired=0 AND archived=0 ORDER BY CASE WHEN type IN ('promo','featured') THEN 0 ELSE 1 END,CASE WHEN priority='high' THEN 0 ELSE 1 END,position,created_at") if snapshot or status_of(r)=="Actif"]
+        now=datetime.now(timezone.utc)
+        rows=list(db.execute("SELECT * FROM content_blocks WHERE retired=0 AND archived=0 ORDER BY CASE WHEN type IN ('promo','featured') THEN 0 ELSE 1 END,CASE WHEN priority='high' THEN 0 ELSE 1 END,position,created_at,id"))
+        selection=select_campaigns(rows,now)
+        # Keep all eligible campaigns in links for existing PulSe consumers.
+        # Only visible_campaign_ids is capped. Snapshot order also supports the
+        # existing date-filtered static fallback through future slot changes.
+        ordered=sorted((r for r in rows if r['type'] in CAMPAIGN_TYPES),key=campaign_order)+[r for r in rows if r['type'] not in CAMPAIGN_TYPES]
+        blocks=[serialize(r,at=now) for r in ordered if snapshot or status_of(r,now)=="Actif"]
         if snapshot:blocks=[x for x in blocks if x['active'] and not x['draft']]
         quote=db.execute("SELECT text FROM footer_quotes WHERE active=1 ORDER BY " + ("created_at,id" if snapshot else "RANDOM()") + " LIMIT 1").fetchone()
         buttons=[dict(r) for r in db.execute("SELECT * FROM top_buttons WHERE active=1 AND retired=0 ORDER BY position,created_at")]
         result={"profile":profile(db),"socials":[{"id":x["id"],"platform":x["icon"],"custom_icon":x["custom_icon"],"label":x["label"],"url":x["url"],"metricKey":"button:"+x["id"]} for x in buttons],
                 "links":[{"id":x["id"],"type":x["type"],"title":x["title"],"description":x["description"],"url":x["url"],"icon":x["icon"],"image":x["image"],"badge":x["badge"],"cta":x["cta"],"priority":x["priority"],"start_at":x["start_at"],"end_at":x["end_at"],"promo_code":x["promo_code"],"metricKey":"block:"+x["id"]} for x in blocks]}
         # Expose only the next public schedule boundary, never future private content.
-        now=datetime.now(timezone.utc)
         boundaries=[stamp for row in db.execute("SELECT start_at,end_at FROM content_blocks WHERE retired=0 AND archived=0 AND active=1 AND draft=0 AND type IN ('promo','featured')") for key in ("start_at","end_at") if (stamp:=instant(row[key])) and stamp>now]
         result["next_campaign_change"]=min(boundaries).isoformat().replace("+00:00","Z") if boundaries else None
+        if not snapshot:result['visible_campaign_ids']=selection['visible_ids']
         result["appearance"]=themes.public(db)
         result["profile"]["footer_quote"]=quote["text"] if quote else ""
     if result["profile"]["video_enabled"]:result["latestVideo"]={"enabled":True}
@@ -413,11 +464,11 @@ def block_data(data,allow_legacy_image=False):
     if priority not in {"normal","high"}:raise ValueError("Priorité invalide")
     if image.startswith("system:") and image[7:] not in themes.BACKGROUNDS:raise ValueError("Fond système inconnu")
     if image and not supported_image(image) and not (allow_legacy_image and valid_url(image)):raise ValueError("Image non prise en charge : importer une image locale ou choisir un fond LinKs")
-    start,end=instant(data.get("start_at")),instant(data.get("end_at"))
+    start,end=instant(data.get("start_at"),strict=not allow_legacy_image),instant(data.get("end_at"),strict=not allow_legacy_image)
     if start and end and end<=start:raise ValueError("La fin doit suivre le début")
     return {**({"calendar_timed":data["calendar_timed"]} if "calendar_timed" in data else {}),"type":kind,"internal_name":required(data,"internal_name"),"title":required(data,"title"),"description":optional(data,"description"),"url":url,"icon":icon,"image":image,"badge":badge,"cta":optional(data,"cta",80),**({"promo_code":optional(data,"promo_code",80)} if "promo_code" in data else {}),"priority":priority,"active":1 if data.get("active",True) else 0,"draft":1 if data.get("draft",False) else 0,"start_at":start.isoformat().replace("+00:00","Z") if start else None,"end_at":end.isoformat().replace("+00:00","Z") if end else None}
 def promotion_rows(db,exclude_id=None):
-    query="SELECT * FROM content_blocks WHERE type IN ('promo','featured') AND active=1 AND draft=0 AND archived=0"
+    query="SELECT * FROM content_blocks WHERE type IN ('promo','featured') AND active=1 AND draft=0 AND archived=0 AND retired=0"
     params=[]
     if exclude_id:query+=" AND id<>?";params.append(exclude_id)
     return list(db.execute(query,params))
@@ -429,6 +480,7 @@ def promotion_snapshot(row,now):
     age=max(0,(now-(start or datetime.fromisoformat(row["created_at"].replace("Z","+00:00")))).days) if status_of(row,now)=="Actif" else None
     return {"id":row["id"],"internal_name":row["internal_name"],"status":status_of(row,now),"start_at":row["start_at"],"end_at":row["end_at"],"active_days":age}
 def concurrency(existing,start,end):
+    if end<=start:return 0,[],[]
     overlap=[]
     for row in existing:
         rs,re=promotion_interval(row,datetime.now(timezone.utc))
@@ -450,25 +502,15 @@ def promotion_check(item,exclude_id=None,db=None):
         with connection() as conn:return promotion_check(item,exclude_id,conn)
     now=datetime.now(timezone.utc)
     rows=promotion_rows(db,exclude_id)
-    all_rows=list(db.execute("SELECT * FROM content_blocks WHERE type IN ('promo','featured') AND archived=0"))
+    all_rows=list(db.execute("SELECT * FROM content_blocks WHERE type IN ('promo','featured') AND archived=0 AND retired=0"))
     active=sum(status_of(row,now)=="Actif" for row in all_rows);programmed=sum(status_of(row,now)=="Programmé" for row in all_rows)
     if item["type"] not in {"promo","featured"} or not item["active"] or item["draft"]:
         return {"allowed":True,"maximum":0,"overlaps":[],"segments":[],"next_start":None,"active":active,"programmed":programmed}
     start,end=promotion_interval(item,now)
     maximum,overlap,segments=concurrency(rows,start,end)
-    duration=None if end==float("inf") else end-start
-    next_start=None
-    if maximum>3:
-        candidates=sorted({start}|{re for row in rows for _,re in [promotion_interval(row,now)] if re!=float("inf") and re>=start})
-        for candidate in candidates:
-            candidate_end=float("inf") if duration is None else candidate+duration
-            if concurrency(rows,candidate,candidate_end)[0]<=3:
-                next_start=datetime.fromtimestamp(candidate,timezone.utc).isoformat().replace("+00:00","Z");break
-    return {"allowed":maximum<=3,"maximum":maximum,"overlaps":[promotion_snapshot(row,now) for row,_,_ in overlap],"segments":segments,"next_start":next_start,"active":active,"programmed":programmed}
-def ensure_promotion_capacity(item,exclude_id=None,db=None):
-    check=promotion_check(item,exclude_id,db)
-    if not check["allowed"]:raise ValueError("Limite de 3 promotions simultanées dépassée")
-    return check
+    # Preserve the advisory contract; overlaps never prevent a save.
+    return {"allowed":True,"maximum":maximum,"overlaps":[promotion_snapshot(row,now) for row,_,_ in overlap],"segments":segments,"next_start":None,"active":active,"programmed":programmed}
+
 def button_data(data):
     icon=data.get("icon","website");icon="mail" if icon=="email" else icon;url=required(data,"url",2000)
     custom_icon=optional(data,"custom_icon",200)
@@ -487,7 +529,6 @@ def valid_metric(key):
 
 def save_content(db,item,item_id=None):
     storage.require_file(UPLOADS,item.get("image"),db,DATA_DIR/"assets",STATIC/"assets")
-    ensure_promotion_capacity(item,item_id,db)
     item=dict(item);timed=item.pop("calendar_timed",None)
     stamp=now_iso()
     if item_id:
@@ -835,10 +876,6 @@ def restore_backup(data,preview=False):
             summary={'blocks':len(tables['content_blocks']),'buttons':len(tables['top_buttons']),'images':len(images),
                      'retained_content':len(retained_rows),'published_redirects':len(tables['story_links'])+len(tables['tracked_tokens']),
                      'counter_total':sum(row['total'] for row in tables['counts'])}
-            live=[r for r in tables['content_blocks'] if r['type'] in {'promo','featured'} and r['active'] and not r['draft'] and not r['archived'] and not r['retired']]
-            for row in live:
-                start,end=promotion_interval(row,datetime.now(timezone.utc))
-                if concurrency([x for x in live if x['id']!=row['id']],start,end)[0]>3:raise ValueError('Limite de 3 promotions simultanées dépassée')
             canonical={r['token'] for r in tables['story_links']}|{r['token'] for r in tables['tracked_tokens']}
             if any(not r['revoked'] and r['target_token'] not in canonical for r in tables['short_aliases']):raise ValueError('Cible de lien court manquante')
             if preview:
@@ -860,8 +897,6 @@ def restore_backup(data,preview=False):
                 columns=[c['name'] for c in db.execute('PRAGMA table_info('+table+')')]
                 db.executemany('INSERT INTO '+table+' ('+','.join(columns)+') VALUES ('+','.join('?' for _ in columns)+')',[[row[c] for c in columns] for row in tables[table]])
             db.execute("INSERT OR REPLACE INTO settings VALUES('content.initialized','1')")
-            for row in db.execute("SELECT * FROM content_blocks WHERE archived=0 AND active=1 AND draft=0 AND type IN ('promo','featured')"):
-                ensure_promotion_capacity(dict(row),row['id'],db)
             # New filenames ensure that a failed restore cannot overwrite current images.
             for name,raw in decoded.items():
                 target=UPLOADS/name;written.append(target);storage.write(target,raw)
@@ -1322,6 +1357,10 @@ class Handler(BaseHTTPRequestHandler):
             if url.path=="/api/stats":
                 q=parse_qs(url.query);today=datetime.now(PARIS).date();return self.json(200,report(q.get("start",[(today-timedelta(days=29)).isoformat()])[0],q.get("end",[today.isoformat()])[0],q.get("source",[""])[0]))
             if url.path=="/api/content":return self.json(200,{"items":content_list(parse_qs(url.query).get("archived",["0"])[0]=="1")})
+            if url.path=="/api/promotions/selection":
+                values=parse_qs(url.query,keep_blank_values=True).get('at',[None])
+                if len(values)!=1 or values[0]=='':raise ValueError('Une seule date de sélection est requise')
+                return self.json(200,campaign_selection(values[0]))
             if url.path=="/api/buttons":return self.json(200,{"items":button_list(parse_qs(url.query).get('archived',['0'])[0]=='1')})
             if url.path=="/api/settings/overview":
                 with connection() as db:
@@ -1577,12 +1616,11 @@ class Handler(BaseHTTPRequestHandler):
                 timed=json.loads(instance.get(db,'admin.calendar_timed') or '[]')
                 if item_id in timed:instance.put(db,'admin.calendar_timed',json.dumps(timed+[new_id]))
                 return self.json(201,{"id":new_id})
-            if action=="restore":ensure_promotion_capacity(dict(row),item_id,db)
             db.execute("UPDATE content_blocks SET archived=?,retired=0,updated_at=? WHERE id=?",(1 if action=="archive" else 0,now_iso(),item_id))
         return self.send(204)
     def reorder(self,table,data):
         ids=data.get("ids")
-        if not isinstance(ids,list) or not ids or len(ids)>500 or len(set(ids))!=len(ids):raise ValueError("Ordre invalide")
+        if not isinstance(ids,list) or not ids or (table!='content_blocks' and len(ids)>500) or len(set(ids))!=len(ids):raise ValueError("Ordre invalide")
         with connection() as db:
             for pos,item_id in enumerate(ids):
                 if not db.execute(f"SELECT 1 FROM {table} WHERE id=?",(item_id,)).fetchone():raise ValueError("Élément inconnu")

@@ -18,6 +18,13 @@ async function getConfig(){
  const now=Date.now();return {...fallback,links:(fallback.links||[]).filter(item=>(!item.expiresAt||new Date(item.expiresAt).getTime()>now)&&(!item.start_at||new Date(item.start_at).getTime()<=now)&&(!item.end_at||new Date(item.end_at).getTime()>now)).map(item=>({...item,type:item.type||(item.featured?"featured":"classic")}))}}
 }
 
+// Eligibility remains available to PulSe; the page uses the server's selection.
+// Static fallback links are already ranked by the server, then filtered by date.
+function selectedOffers(config){
+ const now=Date.now(),ids=Array.isArray(config.visible_campaign_ids)?new Set(config.visible_campaign_ids):null;
+ return (config.links||[]).filter(x=>validUrl(x.url)&&["promo","featured"].includes(x.type)&&(!ids||ids.has(x.id))&&(!x.start_at||Date.parse(x.start_at)<=now)&&(!x.end_at||Date.parse(x.end_at)>now)).slice(0,3);
+}
+
 // Try full-resolution artwork first; YouTube may return a tiny placeholder with HTTP 200.
 function videoThumbnailSources(video){
  let id;
@@ -68,7 +75,7 @@ async function start(){
  const favicon=document.getElementById("site-favicon");if(profile.logo)favicon.href=profile.logo;else favicon.removeAttribute("href");
  const socials=document.getElementById("socials");for(const item of (config.socials||[]).filter(x=>validUrl(x.url))){socials.append(renderShortcut(item))}
  const video=document.getElementById("latest-video");if(config.latestVideo)fetch("/latest-video.json",{cache:"no-store"}).then(r=>{if(!r.ok)throw new Error();return r.json()}).then(data=>renderVideo(video,data)).catch(()=>{video.hidden=true});
- const visible=(config.links||[]).filter(x=>validUrl(x.url)),offers=visible.filter(x=>x.type==="promo"||x.type==="featured"),permanent=visible.filter(x=>x.type==="classic");renderOffers(offers);watchCampaigns(config,offers);const links=document.getElementById("links");if(permanent.length){decorateSectionTitle("links-title","link");for(const item of permanent)links.append(renderBlock(item));document.getElementById("links-section").hidden=false}document.getElementById("year").textContent=new Intl.DateTimeFormat("fr-FR",{year:"numeric",timeZone:publicTimezone}).format(new Date())
+ const visible=(config.links||[]).filter(x=>validUrl(x.url)),offers=selectedOffers(config),permanent=visible.filter(x=>x.type==="classic");renderOffers(offers);watchCampaigns(config,offers);const links=document.getElementById("links");if(permanent.length){decorateSectionTitle("links-title","link");for(const item of permanent)links.append(renderBlock(item));document.getElementById("links-section").hidden=false}document.getElementById("year").textContent=new Intl.DateTimeFormat("fr-FR",{year:"numeric",timeZone:publicTimezone}).format(new Date())
 }
 // Refresh only campaign DOM. Metrics and all page-level listeners start once.
 function watchCampaigns(config,initial){
@@ -77,7 +84,7 @@ function watchCampaigns(config,initial){
  const schedule=()=>{clearTimeout(timer);const remaining=Date.parse(current.next_campaign_change)-Date.now();const delay=!document.hidden&&remaining>0?Math.min(30000,Math.max(250,remaining+100)):30000;timer=setTimeout(refresh,delay)};
  async function refresh(){
   if(busy)return;if(document.hidden){schedule();return}busy=true;
-  try{const next=await getConfig();const now=Date.now(),offers=(next.links||[]).filter(x=>validUrl(x.url)&&["promo","featured"].includes(x.type)&&(!x.start_at||Date.parse(x.start_at)<=now)&&(!x.end_at||Date.parse(x.end_at)>now));
+  try{const next=await getConfig();const offers=selectedOffers(next);
    const nextSignature=JSON.stringify(offers);if(nextSignature!==signature){renderOffers(offers);signature=nextSignature}current=next;
   }finally{busy=false;schedule()}
  }
