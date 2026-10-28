@@ -366,17 +366,57 @@ async function saveOrder(root,buttons=false){try{const ids=[...(buttons?root:$("
 async function move(root,item,direction,buttons=false){const siblings=[...root.querySelectorAll(`.list-item${buttons?"":'[data-group="'+item.dataset.group+'"]'}`)],index=siblings.indexOf(item),other=siblings[index+direction];if(!other)return;item.parentNode.insertBefore(direction<0?item:other,direction<0?other:item);await saveOrder(root,buttons)}
 
 const blockDialog=$("block-dialog"),blockForm=$("block-form");
+let campaignAffiliate={generation:0,revision:0,active:false,manual:false,reapply:false,pendingDetect:false,preview:null,loading:null,timer:null};
+let campaignSaving=false;
+function resetCampaignAffiliate(){clearTimeout(campaignAffiliate.timer);campaignAffiliate={generation:campaignAffiliate.generation+1,revision:0,active:false,manual:false,reapply:false,pendingDetect:false,preview:null,loading:null,timer:null}}
+async function initializeCampaignAffiliate(item={}){
+ const state=campaignAffiliate;state.active=true;state.manual=false;state.reapply=!item.id;state.pendingDetect=!item.id;
+ const select=$('campaign-partner');select.disabled=true;select.replaceChildren(new Option('Aucun',''));$('campaign-final-link').hidden=true;$('campaign-duplicates').hidden=true;
+ $('campaign-final-message').textContent='Chargement des partenaires…';
+ state.loading=api('/api/affiliate-partners').then(result=>{if(campaignAffiliate!==state||!state.active)return;select.replaceChildren(new Option('Aucun',''),...result.items.map(row=>new Option(row.name,row.id)));select.value=item.partner_id||'';select.disabled=false;return true}).catch(error=>{if(campaignAffiliate===state)$('campaign-final-message').textContent=error.message;return false});
+ if(await state.loading)previewCampaignAffiliate();
+}
+function renderCampaignDuplicates(matches=[]){
+ $('campaign-duplicates').hidden=!matches.length;
+ $('campaign-duplicate-list').innerHTML=matches.map(row=>`<article class="campaign-duplicate"><div><strong>${esc(row.name)}</strong><small>${row.kind==='campaign'?'Campagne':'Lien suivi'}${row.archived?' · Archivé':!row.enabled?' · Désactivé':''}</small></div><button type="button" ${row.kind==='campaign'?`data-reuse-campaign="${esc(row.id)}" data-archived="${row.archived?1:0}"`:`data-reuse-tracked="${esc(row.id)}"`}>${row.kind==='campaign'?(row.archived?'Consulter dans Archives':'Réutiliser cette campagne'):'Réutiliser les liens existants'}</button></article>`).join('');
+}
+async function previewCampaignAffiliate(){
+ const state=campaignAffiliate;if(!state.active)return null;
+ if(state.loading&&!await state.loading)return null;if(campaignAffiliate!==state)return null;
+ clearTimeout(state.timer);const revision=++state.revision,detect=state.pendingDetect;
+ state.preview=null;$('campaign-final-link').hidden=true;$('campaign-final-link').removeAttribute('href');renderCampaignDuplicates();
+ const origin=blockForm.elements.url.value.trim();if(!origin){$('campaign-final-message').textContent='Renseignez une URL d’origine pour voir la destination finale.';return null}
+ $('campaign-final-message').textContent='Calcul de l’URL finale…';
+ try{
+  const result=await api('/api/content/preview',{method:'POST',body:JSON.stringify({id:blockForm.elements.id.value,url:origin,partner_id:$('campaign-partner').value,detect,apply_partner:state.reapply})});
+  if(campaignAffiliate!==state||revision!==state.revision||!blockDialog.open)return null;
+  if(detect)$('campaign-partner').value=result.partner_id;state.pendingDetect=false;state.preview=result;
+  const link=$('campaign-final-link');link.textContent=result.url;link.href=result.url;link.hidden=false;
+  $('campaign-final-message').textContent=blockForm.elements.id.value&&!state.reapply?'Destination enregistrée conservée. Le recalcul est explicite.':'Destination calculée par LinKs. Cliquez sur l’URL pour la tester.';
+  $('campaign-partner-note').textContent=detect?(result.partner_id?'Partenaire détecté. Vous pouvez en choisir un autre ou « Aucun ».':'Aucun partenaire détecté. L’URL est utilisée directement.'):'Partenaire choisi. « Aucun » conserve l’URL d’origine sans ajouter de code.';
+  renderCampaignDuplicates(result.duplicates);return result;
+ }catch(error){if(campaignAffiliate===state&&revision===state.revision)$('campaign-final-message').textContent=error.message;return null}
+}
+function scheduleCampaignAffiliate(detect){const state=campaignAffiliate;if(!state.active)return;state.reapply=true;state.pendingDetect=detect;state.preview=null;++state.revision;clearTimeout(state.timer);$('campaign-final-link').hidden=true;state.timer=setTimeout(previewCampaignAffiliate,180)}
+$('campaign-partner').addEventListener('change',()=>{campaignAffiliate.manual=true;scheduleCampaignAffiliate(false)});
+$('campaign-detect').addEventListener('click',()=>{campaignAffiliate.manual=false;scheduleCampaignAffiliate(true)});
+$('campaign-recalculate').addEventListener('click',()=>scheduleCampaignAffiliate(false));
+$('campaign-duplicate-list').addEventListener('click',async event=>{
+ const campaign=event.target.closest('[data-reuse-campaign]'),tracked=event.target.closest('[data-reuse-tracked]');
+ try{if(campaign){if(campaign.dataset.archived==='1'){blockDialog.close();activate('archives');return}const rows=(await api('/api/content')).items,item=rows.find(row=>row.id===campaign.dataset.reuseCampaign);if(!item)throw Error('Campagne introuvable.');openBlock(item);say('Campagne existante réutilisée. Ses liens et statistiques sont conservés.')}if(tracked){blockDialog.close();activate('tracked-links');await window.LinksTracking.reuseEntity(tracked.dataset.reuseTracked)}}catch(error){say(error.message,true)}
+});
 const blockUpload=LinksUploads.create(blockForm,{statusHost:blockForm.querySelector(".image-editor"),active:()=>blockDialog.open});
-blockDialog.addEventListener("close",()=>blockUpload.invalidate());
+blockDialog.addEventListener("close",()=>{blockUpload.invalidate();resetCampaignAffiliate()});
 blockDialog.addEventListener("cancel",()=>blockUpload.invalidate());
 function localDate(value){return LinksDates.local(value,adminTimezone)}
 function openBlock(item={},type="classic"){
- blockUpload.invalidate();blockForm.reset();$("block-feedback").hidden=true;$("block-advanced").open=false;
+ blockUpload.invalidate();resetCampaignAffiliate();blockForm.reset();$("block-feedback").hidden=true;$("block-advanced").open=false;
  const clean={id:"",type,internal_name:"",title:"",description:"",url:"",icon:"website",image:"",badge:"",cta:"",promo_code:"",priority:"normal",start_at:"",end_at:""};
  for(const [key,value] of Object.entries(clean))blockForm.elements[key].value=value;
  $("block-image-file").value="";blockForm.elements.active.checked=true;blockForm.elements.draft.checked=false;
  if(item.id){for(const key of ["id","type","internal_name","title","description","url","icon","image","badge","cta","promo_code","priority"])blockForm.elements[key].value=item[key]??clean[key];blockForm.elements.active.checked=item.active!==false;blockForm.elements.draft.checked=!!item.draft;}
  const fields=LinksCalendar.inputFields(item,adminTimezone);for(const [key,value] of Object.entries(fields))blockForm.elements[key].value=value;
+ if(['promo','featured'].includes(item.type||type)&&item.id)blockForm.elements.url.value=item.original_url||item.url||'';
  blockForm.campaignOriginal={...item};blockForm.elements.permanent.checked=!item.end_at;
  blockForm.scheduleOriginal={fields,permanent:!item.end_at,calendar_timed:!!item.calendar_timed,start_at:item.start_at||null,end_at:item.end_at||null};
  $("promo-availability").hidden=true;const promo=["promo","featured"].includes(item.type||type);
@@ -385,6 +425,10 @@ function openBlock(item={},type="classic"){
 }
 function updatePromoEditor(){
  const promo=["promo","featured"].includes(blockForm.elements.type.value),permanent=blockForm.elements.permanent.checked;
+ $('campaign-affiliation').hidden=!promo;$('block-url-label').textContent=promo?'URL d’origine':'Destination';
+ if(promo&&!campaignAffiliate.active)initializeCampaignAffiliate(blockForm.campaignOriginal);
+ if(!promo&&campaignAffiliate.active)resetCampaignAffiliate();
+ if(!promo)blockForm.elements.partner_id.disabled=true;
  blockForm.querySelectorAll("[data-promo-editorial]").forEach(label=>label.hidden=promo);
  blockForm.elements.title.required=true;blockForm.querySelector('[data-content-type]').hidden=promo;
  blockForm.querySelector('[data-campaign-permanent]').hidden=!promo;
@@ -412,7 +456,7 @@ function formBlock(){
  const unchanged=original&&Object.entries(original.fields).every(([key,value])=>blockForm.elements[key].value===value)&&(!promo||permanent===original.permanent);
  const range=unchanged?{start_at:original.start_at,end_at:original.end_at}:permanent?{start_at:null,end_at:null}:LinksCalendar.inputRange(blockForm.elements.start_at.value,blockForm.elements.start_time.value,blockForm.elements.end_at.value,blockForm.elements.end_time.value,adminTimezone);
  Object.assign(data,range);data.calendar_timed=unchanged?original.calendar_timed:!permanent&&!!(blockForm.elements.start_time.value||blockForm.elements.end_time.value);
- delete data.start_time;delete data.end_time;delete data.permanent;return data;
+ delete data.start_time;delete data.end_time;delete data.permanent;if(!promo)delete data.partner_id;return data;
 }
 let promotionTimer,pendingConflict,lastPromotionCheck;
 const periodText=value=>value?new Intl.DateTimeFormat("fr-FR",{dateStyle:"medium",timeStyle:"short",timeZone:adminTimezone}).format(new Date(value)):"sans limite";
@@ -439,7 +483,21 @@ function renderBlockPreview(){
  LinksTheme.apply(window.linksActiveAppearance,doc).then(resize);resize();root.querySelectorAll('img').forEach(img=>img.addEventListener('load',resize,{once:true}));
 }
 $("clear-block-image").addEventListener("click",()=>{blockUpload.invalidate();blockForm.elements.image.value="";$("block-image-file").value="";preview()});
-blockForm.addEventListener("input",event=>{if(event.target===blockForm.elements.image)blockUpload.invalidate();try{preview()}catch(error){say(error.message,true)}checkPromotion()});blockForm.addEventListener("submit",async event=>{event.preventDefault();if(event.submitter?.value==="cancel"){blockDialog.close();return}try{const data=formBlock();if(["promo","featured"].includes(data.type)&&data.active&&!data.draft){const payload={...data};lastPromotionCheck=await api("/api/promotions/check",{method:"POST",body:JSON.stringify(payload)});if(!lastPromotionCheck.allowed){showConflict(data,lastPromotionCheck);return}}await saveBlock(data)}catch(error){say(error.message,true)}});
+blockForm.addEventListener("input",event=>{if(event.target===blockForm.elements.image)blockUpload.invalidate();try{preview()}catch(error){say(error.message,true)}if(event.target===blockForm.elements.url)scheduleCampaignAffiliate(!campaignAffiliate.manual);checkPromotion()});
+blockForm.addEventListener("submit",async event=>{
+ event.preventDefault();if(event.submitter?.value==='cancel'){blockDialog.close();return}if(campaignSaving)return;campaignSaving=true;
+ try{
+  const data=formBlock();if(['promo','featured'].includes(data.type)){
+   const result=await previewCampaignAffiliate();if(!result)return;const affiliateRevision=campaignAffiliate.revision;
+   if(result.changed&&!confirm(`Remplacer la destination de cette campagne ?\n\nActuelle : ${result.previous_url}\n\nNouvelle : ${result.url}\n\nLes liens déjà partagés utiliseront cette destination.`))return;
+   if(result.duplicate_confirmation_required&&!confirm(`Cette destination existe déjà : ${result.duplicates.map(row=>row.name).join(', ')}.\n\nRéutilisez une fiche existante pour conserver son historique. Créer exceptionnellement une autre campagne ?`))return;
+   Object.assign(data,{partner_id:result.partner_id,apply_partner:campaignAffiliate.reapply,expected_url:result.url,previous_url:result.previous_url,confirm_destination:result.changed,allow_duplicate:result.duplicate_confirmation_required,duplicate_ids:result.duplicates.map(row=>row.kind+':'+row.id).sort()});
+   if(data.active&&!data.draft){lastPromotionCheck=await api('/api/promotions/check',{method:'POST',body:JSON.stringify(data)});if(!lastPromotionCheck.allowed){showConflict(data,lastPromotionCheck);return}}
+   if(affiliateRevision!==campaignAffiliate.revision||blockForm.elements.url.value.trim()!==data.url.trim())throw Error('La destination a changé pendant la vérification. Enregistrez à nouveau.');
+  }
+  await saveBlock(data);
+ }catch(error){say(error.message,true)}finally{campaignSaving=false}
+});
 $("block-image-file").addEventListener("change",event=>blockUpload.run(event.target,url=>{blockForm.elements.image.value=url;preview()}));
 
 document.querySelectorAll("[data-preview]").forEach(button=>button.addEventListener("click",()=>{document.querySelectorAll("[data-preview]").forEach(x=>x.classList.toggle("active",x===button));$("block-preview").classList.toggle("mobile",button.dataset.preview==="mobile")}));

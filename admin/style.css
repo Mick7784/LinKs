@@ -3198,3 +3198,13 @@ button.drag-handle{touch-action:none;user-select:none;min-width:44px;min-height:
 .campaign-default-preview{display:block;width:min(100%,320px);aspect-ratio:1;object-fit:cover;border-radius:12px;border:1px solid var(--line);margin:20px 0}
 .campaign-default-panel input[type=file]{max-width:100%}
 @media(max-width:500px){.campaign-preview-controls label{min-width:110px}.campaign-preview-controls button{width:100%}.selection-group{padding:12px}.campaign-default-preview{width:min(100%,260px)}}
+
+/* Shared server affiliate preview, sized for the existing campaign editor. */
+.campaign-affiliation{padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--panel-soft);display:grid;gap:12px;min-width:0}
+.campaign-affiliate-actions{display:flex;gap:8px;flex-wrap:wrap}
+.campaign-final-output{min-width:0;padding-top:10px;border-top:1px solid var(--line)}
+.campaign-final-output>a{display:block;overflow-wrap:anywhere;font-size:.85rem;color:var(--accent)}
+.campaign-final-output p{margin:6px 0}
+.campaign-duplicate{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:12px 0;border-top:1px solid var(--line)}
+.campaign-duplicate>div{flex:1;min-width:130px;overflow-wrap:anywhere}.campaign-duplicate small{display:block;color:var(--muted);margin-top:4px}
+.campaign-duplicate button{max-width:100%;white-space:normal}

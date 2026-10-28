@@ -333,7 +333,7 @@ def content_list(archived=False):
         states={item['id']:item for item in select_campaigns(rows,now)['items']}
         rows=sorted((r for r in rows if r['type'] in CAMPAIGN_TYPES),key=campaign_order)+[r for r in rows if r['type'] not in CAMPAIGN_TYPES]
         clicks=totals(db);timed=json.loads(instance.get(db,"admin.calendar_timed") or "[]")
-        return [{**serialize(r,clicks,now),**states.get(r['id'],{}),"calendar_timed":r['id'] in timed} for r in rows if bool(r['archived'])==archived]
+        return [{**serialize(r,clicks,now),**states.get(r['id'],{}),"calendar_timed":r['id'] in timed,**(affiliate_partners.campaign_metadata(db,r['id'],r['url']) if r['type'] in CAMPAIGN_TYPES else {})} for r in rows if bool(r['archived'])==archived]
 
 
 CAMPAIGN_TYPES={'promo','featured'}
@@ -406,6 +406,7 @@ def campaign_references(db):
     # cleanup must preserve their owner instead of implicitly deleting children.
     def quoted(name):return '"'+name.replace('"','""')+'"'
     for table in list(db.execute("SELECT name FROM sqlite_master WHERE type='table'")):
+        if table['name']=='campaign_partners':continue  # Owned provenance, cascaded only for truly unused campaigns.
         for reference in db.execute('PRAGMA foreign_key_list('+quoted(table['name'])+')'):
             if reference['table']=='content_blocks' and reference['to'] in (None,'id'):
                 retained.update(r[0] for r in db.execute('SELECT '+quoted(reference['from'])+' FROM '+quoted(table['name'])))
@@ -666,12 +667,33 @@ def save_content(db,item,item_id=None):
         instance.put(db,"admin.calendar_timed",json.dumps(sorted(ids)))
     return item_id
 
+def save_content_request(db,data,ident=None):
+    current=db.execute('SELECT * FROM content_blocks WHERE id=?',(ident,)).fetchone() if ident else None
+    if ident and not current:raise ValueError('Bloc introuvable')
+    if current:data={'type':current['type'],'internal_name':current['internal_name'],**data}
+    result=None
+    # A legacy GET/PUT roundtrip may echo the new read-only metadata. Only an
+    # explicit affiliation operation enters the preview/confirmation protocol.
+    explicit=('expected_url' in data or 'apply_partner' in data or data.get('detect') is True or
+              ('partner_id' in data and (not current or data['partner_id']!=affiliate_partners.campaign_metadata(db,ident,current['url'])['partner_id'])))
+    if data.get('type') in CAMPAIGN_TYPES and explicit:
+        result=affiliate_partners.preview_campaign(db,data,ident,valid_url)
+        affiliate_partners.check_campaign_preview(data,result)
+    fields={**data,'url':result['url']} if result else data
+    item=block_data(fields,allow_legacy_image=bool(current and current['image'] and current['image']==data.get('image')))
+    saved=save_content(db,item,ident)
+    if result:affiliate_partners.save_campaign_metadata(db,saved,result)
+    elif current and (current['url']!=item['url'] or item['type'] not in CAMPAIGN_TYPES):
+        db.execute('DELETE FROM campaign_partners WHERE campaign_id=?',(saved,))
+    return saved
+
 LEGACY_BACKUP_TABLES=('content_blocks','top_buttons','settings','counts','story_links','footer_quotes')
 TRACKING_BACKUP_TABLES=('tracking_sources','tracked_links','tracked_tokens')
 SHORT_BACKUP_TABLES=('short_aliases',)
 SOURCE_BACKUP_TABLES=('tracking_source_keys',)
 PARTNER_BACKUP_TABLES=('affiliate_partners','tracked_link_partners')
-BACKUP_TABLES=LEGACY_BACKUP_TABLES+TRACKING_BACKUP_TABLES+SHORT_BACKUP_TABLES+SOURCE_BACKUP_TABLES+PARTNER_BACKUP_TABLES
+CAMPAIGN_PARTNER_BACKUP_TABLES=('campaign_partners',)
+BACKUP_TABLES=LEGACY_BACKUP_TABLES+TRACKING_BACKUP_TABLES+SHORT_BACKUP_TABLES+SOURCE_BACKUP_TABLES+PARTNER_BACKUP_TABLES+CAMPAIGN_PARTNER_BACKUP_TABLES
 BACKUP_LIMIT=64*1024*1024
 UPLOAD_NAME=re.compile(r'[a-f0-9-]{36}\.(jpg|png|webp|gif)')
 
@@ -744,6 +766,8 @@ def restore_backup(data,preview=False):
         if missing_partners!=set(PARTNER_BACKUP_TABLES):raise ValueError('Sauvegarde de partenaires incomplète')
         with connection() as db:
             for table in PARTNER_BACKUP_TABLES:tables[table]=[dict(row) for row in db.execute('SELECT * FROM '+table)]
+    if 'campaign_partners' not in tables:
+        with connection() as db:tables['campaign_partners']=[dict(row) for row in db.execute('SELECT * FROM campaign_partners')]
     if set(tables)!=set(BACKUP_TABLES):raise ValueError('Sauvegarde incomplète')
     assets=data.get('assets',{})
     if not isinstance(assets,dict):raise ValueError('Assets invalides')
@@ -803,6 +827,10 @@ def restore_backup(data,preview=False):
                     elif table=='tracked_link_partners':
                         if any(not re.fullmatch(r'[a-f0-9]{32}',row[key]) for key in ('link_id','partner_id')):raise ValueError('Association de partenaire invalide')
                         if row['original_url'] and (len(row['original_url'])>2000 or not affiliate_partners.http_url(row['original_url'])):raise ValueError('URL d’origine invalide')
+                    elif table=='campaign_partners':
+                        if not row['campaign_id'] or (row['partner_id'] is not None and not re.fullmatch(r'[a-f0-9]{32}',row['partner_id'])):raise ValueError('Association de campagne invalide')
+                        if not valid_url(row['original_url']) or not valid_url(row['final_url']):raise ValueError('URL de campagne invalide')
+                        if row['partner_id'] is not None and not affiliate_partners.http_url(row['original_url']):raise ValueError('URL affiliée invalide')
                     elif table=='content_blocks':
                         block_data(row,allow_legacy_image=True)
                         if any(row[k] not in (0,1) for k in ['active','draft','archived','retired']):raise ValueError('État invalide')
@@ -935,6 +963,7 @@ def restore_backup(data,preview=False):
             tracked_tokens={r['token'] for r in tables['tracked_tokens']}
             if any(r['kind']=='tracked' and r['link'].split(':')[1] not in tracked_tokens for r in tables['counts']):raise ValueError('Lien suivi manquant')
             affiliate_partners.merge_backup(db,tables)
+            affiliate_partners.merge_campaign_backup(db,tables)
             # Short codes are never recycled or reassigned after restore.
             aliases={r['code']:r for r in tables['short_aliases']}
             for old in db.execute('SELECT * FROM short_aliases'):
@@ -1003,6 +1032,7 @@ def restore_backup(data,preview=False):
                 return summary
             # Backup the current SQLite state only after validation, before replacing rows.
             restore_safety(db)
+            db.execute('DELETE FROM campaign_partners')
             for table in reversed(PARTNER_BACKUP_TABLES):
                 db.execute('DELETE FROM '+table)
             for table in SOURCE_BACKUP_TABLES+SHORT_BACKUP_TABLES:
@@ -1013,7 +1043,7 @@ def restore_backup(data,preview=False):
                 db.execute('DELETE FROM '+table)
                 columns=[c['name'] for c in db.execute('PRAGMA table_info('+table+')')]
                 db.executemany('INSERT INTO '+table+' ('+','.join(columns)+') VALUES ('+','.join('?' for _ in columns)+')',[[row[c] for c in columns] for row in tables[table]])
-            for table in TRACKING_BACKUP_TABLES+SHORT_BACKUP_TABLES+SOURCE_BACKUP_TABLES+PARTNER_BACKUP_TABLES:
+            for table in TRACKING_BACKUP_TABLES+SHORT_BACKUP_TABLES+SOURCE_BACKUP_TABLES+PARTNER_BACKUP_TABLES+CAMPAIGN_PARTNER_BACKUP_TABLES:
                 columns=[c['name'] for c in db.execute('PRAGMA table_info('+table+')')]
                 db.executemany('INSERT INTO '+table+' ('+','.join(columns)+') VALUES ('+','.join('?' for _ in columns)+')',[[row[c] for c in columns] for row in tables[table]])
             db.execute("INSERT OR REPLACE INTO settings VALUES('content.initialized','1')")
@@ -1115,7 +1145,7 @@ def latest_video():
 
 def public_mutation(path):
     return (path.startswith(('/api/content','/api/buttons','/api/settings','/api/restore','/api/setup','/api/promotions/replace'))
-            and path not in {'/api/setup/check','/api/restore/preview'}
+            and path not in {'/api/setup/check','/api/restore/preview','/api/content/preview'}
             or path=='/api/youtube' or (path.startswith('/api/quotes') and path!='/api/quotes/analyze')
             or (path.startswith('/api/appearance') and path not in {'/api/appearance/css','/api/appearance/css-export','/api/appearance/export'}))
 
@@ -1569,6 +1599,10 @@ class Handler(BaseHTTPRequestHandler):
             match=re.fullmatch(r"/api/tracking-sources/([a-f0-9]{32})/restore",path)
             if match:
                 with connection() as db:return self.json(200,tracked_links.restore_source(db,match.group(1)))
+            if path=='/api/content/preview':
+                ident=data.get('id') or None
+                if ident is not None and (not isinstance(ident,str) or len(ident)>100):raise ValueError('Identifiant de campagne invalide')
+                with connection() as db:return self.json(200,affiliate_partners.preview_campaign(db,data,ident,valid_url))
             if path=="/api/content":return self.create_content(data)
             if path=="/api/promotions/check":
                 item=block_data(data);return self.json(200,promotion_check(item,data.get("id") or None))
@@ -1704,19 +1738,15 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(302);self.send_header('Location',target);self.send_header('Cache-Control','no-store');self.send_header('Referrer-Policy','no-referrer');self.send_header('Content-Length','0');self.end_headers()
         except (sqlite3.Error,OSError):return self.send(503)
     def create_content(self,data):
-        item=block_data(data)
         with connection() as db:
             db.execute("BEGIN IMMEDIATE")
-            item_id=save_content(db,item)
+            item_id=save_content_request(db,data)
         return self.json(201,{"id":item_id})
     def update_content(self,item_id,data):
         with connection() as db:
             db.execute("BEGIN IMMEDIATE")
-            old=db.execute("SELECT image,type,internal_name FROM content_blocks WHERE id=?",(item_id,)).fetchone()
-            if not old:return self.send(404)
-            data={'type':old['type'],'internal_name':old['internal_name'],**data}
-            item=block_data(data,allow_legacy_image=bool(old['image'] and old['image']==data.get('image')))
-            save_content(db,item,item_id)
+            if not db.execute('SELECT 1 FROM content_blocks WHERE id=?',(item_id,)).fetchone():return self.send(404)
+            save_content_request(db,data,item_id)
         return self.send(204)
     def replace_promotion(self,data):
         target=required(data,"replace_id",100)
@@ -1729,7 +1759,7 @@ class Handler(BaseHTTPRequestHandler):
             row=db.execute("SELECT * FROM content_blocks WHERE id=? AND archived=0 AND type IN ('promo','featured')",(target,)).fetchone()
             if not row:raise ValueError("Promotion à remplacer introuvable")
             db.execute("UPDATE content_blocks SET active=0,updated_at=? WHERE id=?",(now_iso(),target))
-            item_id=save_content(db,item,item_id)
+            item_id=save_content_request(db,content,item_id)
         return self.json(200,{"id":item_id})
     def content_action(self,item_id,action):
         with connection() as db:
@@ -1740,6 +1770,7 @@ class Handler(BaseHTTPRequestHandler):
                 new_id=str(uuid.uuid4());stamp=now_iso();pos=db.execute("SELECT COALESCE(MAX(position),-1)+1 FROM content_blocks").fetchone()[0]
                 db.execute("""INSERT INTO content_blocks(id,type,internal_name,title,description,url,icon,image,badge,cta,position,active,draft,start_at,end_at,archived,created_at,updated_at,priority)
                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",(new_id,row["type"],row["internal_name"]+" (copie)",row["title"],row["description"],row["url"],row["icon"],row["image"],row["badge"],row["cta"],pos,0,1,row["start_at"],row["end_at"],0,stamp,stamp,row["priority"]));db.execute('UPDATE content_blocks SET promo_code=? WHERE id=?',(row['promo_code'],new_id))
+                db.execute('INSERT INTO campaign_partners SELECT ?,partner_id,original_url,? FROM campaign_partners WHERE campaign_id=?',(new_id,row['url'],item_id))
                 timed=json.loads(instance.get(db,'admin.calendar_timed') or '[]')
                 if item_id in timed:instance.put(db,'admin.calendar_timed',json.dumps(timed+[new_id]))
                 return self.json(201,{"id":new_id})

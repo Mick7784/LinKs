@@ -2,6 +2,8 @@
 
 Cette étape adapte les composants existants de la PR #50 aux moteurs de [sélection](CAMPAIGN-SELECTION.md) et de [cycle de vie](CAMPAIGN-LIFECYCLE.md). Elle ne refond pas le back-office et n’intègre aucune règle d’affiliation.
 
+L’[étape 4](CAMPAIGN-AFFILIATION.md) ajoute ensuite le moteur partagé d’affiliation dans ce même formulaire.
+
 ## Formulaire
 
 Le bouton **Créer une campagne** ouvre directement le formulaire de campagne. Le choix du type de contenu et le nom interne sont masqués. Le titre public est obligatoire ; le nom interne est généré à la création à partir de ce titre. À l’édition, le nom interne enregistré reste inchangé, y compris lorsqu’il était identique au titre, afin de préserver les repères historiques. Les campagnes `featured` conservent leur type ; les valeurs historiques de priorité, badge, icône et texte d’action restent stockées.

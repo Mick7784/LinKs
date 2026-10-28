@@ -18,6 +18,8 @@ La recherche porte sur **tout l’historique de `counts`**, sans filtre de péri
 
 Tout `story_links.promotion_id` conserve la campagne : cette ligne porte la destination du lien long et des liens courts qui pointent vers son jeton. Le zéro clic, le marquage de suppression du lien ou la révocation d’un alias ne permettent pas de supprimer cette identité. Les correspondances `analytics.metric_aliases` et les références entrantes déclarées par des clés étrangères protègent également la campagne, y compris lorsque la clé prévoit une suppression en cascade.
 
+L’étape 4 ajoute une exception pour la provenance interne `campaign_partners`, qui appartient à la campagne : elle est supprimée avec une campagne réellement inutilisée. Cette exception ne concerne aucun compteur ni lien publié. Voir le [contrat d’affiliation](CAMPAIGN-AFFILIATION.md).
+
 L’archivage ne modifie que `archived` et `updated_at`. Aucun compteur, identifiant, destination, jeton ou association de publication n’est réécrit. La campagne quitte les listes actives et la sélection publique, mais reste dans Archives ; les rapports retrouvent ses clics, impressions, ouvertures et copies à partir des mêmes identifiants. Les redirections existantes gardent leur fonctionnement.
 
 ## Exécution et concurrence
