@@ -71,7 +71,7 @@ const { join, resolve } = require('node:path');
   await page.locator('#block-form [name="title"]').fill('Offre renommée');
   await page.locator('#block-dialog button[value="default"]').click();await page.waitForFunction(()=>!document.getElementById('block-dialog').open);
   const kept=(await request('/api/content',undefined,'GET')).items.find(x=>x.id===promo.id);assert.equal(kept.title,'Offre renommée');assert.equal(kept.internal_name,longName);assert.equal(kept.promo_code,'TEST10');assert.equal(kept.description,'Description historique conservée');assert.equal(kept.cta,'CTA historique');assert.equal(kept.badge,'Partenaire');
-  await page.locator('[data-action="new-campaign"]').click();assert(await page.locator('#block-dialog').isVisible(),await page.locator('#notice').textContent());await page.selectOption('#block-form [name="type"]','promo');
+  await page.locator('[data-action="new-campaign"]').click();assert(await page.locator('#block-dialog').isVisible(),await page.locator('#notice').textContent());assert.equal(await page.locator('#block-form [name="type"]').inputValue(),'promo');
   await page.locator('#block-form [name="title"]').fill('Nouvelle promo minimale');await page.locator('#block-form [name="url"]').fill('https://partner.example/new');await page.locator('#block-form [name="draft"]').check();
   await page.locator('#block-dialog button[value="default"]').click();await page.waitForFunction(()=>!document.getElementById('block-dialog').open);
   assert.equal((await request('/api/content',undefined,'GET')).items.find(x=>x.internal_name==='Nouvelle promo minimale').title,'Nouvelle promo minimale');
@@ -80,7 +80,7 @@ const { join, resolve } = require('node:path');
     for(const existing of [false,true]){
       const fixture=existing?await request('/api/content',{type,internal_name:'Editor '+type,title:'Titre '+type,url:'https://example.com/'+type,promo_code:'CODE',description:'Historique',icon:'home',badge:'Partenaire',cta:'Ancien CTA',draft:true}):null;
       if(existing){await nav('campaigns');await page.locator(`[data-id="${fixture.id}"] [data-action="edit"]`).click()}
-      else{await page.locator('[data-action="new-campaign"]').click();assert(await page.locator('#block-dialog').isVisible(),await page.locator('#notice').textContent());await page.selectOption('#block-form [name="type"]',type)}
+      else{await nav('permanent-links');await page.locator('[data-action="new-block"]').click();assert(await page.locator('#block-dialog').isVisible(),await page.locator('#notice').textContent());await page.selectOption('#block-form [name="type"]',type)}
       for(const field of ['type','internal_name','priority','icon','badge','cta'])assert(await page.locator('#block-form [name="'+field+'"]').isHidden(),type+' hidden '+field);
       for(const field of ['title','promo_code'])assert(await page.locator('#block-form [name="'+field+'"]').isVisible(),type+' visible '+field);
       const offer=page.frameLocator('#block-preview iframe');
