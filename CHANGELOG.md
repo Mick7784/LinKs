@@ -1,5 +1,11 @@
 # Changelog
 
+## V1.326
+
+### 🔧 Améliorations
+
+- Release V1.326 — Back-office séparé et éditeur visuel de la page publique (#51)
+
 ## V1.325
 
 ### Campagnes : planification et gestion automatiques
