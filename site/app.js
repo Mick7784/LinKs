@@ -61,6 +61,11 @@ function renderOffers(items){
  if(interactive){slides.forEach((slide,i)=>{slide.setAttribute("role","group");slide.setAttribute("aria-label",`${i+1} sur ${offers.length}`)});offers.forEach((_,i)=>{const dot=document.createElement("button");dot.type="button";dot.setAttribute("aria-label",`Afficher l’offre ${i+1} sur ${offers.length}`);dot.addEventListener("click",event=>{event.stopPropagation();show(i,true)});dots.append(dot)});listen(track,"touchstart",event=>{touchX=event.touches[0].clientX;pause()},{passive:true});listen(track,"touchend",event=>{const delta=event.changedTouches[0].clientX-touchX;if(Math.abs(delta)>45)show(index+(delta<0?1:-1),true)},{passive:true});listen(root,"keydown",event=>{if(event.key==="ArrowLeft"||event.key==="ArrowRight"){event.preventDefault();show(index+(event.key==="ArrowRight"?1:-1),true)}});listen(root,"pointerenter",()=>{hoverPaused=true;pause()});listen(root,"pointerleave",()=>{hoverPaused=false;play()});listen(root,"focusin",()=>{focusPaused=true;pause()});listen(root,"focusout",event=>{focusPaused=root.contains(event.relatedTarget);if(!focusPaused)play()});listen(document,"visibilitychange",play);listen(reducedMotion,"change",play);play()}
  show(0)
 }
+function applySectionOrder(order){
+ if(!Array.isArray(order))return;
+ const sections={classic:'links-section',highlight:'offers',video:'latest-video'},footer=document.querySelector('main>footer');
+ for(const key of order){const section=document.getElementById(sections[key]);if(section&&footer)footer.before(section)}
+}
 async function start(){
  const config=await getConfig(),profile=config.profile||{};publicTimezone=config.timezone||profile.timezone||"UTC";
  await LinksTheme.apply(config.appearance);window.LINKS_PUBLIC_CONFIG=config;window.dispatchEvent(new CustomEvent("links:config",{detail:config}));
@@ -75,7 +80,7 @@ async function start(){
  const favicon=document.getElementById("site-favicon");if(profile.logo)favicon.href=profile.logo;else favicon.removeAttribute("href");
  const socials=document.getElementById("socials");for(const item of (config.socials||[]).filter(x=>validUrl(x.url))){socials.append(renderShortcut(item))}
  const video=document.getElementById("latest-video");if(config.latestVideo)fetch("/latest-video.json",{cache:"no-store"}).then(r=>{if(!r.ok)throw new Error();return r.json()}).then(data=>renderVideo(video,data)).catch(()=>{video.hidden=true});
- const visible=(config.links||[]).filter(x=>validUrl(x.url)),offers=selectedOffers(config),permanent=visible.filter(x=>x.type==="classic");renderOffers(offers);watchCampaigns(config,offers);const links=document.getElementById("links");if(permanent.length){decorateSectionTitle("links-title","link");for(const item of permanent)links.append(renderBlock(item));document.getElementById("links-section").hidden=false}document.getElementById("year").textContent=new Intl.DateTimeFormat("fr-FR",{year:"numeric",timeZone:publicTimezone}).format(new Date())
+ const visible=(config.links||[]).filter(x=>validUrl(x.url)),offers=selectedOffers(config),permanent=visible.filter(x=>x.type==="classic");renderOffers(offers);watchCampaigns(config,offers);const links=document.getElementById("links");if(permanent.length){decorateSectionTitle("links-title","link");for(const item of permanent)links.append(renderBlock(item));document.getElementById("links-section").hidden=false}document.getElementById("year").textContent=new Intl.DateTimeFormat("fr-FR",{year:"numeric",timeZone:publicTimezone}).format(new Date());applySectionOrder(config.section_order);window.dispatchEvent(new Event("links:rendered"))
 }
 // Refresh only campaign DOM. Metrics and all page-level listeners start once.
 function watchCampaigns(config,initial){

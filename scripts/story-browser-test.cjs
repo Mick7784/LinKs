@@ -38,7 +38,7 @@ const { join, resolve } = require('node:path');
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.goto(admin);
-    await page.locator('[data-tab="content"]').click();
+    await page.locator('[data-tab="campaigns"]').click();
     const copy = page.locator(`[data-id="${id}"] [data-action="copy-story"]`);
     await page.waitForFunction(id=>document.querySelector(`[data-id="${id}"] .share-picker select`)?.value.startsWith('src_'),id);
     const publicationSource=await page.locator(`[data-id="${id}"] .share-picker select`).inputValue();

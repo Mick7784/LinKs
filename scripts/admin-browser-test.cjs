@@ -41,10 +41,10 @@ const { join, resolve } = require('node:path');
    await page.setViewportSize({width,height:1000});
    for(const theme of ['light','dark']){
     await page.selectOption('#theme-select',theme);
-    for(const id of ['dashboard','content','buttons','archives','settings']){
+    for(const id of ['dashboard','content','campaigns','permanent-links','buttons','archives','settings']){
      await nav(id);await overflow();
-     if(id==='content'){
-      await page.waitForSelector('#content-list .list-item');
+     if(id==='campaigns'){
+      await page.waitForSelector('#campaigns-list .list-item');
       const item=page.locator(`[data-id="${promo.id}"]`);await item.locator('summary').click();assert(await item.locator('[data-action="duplicate"]').isVisible());
       await page.keyboard.press('Escape');assert.equal(await item.locator('details').getAttribute('open'),null);
       await item.locator('[data-action="edit"]').click();await page.waitForSelector('#block-dialog[open]');await overflow();
@@ -56,7 +56,7 @@ const { join, resolve } = require('node:path');
     }
    }
   }
-  await page.setViewportSize({width:1440,height:1000});await nav('content');
+  await page.setViewportSize({width:1440,height:1000});await nav('campaigns');
   const campaign=page.locator(`[data-id="${promo.id}"]`);
   await campaign.locator('[data-action="edit"]').click();
   for(const field of ['type','internal_name','priority','icon','badge','cta'])assert(await page.locator('#block-form [name="'+field+'"]').isHidden(),'Hidden promo field '+field);
@@ -71,7 +71,7 @@ const { join, resolve } = require('node:path');
   await page.locator('#block-form [name="title"]').fill('Offre renommée');
   await page.locator('#block-dialog button[value="default"]').click();await page.waitForFunction(()=>!document.getElementById('block-dialog').open);
   const kept=(await request('/api/content',undefined,'GET')).items.find(x=>x.id===promo.id);assert.equal(kept.title,'Offre renommée');assert.equal(kept.internal_name,longName);assert.equal(kept.promo_code,'TEST10');assert.equal(kept.description,'Description historique conservée');assert.equal(kept.cta,'CTA historique');assert.equal(kept.badge,'Partenaire');
-  await page.locator('[data-action="new-block"]').click();assert(await page.locator('#block-dialog').isVisible(),await page.locator('#notice').textContent());await page.selectOption('#block-form [name="type"]','promo');
+  await page.locator('[data-action="new-campaign"]').click();assert(await page.locator('#block-dialog').isVisible(),await page.locator('#notice').textContent());assert.equal(await page.locator('#block-form [name="type"]').inputValue(),'promo');
   await page.locator('#block-form [name="title"]').fill('Nouvelle promo minimale');await page.locator('#block-form [name="url"]').fill('https://partner.example/new');await page.locator('#block-form [name="draft"]').check();
   await page.locator('#block-dialog button[value="default"]').click();await page.waitForFunction(()=>!document.getElementById('block-dialog').open);
   assert.equal((await request('/api/content',undefined,'GET')).items.find(x=>x.internal_name==='Nouvelle promo minimale').title,'Nouvelle promo minimale');
@@ -79,8 +79,8 @@ const { join, resolve } = require('node:path');
   for(const type of ['promo','featured']){
     for(const existing of [false,true]){
       const fixture=existing?await request('/api/content',{type,internal_name:'Editor '+type,title:'Titre '+type,url:'https://example.com/'+type,promo_code:'CODE',description:'Historique',icon:'home',badge:'Partenaire',cta:'Ancien CTA',draft:true}):null;
-      if(existing){await nav('content');await page.locator(`[data-id="${fixture.id}"] [data-action="edit"]`).click()}
-      else{await page.locator('[data-action="new-block"]').click();assert(await page.locator('#block-dialog').isVisible(),await page.locator('#notice').textContent());await page.selectOption('#block-form [name="type"]',type)}
+      if(existing){await nav('campaigns');await page.locator(`[data-id="${fixture.id}"] [data-action="edit"]`).click()}
+      else{await nav('permanent-links');await page.locator('[data-action="new-block"]').click();assert(await page.locator('#block-dialog').isVisible(),await page.locator('#notice').textContent());await page.selectOption('#block-form [name="type"]',type)}
       for(const field of ['type','internal_name','priority','icon','badge','cta'])assert(await page.locator('#block-form [name="'+field+'"]').isHidden(),type+' hidden '+field);
       for(const field of ['title','promo_code'])assert(await page.locator('#block-form [name="'+field+'"]').isVisible(),type+' visible '+field);
       const offer=page.frameLocator('#block-preview iframe');
@@ -94,7 +94,7 @@ const { join, resolve } = require('node:path');
       if(existing){assert.equal(saved.description,'Historique');assert.equal(saved.cta,'Ancien CTA');assert.equal(saved.promo_code,'CODE')}
     }
   }
-  const item=page.locator(`[data-id="${other.id}"]`);
+  await nav('permanent-links');const item=page.locator(`[data-id="${other.id}"]`);
   await item.locator('[data-action="edit"]').click();for(const field of ['description','icon','title'])assert(await page.locator('#block-form [name="'+field+'"]').isVisible(),'Classic visible '+field);assert(await page.locator('#block-form [name="promo_code"]').isHidden());await page.locator('#block-form [name="title"]').fill('Guide mis à jour');await page.locator('#block-dialog button[value="default"]').click();await page.waitForFunction(()=>!document.getElementById('block-dialog').open);assert.equal((await request('/api/content',undefined,'GET')).items.find(x=>x.id===other.id).title,'Guide mis à jour');
   await item.locator('summary').click();await item.locator('[data-action="duplicate"]').click();await page.waitForFunction(()=>document.getElementById('notice').textContent==='Bloc dupliqué en brouillon.');
   const result=await request('/api/content',undefined,'GET');assert(result.items.some(x=>x.draft&&x.internal_name.includes('Guide')));

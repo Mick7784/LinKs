@@ -25,7 +25,7 @@ const {tmpdir}=require('node:os'),{join,resolve}=require('node:path');
   const fields=page.locator('#block-form'),final=page.locator('#campaign-final-link');
   const preview=async url=>page.waitForFunction(expected=>document.getElementById('campaign-final-link').getAttribute('href')===expected,url);
   const save=async()=>{await fields.locator('button[value=default]').click();await page.waitForFunction(()=>!document.getElementById('block-dialog').open)};
-  const content=async()=>{if(await page.locator('#menu-toggle').isVisible())await page.locator('#menu-toggle').click();await page.locator('[data-tab=content]').click()};
+  const content=async()=>{if(await page.locator('#menu-toggle').isVisible())await page.locator('#menu-toggle').click();await page.locator('[data-tab=campaigns]').click()};
   await page.goto(origin);await page.locator('#chart svg').waitFor();await content();await page.locator('[data-action=new-campaign]').click();
   await fields.locator('[name=title]').fill('Caméra affiliée');await fields.locator('[name=url]').fill('https://shop.reolink.com/product?x=1#details');
   await preview('https://shop.reolink.com/product?x=1&aff=1404#details');assert.equal(await page.locator('#campaign-partner').inputValue(),reolink.id);

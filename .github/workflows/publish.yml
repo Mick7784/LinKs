@@ -46,6 +46,7 @@ jobs:
           python3 scripts/storage_test.py
           python3 scripts/images_test.py
           python3 scripts/analytics_test.py
+          python3 scripts/page_layout_test.py
           python3 scripts/campaign_selection_test.py
           python3 scripts/campaign_lifecycle_test.py
           python3 scripts/campaign_visual_test.py
@@ -66,6 +67,7 @@ jobs:
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/story-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/admin-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/admin-ui-browser-test.cjs
+          NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/page-editor-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/tracked-library-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/affiliate-partners-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/affiliate-detection-browser-test.cjs

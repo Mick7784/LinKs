@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>LinKs by DomotiK Studio · Administration</title><link rel="icon" href="/mark.svg">
-<script src="/theme-init.js"></script><link rel="stylesheet" href="/style.css"><script src="/dates.js" defer></script><script src="/preview/cards.js" defer></script><script src="/calendar.js" defer></script><script src="/preview/theme.js" defer></script><script src="/uploads.js" defer></script><script src="/navigation.js" defer></script><script src="/charts.js" defer></script><script src="/collection.js" defer></script><script src="/partner-report.js" defer></script><script src="/source-platforms.js" defer></script><script src="/daily-report.js" defer></script><script src="/app.js" defer></script><script src="/tracking.js" defer></script><script src="/appearance.js" defer></script><script src="/shortcuts.js" defer></script><script src="/storage.js" defer></script><script src="/settings.js" defer></script><link rel="stylesheet" href="/appearance.css"></head>
+<script src="/theme-init.js"></script><link rel="stylesheet" href="/style.css"><script src="/dates.js" defer></script><script src="/preview/cards.js" defer></script><script src="/calendar.js" defer></script><script src="/preview/theme.js" defer></script><script src="/uploads.js" defer></script><script src="/navigation.js" defer></script><script src="/charts.js" defer></script><script src="/collection.js" defer></script><script src="/partner-report.js" defer></script><script src="/source-platforms.js" defer></script><script src="/daily-report.js" defer></script><script src="/app.js" defer></script><script src="/page-editor.js" defer></script><script src="/tracking.js" defer></script><script src="/appearance.js" defer></script><script src="/shortcuts.js" defer></script><script src="/storage.js" defer></script><script src="/settings.js" defer></script><link rel="stylesheet" href="/appearance.css"><link rel="stylesheet" href="/page-editor.css"></head>
 <body class="admin-shell">
 <a class="skip-link" href="#main-content">Aller au contenu</a>
 <aside class="sidebar" aria-label="Links">
@@ -12,6 +12,8 @@
  <button data-tab="dashboard" class="active"><span class="nav-icon" data-icon="dashboard" aria-hidden="true"></span><span>Tableau de bord</span></button>
  <button data-tab="statistics"><span class="nav-icon" data-icon="chart" aria-hidden="true"></span><span>Statistiques</span></button>
  <button data-tab="content"><span class="nav-icon" data-icon="globe" aria-hidden="true"></span><span>Page publique</span></button>
+ <button data-tab="campaigns"><span class="nav-icon" data-icon="story" aria-hidden="true"></span><span>Campagnes</span></button>
+ <button data-tab="permanent-links"><span class="nav-icon" data-icon="external" aria-hidden="true"></span><span>Liens permanents</span></button>
  <button data-tab="tracked-links"><span class="nav-icon" data-icon="links" aria-hidden="true"></span><span>Liens suivis</span></button>
  <button data-tab="buttons"><span class="nav-icon" data-icon="buttons" aria-hidden="true"></span><span>Réseaux &amp; raccourcis</span></button>
  <button data-tab="appearance"><span class="nav-icon" data-icon="settings" aria-hidden="true"></span><span>Apparence</span></button>
@@ -134,10 +136,20 @@
  </div>
 </section>
 <section class="view" id="content">
- <div class="section-head"><div><h2>Page publique</h2><p>Organisez les sections dans l’administration et les éléments de chacune. Cet ordre ne change pas celui des sections publiques.</p></div><div class="profile-image-actions"><button class="primary" data-action="new-block">Ajouter un lien</button><button data-action="new-campaign">Créer une campagne</button></div></div>
+ <div class="section-head"><div><h2>Page publique</h2><p>Organisez les sections et les liens dans l’aperçu réel de votre page. L’en-tête et le pied de page restent à leur place.</p></div><div class="profile-image-actions"><button type="button" data-open-view="permanent-links">Gérer les liens permanents</button><button type="button" data-open-view="campaigns">Gérer les campagnes</button></div></div>
+ <div class="panel page-editor-toolbar"><div class="page-editor-devices" role="group" aria-label="Format de l’aperçu"><button type="button" data-layout-device="desktop" aria-pressed="true">Ordinateur</button><button type="button" data-layout-device="mobile" aria-pressed="false">Mobile</button></div><p id="page-editor-status" role="status" aria-live="polite">Chargement de l’aperçu…</p><div class="profile-image-actions"><button type="button" id="page-editor-cancel" disabled>Annuler</button><button type="button" id="page-editor-save" class="primary" disabled>Enregistrer</button></div></div>
+ <p class="panel-helper">Glissez les poignées ou utilisez les flèches. Les modifications restent privées jusqu’à Enregistrer.</p>
+ <div id="page-editor-preview" data-device="desktop"><iframe id="page-editor-frame" title="Éditeur visuel de la page publique" sandbox="allow-scripts allow-same-origin"></iframe></div>
+</section>
+<section class="view" id="permanent-links">
+ <div class="section-head"><div><h2>Liens permanents</h2><p>Gérez vos liens classiques et leur classement sur la page publique.</p></div><div class="profile-image-actions"><button class="primary" data-action="new-block">Ajouter un lien</button><button type="button" data-open-view="archives">Archives</button></div></div>
+ <section class="content-section" aria-labelledby="permanent-links-title"><header class="content-section-header"><h3 id="permanent-links-title">Bibliothèque des liens permanents</h3></header><div id="permanent-links-list" class="sortable-list section-items"></div></section>
+</section>
+<section class="view" id="campaigns">
+ <div class="section-head"><div><h2>Campagnes</h2><p>Gérez vos campagnes, leur programmation et leurs priorités d’affichage.</p></div><div class="profile-image-actions"><button class="primary" data-action="new-campaign">Créer une campagne</button><button type="button" data-open-view="archives">Archives</button></div></div>
  <section class="panel planning-panel"><div class="panel-title"><h3>Planning des promotions</h3><div class="timeline-controls"><button type="button" id="agenda-month" aria-pressed="true">Mois</button><button type="button" id="agenda-week" aria-pressed="false">Semaine</button><button type="button" id="agenda-today">Aujourd’hui</button><button type="button" id="timeline-prev" aria-label="Période précédente">←</button><strong id="timeline-month"></strong><button type="button" id="timeline-next" aria-label="Période suivante">→</button><button type="button" data-open-content>Gérer</button></div></div><div id="promo-planning"></div></section>
  <section class="panel campaign-preview-panel" aria-labelledby="campaign-preview-title"><div class="panel-title"><div><h3 id="campaign-preview-title">Aperçu de la sélection</h3><p class="panel-helper">Choisissez un instant pour voir les campagnes affichées et en attente.</p></div></div><form id="campaign-preview-form" class="campaign-preview-controls"><label>Date<input id="campaign-preview-date" type="date" required></label><label>Heure<input id="campaign-preview-time" type="time" step="60" required></label><button type="submit">Voir la sélection</button><small id="campaign-preview-zone"></small></form><div id="campaign-preview-result" role="status" aria-live="polite"></div></section>
- <div id="content-list" class="sortable-list"></div>
+ <section class="content-section" aria-labelledby="campaigns-list-title"><header class="content-section-header"><h3 id="campaigns-list-title">Campagnes et priorités</h3></header><div id="campaigns-list" class="sortable-list section-items"></div></section>
 
 </section>
 <section class="view" id="tracked-links">
