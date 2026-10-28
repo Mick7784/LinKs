@@ -1,6 +1,6 @@
 # Moteur de sélection des campagnes — étape 1
 
-Base : `main`, V1.324. Cette étape conserve la version de production, l’affiliation et les règles d’archivage. Le formulaire garde sa structure ; seul le message de disponibilité indique désormais que les chevauchements sont autorisés.
+Base : `main`, V1.324. Cette étape conserve la version de production et l’affiliation. Le formulaire garde sa structure ; seul le message de disponibilité indique désormais que les chevauchements sont autorisés. Le [cycle de vie automatique de l’étape 2](CAMPAIGN-LIFECYCLE.md) complète désormais les règles d’archivage et de suppression.
 
 ## Données et ordre
 

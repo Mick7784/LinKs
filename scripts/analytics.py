@@ -24,6 +24,8 @@ ORIGIN=os.environ.get("ANALYTICS_ORIGIN","").rstrip("/")
 ADMIN=ROOT/"admin"; UPLOADS=Path(os.environ.get("UPLOAD_DIR","/data/uploads"))
 CONFIG=json.loads((ROOT/"links.json").read_text(encoding="utf-8"))
 DATA_LOCK=threading.RLock()
+CAMPAIGN_WAKE=threading.Event()
+CAMPAIGN_POLL_SECONDS=30
 PARIS=ZoneInfo("UTC")
 DATA_DIR=Path(DB).parent
 STATIC=ROOT/"site" if (ROOT/"site").exists() else Path("/usr/share/nginx/html")
@@ -47,19 +49,20 @@ def connection():
         finally:
             db.close()
 def now_iso(): return datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
-def instant(value,strict=False):
+def instant(value,strict=False,zone=None):
     if not value:return None
     if not isinstance(value,str):raise ValueError("Date invalide")
+    zone=zone or PARIS
     try:
         result=datetime.fromisoformat(value.strip().replace("Z","+00:00"))
     except ValueError as exc: raise ValueError("Date invalide") from exc
     if strict and result.tzinfo is None:
         # A local wall time at a DST transition needs an explicit offset.
         candidates={local.astimezone(timezone.utc) for fold in (0,1)
-                    for local in [result.replace(tzinfo=PARIS,fold=fold)]
-                    if local.astimezone(timezone.utc).astimezone(PARIS).replace(tzinfo=None)==result}
+                    for local in [result.replace(tzinfo=zone,fold=fold)]
+                    if local.astimezone(timezone.utc).astimezone(zone).replace(tzinfo=None)==result}
         if len(candidates)!=1:raise ValueError("Heure locale ambiguë ou inexistante : préciser le décalage UTC")
-    return (result if result.tzinfo else result.replace(tzinfo=PARIS)).astimezone(timezone.utc)
+    return (result if result.tzinfo else result.replace(tzinfo=zone)).astimezone(timezone.utc)
 def init():
     global ORIGIN,PARIS
     Path(DB).parent.mkdir(parents=True,exist_ok=True); UPLOADS.mkdir(parents=True,exist_ok=True)
@@ -153,16 +156,21 @@ def record_promo_copy(data):
     code=data.get("code")
     if not isinstance(key,str) or not key.startswith("block:") or not isinstance(code,str) or not code.strip() or len(code)>80:raise ValueError()
     with connection() as db:
+        db.execute('BEGIN IMMEDIATE')
         row=db.execute("SELECT id,internal_name,type FROM content_blocks WHERE id=?",(key[6:],)).fetchone()
         if not row or row["type"] not in {"promo","featured"}:raise ValueError()
         stamp=datetime.now(timezone.utc).replace(minute=0,second=0,microsecond=0).isoformat()
         snapshot=json.dumps({"id":row["id"],"name":row["internal_name"],"code":code,"timestamp":stamp},sort_keys=True,ensure_ascii=False)
         increment(db,"promo_code_copy",source_of(data),snapshot,datetime.now(PARIS).date().isoformat())
 
-def record(kind,source,link,day=None):
+def record(kind,source,link,day=None,validate=False):
     if not analytics_enabled():return
     day=day or datetime.now(PARIS).date().isoformat()
     with connection() as db:
+        db.execute('BEGIN IMMEDIATE')
+        # Validation and collection share the cleanup's SQLite write lock. A
+        # successful request cannot leave a metric pointing to a deleted row.
+        if validate and kind in {'click','impression'} and not valid_metric(link,db):raise ValueError()
         increment(db,kind,source,link,day)
 def increment(db,kind,source,link,day):
     db.execute("INSERT INTO counts VALUES(?,?,?,?,1) ON CONFLICT(day,source,kind,link) DO UPDATE SET total=total+1",(day,source,kind,link))
@@ -359,6 +367,88 @@ def select_campaigns(rows,at=None):
 
 def campaign_selection(at=None):
     with connection() as db:return select_campaigns(list(db.execute('SELECT * FROM content_blocks')),at)
+
+
+def campaign_references(db):
+    """All lifetime metric identities and published references, without a date filter."""
+    retained={r[0] for r in db.execute('SELECT promotion_id FROM story_links')}
+    aliases=json.loads(instance.get(db,'analytics.metric_aliases','{}'))
+    retained.update(value[6:] for value in aliases.values() if value.startswith('block:'))
+    for metric in db.execute('SELECT DISTINCT kind,link FROM counts'):
+        key=aliases.get(metric['link'],metric['link'])
+        if key.startswith('block:'):retained.add(key[6:])
+        if metric['kind']=='promo_code_copy':
+            snapshot=json.loads(metric['link'])
+            if not isinstance(snapshot,dict) or not isinstance(snapshot.get('id'),str):
+                raise ValueError('Historique de copie illisible : nettoyage suspendu')
+            retained.add(snapshot['id'])
+    # Also honor declared incoming references, including ON DELETE CASCADE:
+    # cleanup must preserve their owner instead of implicitly deleting children.
+    def quoted(name):return '"'+name.replace('"','""')+'"'
+    for table in list(db.execute("SELECT name FROM sqlite_master WHERE type='table'")):
+        for reference in db.execute('PRAGMA foreign_key_list('+quoted(table['name'])+')'):
+            if reference['table']=='content_blocks' and reference['to'] in (None,'id'):
+                retained.update(r[0] for r in db.execute('SELECT '+quoted(reference['from'])+' FROM '+quoted(table['name'])))
+    # story_links protects both the long redirect and every short alias pointing
+    # to it, including zero-click, deleted or revoked historical publications.
+    return retained
+
+
+def cleanup_campaigns(at=None):
+    """Archive expired campaigns with history/references; delete only unused ones.
+
+    Never unlink media here. Existing reference-aware storage maintenance gives
+    newly orphaned files its normal grace period and protects shared images.
+    """
+    result={'archived_ids':[],'deleted_ids':[],'skipped_ids':[],'next_delay':CAMPAIGN_POLL_SECONDS}
+    with DATA_LOCK:
+        with connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            zone=ZoneInfo(instance.get(db,'app.timezone','UTC'))
+            now=instant(at,strict=True,zone=zone) if isinstance(at,str) else at or datetime.now(timezone.utc)
+            if now.tzinfo is None:raise ValueError('Préciser le fuseau de la date de nettoyage')
+            now=now.astimezone(timezone.utc);expired=[]
+            rows=db.execute("""SELECT id,end_at FROM content_blocks WHERE type IN ('promo','featured')
+                               AND end_at IS NOT NULL AND end_at!='' AND archived=0 AND retired=0 AND draft=0
+                               ORDER BY id""")
+            for row in rows:
+                try:end=instant(row['end_at'],zone=zone)
+                except ValueError:
+                    result['skipped_ids'].append(row['id']);continue
+                if end<=now:expired.append(row['id'])
+                else:result['next_delay']=min(result['next_delay'],(end-now).total_seconds())
+            if expired:
+                retained=campaign_references(db)
+                stamp=now.isoformat().replace('+00:00','Z')
+                for ident in expired:
+                    if ident in retained:
+                        db.execute('UPDATE content_blocks SET archived=1,updated_at=? WHERE id=?',(stamp,ident))
+                        result['archived_ids'].append(ident)
+                    else:
+                        db.execute('DELETE FROM content_blocks WHERE id=?',(ident,))
+                        result['deleted_ids'].append(ident)
+                if result['deleted_ids']:
+                    timed=json.loads(instance.get(db,'admin.calendar_timed','[]'))
+                    deleted=set(result['deleted_ids'])
+                    updated=[ident for ident in timed if ident not in deleted]
+                    if updated!=timed:instance.put(db,'admin.calendar_timed',json.dumps(updated))
+        # Commit first, then refresh the existing public-only fallback atomically.
+        # Retry even on an unchanged pass if an earlier file write had failed.
+        write_public_fallback()
+    return result
+
+
+def campaign_worker(stop=None):
+    stop=stop or threading.Event()
+    while not stop.is_set():
+        CAMPAIGN_WAKE.clear()
+        try:delay=cleanup_campaigns()['next_delay']
+        except (OSError,sqlite3.Error,ValueError,TypeError):
+            print('Links : nettoyage des campagnes temporairement indisponible.',flush=True)
+            delay=CAMPAIGN_POLL_SECONDS
+        CAMPAIGN_WAKE.wait(max(.05,delay))
+
+
 def button_list(archived=False):
     with connection() as db:
         clicks=totals(db); result=[]
@@ -520,10 +610,11 @@ def button_data(data):
         if not re.fullmatch(r"#[A-Za-z][\w:-]*",url):raise ValueError("Ancre invalide")
     elif not valid_url(url):raise ValueError("URL invalide")
     return {"icon":icon,"custom_icon":custom_icon,"label":required(data,"label",100),"url":url,"active":1 if data.get("active",True) else 0}
-def valid_metric(key):
+def valid_metric(key,db=None):
     if key=="latest-video":return True
     table,prefix=("content_blocks","block:") if key.startswith("block:") else (("top_buttons","button:") if key.startswith("button:") else (None,None))
     if table:
+        if db is not None:return db.execute(f"SELECT 1 FROM {table} WHERE id=?",(key.removeprefix(prefix),)).fetchone() is not None
         with connection() as db:return db.execute(f"SELECT 1 FROM {table} WHERE id=?",(key.removeprefix(prefix),)).fetchone() is not None
     return (key.startswith("social:") or key.startswith("link:")) and len(key)<=2048
 
@@ -1150,6 +1241,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.server.admin and getattr(self,'command','') in {'POST','PUT','DELETE'} and 200<=self.response_status<300:
             path=urlsplit(self.path).path
             if public_mutation(path):
+                CAMPAIGN_WAKE.set()
                 try:storage_state()
                 except (OSError,sqlite3.Error,ValueError):print('Links : suivi des fichiers temporairement indisponible.',flush=True)
             if public_mutation(path):
@@ -1395,8 +1487,8 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 data=self.body(2048);kind,key=data.get("kind"),data.get("link","")
                 if kind=="promo_code_copy":record_promo_copy(data);return self.send(204)
-                if kind not in {"view","click","impression"} or not isinstance(key,str) or (kind in {"click","impression"} and not valid_metric(key)):raise ValueError()
-                record(kind,source_of(data),key if kind in {"click","impression"} else "");return self.send(204)
+                if kind not in {"view","click","impression"} or not isinstance(key,str):raise ValueError()
+                record(kind,source_of(data),key if kind in {"click","impression"} else "",validate=True);return self.send(204)
             except (ValueError,TypeError,json.JSONDecodeError):return self.send(400)
             except (sqlite3.Error,OSError):return self.send(503)
         try:
@@ -1662,4 +1754,4 @@ class Handler(BaseHTTPRequestHandler):
 def serve(port,admin,host):
     server=ThreadingHTTPServer((host,port),Handler);server.admin=admin;return server
 if __name__=="__main__":
-    init();write_public_fallback();threading.Thread(target=storage_worker,daemon=True).start();public=serve(3003,False,"127.0.0.1");threading.Thread(target=public.serve_forever,daemon=True).start();serve(8081,True,"0.0.0.0").serve_forever()
+    init();write_public_fallback();threading.Thread(target=campaign_worker,daemon=True).start();threading.Thread(target=storage_worker,daemon=True).start();public=serve(3003,False,"127.0.0.1");threading.Thread(target=public.serve_forever,daemon=True).start();serve(8081,True,"0.0.0.0").serve_forever()
