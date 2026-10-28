@@ -77,7 +77,7 @@ function metricRows(id,items,empty){
    row.innerHTML=`<div class="engagement-copy"><strong>${esc(item.name)}</strong></div><div class="engagement-value"><strong>${fmt.format(item.total)}</strong><small>${esc(item.unit)}</small></div>`;
    if(item.entity&&!context.preview){const button=document.createElement("button");button.type="button";button.className="statistics-entity-shortcut";button.dataset.statisticsEntity=item.entity.type;button.dataset.entityId=item.entity.id;const label=item.entity.type==="partner"?"Fiche partenaire":["tracked","button"].includes(item.entity.type)?"Fiche du lien":statisticsEntities.get(item.entity.id)?.type==="classic"?"Fiche du lien":"Fiche campagne";button.textContent="Fiche ↗";button.setAttribute("aria-label",label+" · "+item.name);button.title=label;row.append(button)}
    if(item.secondary){const extra=document.createElement("small");extra.className="engagement-secondary";extra.textContent=item.secondary;row.querySelector(".engagement-copy").append(extra)}
-   const visual=item.series||([{label:item.unit,value:item.total,key:id==="top-links"?"public-clicks":undefined,tone:item.tone||(id==="top-links"||id==="daily-public-list"?"public":id==="tracked-stat-list"||id==="daily-tracked-list"||id.startsWith("partner-")?"tracked":"campaigns")}]);
+   const visual=item.series||([{label:item.unit,value:item.total,key:item.seriesKey||(["top-links","daily-public-list"].includes(id)?"public-clicks":undefined),tone:item.tone||(id==="top-links"||id==="daily-public-list"?"public":id==="tracked-stat-list"||id==="daily-tracked-list"||id.startsWith("partner-")?"tracked":"campaigns")}]);
    if(id!=="promo-copy-list")row.append(StudioCharts.ranking(visual,item.series?context.seriesMax:context.max,{comparison:Boolean(item.series)}));
    if(!context.preview&&item.details.length){
      const details=document.createElement("details"),summary=document.createElement("summary");summary.textContent=item.detailLabel||(item.sourceBreakdown?"Provenance":"Détails");details.append(summary);
@@ -96,7 +96,7 @@ function metricRows(id,items,empty){
 }
 function drawCampaignRanking(){
  const metric=$("campaign-metric").value,units={clicks:"clics publics",shared:"ouvertures partagées",impressions:"impressions",copies:"copies de codes"};
- const rows=campaignRows.map(row=>({...row,total:row.metrics[metric]||0,unit:units[metric],tone:metric==="clicks"?"public":"campaigns",secondary:[metric!=="shared"?fmt.format(row.metrics.shared)+" ouvertures partagées":"",metric!=="clicks"?fmt.format(row.metrics.clicks)+" clics publics":""].filter(Boolean).join(" · ")}));
+ const rows=campaignRows.map(row=>({...row,total:row.metrics[metric]||0,unit:units[metric],seriesKey:metric==="clicks"?"campaign-clicks":undefined,tone:metric==="clicks"?"public":"campaigns",secondary:[metric!=="shared"?fmt.format(row.metrics.shared)+" ouvertures partagées":"",metric!=="clicks"?fmt.format(row.metrics.clicks)+" clics publics":""].filter(Boolean).join(" · ")}));
  const active=rows.filter(row=>Object.values(row.metrics).some(value=>value>0)),inactive=rows.filter(row=>!Object.values(row.metrics).some(value=>value>0));
  metricRows("campaign-details",active,"Aucune campagne avec activité pour cette période et cette source.");
  const details=$("campaign-inactive");details.hidden=!inactive.length;$("campaign-inactive-count").textContent=fmt.format(inactive.length);
@@ -131,11 +131,12 @@ function drawDailyDetail(){
  const result=StudioDailyReport.select(dailyIndex,dailyDay,$("source").value,dailySourceName);
  for(const category of ["public","tracked","campaigns"]){
   const data=result[category];$("daily-"+category+"-total").textContent=fmt.format(data.total);
+  const option=$("daily-category").querySelector(`[value="${category}"]`);option.textContent=({public:"Liens publics",tracked:"Liens suivis indépendants",campaigns:"Campagnes partagées"})[category]+" · "+fmt.format(data.total);
   metricRows("daily-"+category+"-list",data.rows.map(row=>({name:row.name,total:row.total,unit:category==="public"?"clics publics":"ouvertures",tone:category==="public"?"public":category==="tracked"?"tracked":"campaigns",entity:dailyEntity(category,row.key),sourceBreakdown:row.sourceBreakdown,secondary:dailyProvenance(row.sourceBreakdown),details:row.sourceBreakdown.map(source=>source.label)})),category==="public"?"Aucun clic public enregistré ce jour pour cette source.":category==="tracked"?"Aucune ouverture de lien suivi enregistrée ce jour pour cette source.":"Aucune ouverture de campagne partagée enregistrée ce jour pour cette source.");
  }
 }
 $("daily-date").onchange=()=>{if($("daily-date").validity.valid&&$("daily-date").value)selectDailyDay($("daily-date").value)};
-$("daily-category").onchange=()=>{const category=$("daily-category").value;document.querySelectorAll("[data-daily-category]").forEach(node=>node.hidden=category!=="all"&&node.dataset.dailyCategory!==category);queueStatisticsLocation()};
+$("daily-category").onchange=()=>{const category=$("daily-category").value;document.querySelectorAll("[data-daily-category]").forEach(node=>node.hidden=category!=="all"&&node.dataset.dailyCategory!==category)};
 $("daily-previous").onclick=()=>moveDailyDay(-1);$("daily-next").onclick=()=>moveDailyDay(1);
 function drawSources(){
  const options=collectionOptions(),raw=sourceRows.map(([label,total,key])=>({key,label,total})),total=raw.reduce((sum,source)=>sum+source.total,0),platforms=$("source-level").value==="platforms";
@@ -185,7 +186,7 @@ async function loadPartnerRanking(){
 }
 
 function syncAnalysis(){
- const statistics=$("statistics").classList.contains("active"),scope=analysisScope();if(statistics)queueStatisticsLocation();
+ const statistics=$("statistics").classList.contains("active"),scope=analysisScope();
  $("analysis-empty").hidden=sourceRows.some(row=>row[1]>0)||[...analyticRows].filter(([id])=>!id.startsWith("partner-")&&!id.startsWith("daily-")).some(([,rows])=>rows.some(row=>row.total>0||Object.values(row.metrics||{}).some(value=>value>0)));
  $("analysis-history").hidden=false;
  (statistics?$("statistics-chart"):$("dashboard-chart")).append($("traffic-chart"));
@@ -202,28 +203,23 @@ function filterAnalysis(){
  drawCampaignRanking();drawSources();syncAnalysis();
 }
 $("analysis-controls").onsubmit=event=>event.preventDefault();
+const statisticsSearchTools=document.querySelector(".statistics-search-tools");
+document.addEventListener("click",event=>{if(!statisticsSearchTools.contains(event.target))statisticsSearchTools.open=false});
+statisticsSearchTools.addEventListener("keydown",event=>{if(event.key==="Escape"){statisticsSearchTools.open=false;statisticsSearchTools.querySelector("summary").focus()}});
 $("analysis-search").oninput=filterAnalysis;$("analysis-sort").onchange=filterAnalysis;
 $("analysis-scope").onchange=syncAnalysis;
 $("campaign-metric").onchange=()=>{drawCampaignRanking();syncAnalysis()};
-function statisticsNavigationHeight(){return getComputedStyle(document.querySelector('.statistics-navigation')).position==="sticky"?document.querySelector('.statistics-navigation').getBoundingClientRect().height:0}
-let statisticsLocationTarget="";
-function syncStatisticsLocation(){
- if(!$("statistics").classList.contains("active"))return;
- const height=statisticsNavigationHeight();$("statistics").style.setProperty("--statistics-navigation-height",height+"px");
- const sections=[...document.querySelectorAll('#statistics .statistics-section')],threshold=height+32;
- let current=sections[0];for(const section of sections)if(section.getBoundingClientRect().top<=threshold)current=section;
- if(scrollY+innerHeight>=document.documentElement.scrollHeight-4)current=sections.at(-1);
- // Several sections can share a desktop row. Retain the requested section
- // while that row is in view instead of selecting its rightmost neighbour.
- const target=sections.find(section=>section.id===statisticsLocationTarget);
- if(target&&Math.abs(target.getBoundingClientRect().top-current.getBoundingClientRect().top)<2)current=target;
- document.querySelectorAll('.statistics-sections-nav a').forEach(link=>{if(link.hash==="#"+current.id)link.setAttribute("aria-current","location");else link.removeAttribute("aria-current")});
+function focusStatisticsSection(id){
+ if(id==="statistics-public"||id==="statistics-tracked"){
+  $("top-link-type").value=id==="statistics-public"?"public":"tracked";showTopLinkType();
+ }
+ const section=$(id);section.scrollIntoView({block:"start"});section.querySelector("h2").focus({preventScroll:true});
 }
-let statisticsScrollFrame=0;
-function queueStatisticsLocation(){if(!statisticsScrollFrame)statisticsScrollFrame=requestAnimationFrame(()=>{statisticsScrollFrame=0;syncStatisticsLocation()})}
-new ResizeObserver(queueStatisticsLocation).observe(document.querySelector('.statistics-navigation'));addEventListener("scroll",queueStatisticsLocation,{passive:true});
-function focusStatisticsSection(id){statisticsLocationTarget=id;$("statistics").style.setProperty("--statistics-navigation-height",statisticsNavigationHeight()+"px");const section=$(id);section.scrollIntoView({block:"start"});section.querySelector("h2").focus({preventScroll:true});syncStatisticsLocation()}
-$("statistics").querySelectorAll('.statistics-sections-nav a').forEach(link=>link.addEventListener("click",event=>{event.preventDefault();focusStatisticsSection(link.hash.slice(1))}));
+function showTopLinkType(){
+ const type=$("top-link-type").value;
+ $("statistics-public").hidden=type!=="public";$("statistics-tracked").hidden=type!=="tracked";
+}
+$("top-link-type").onchange=showTopLinkType;
 $("statistics").addEventListener("click",async event=>{
  const button=event.target.closest('[data-statistics-entity]');if(!button)return;
  const {statisticsEntity:type,entityId:id}=button.dataset,origin=button.closest("[id]")?.id;button.disabled=true;

@@ -47,17 +47,21 @@
  <div class="statistics-navigation">
  <div class="statistics-toolbar">
   <div id="statistics-filters"></div>
+  <details class="statistics-search-tools"><summary>Rechercher / trier</summary>
+  <form id="analysis-controls" class="analysis-controls" role="search" aria-label="Rechercher dans les résultats">
+   <label>Rechercher un résultat<input id="analysis-search" type="search" placeholder="Lien, campagne, source, code…"></label>
+   <label>Trier les listes<select id="analysis-sort"><option value="total">Volume décroissant</option><option value="name">Nom</option></select></label>
+  </form>
+  </details>
 
  </div>
- <nav class="statistics-sections-nav" aria-label="Sections des statistiques">
-  <a href="#statistics-overview">Vue globale</a><a href="#statistics-tracked">Liens suivis</a><a href="#statistics-public">Page publique</a><a href="#statistics-campaigns">Campagnes</a>
- </nav>
+
  <p id="statistics-filter-context" class="sr-only" role="status" aria-live="polite"></p>
  </div>
  <p id="analysis-empty" class="empty" hidden>Aucune activité sur cette période pour la source sélectionnée. Les sections et les historiques restent accessibles ci-dessous.</p>
  <div id="analysis-grid" class="statistics-sections">
   <section id="statistics-overview" class="statistics-section" aria-labelledby="statistics-overview-title">
-   <header class="statistics-section-heading overview-heading"><h2 id="statistics-overview-title" tabindex="-1">Vue globale</h2></header>
+   <header class="statistics-section-heading overview-heading sr-only"><h2 id="statistics-overview-title" tabindex="-1">Vue globale</h2></header>
    <div class="statistics-kpis" aria-label="Indicateurs de la période">
     <article><div class="kpi-label"><span>Visites de la page</span><span data-icon="visits" aria-hidden="true"></span></div><strong id="statistics-views">—</strong><small>Pages vues sur LinKs</small></article>
     <article><div class="kpi-label"><span>Clics publics</span><span data-icon="click" aria-hidden="true"></span></div><strong id="statistics-clicks">—</strong><small>Liens de la page publique</small></article>
@@ -67,30 +71,52 @@
     <article><div class="kpi-label"><span>Codes promo copiés</span><span data-icon="click" aria-hidden="true"></span></div><strong id="statistics-copies">—</strong><small>Copies depuis les offres</small></article>
    </div>
 
-   <details class="statistics-help"><summary>Comprendre les indicateurs</summary><p>Les ouvertures de liens suivis et de campagnes sont comptées séparément des clics sur la page publique. Le CTR = clics publics / visites. Statistiques agrégées, sans identifiant visiteur. Aucun comparatif avec une période précédente n’est calculé.</p></details>
+
 
    <div class="statistics-overview-grid">
-    <section id="analysis-history" class="panel traffic-panel"><div class="panel-title"><div><h3>Évolution sur la période</h3></div><label class="statistics-chart-control">Courbe à afficher<select id="analysis-scope"><option value="all" selected>Toutes les métriques</option><option value="public">Page publique</option><option value="tracked">Liens suivis</option><option value="shared">Liens suivis et campagnes</option><option value="campaigns">Campagnes</option><option value="copies">Copies de codes promo</option></select></label></div><p class="panel-helper">Choisissez un jour sur la courbe pour afficher ses liens ci-dessous.</p><div id="statistics-chart"></div></section>
-    <section class="panel" data-analysis="sources"><div class="panel-title"><h3>Provenance de l’activité</h3><label class="statistics-chart-control">Afficher par<select id="source-level"><option value="platforms">Plateformes</option><option value="sources">Sources individuelles</option></select></label></div><p class="panel-helper">Visites de la page et ouvertures de liens partagés, sans double comptage.</p><details class="statistics-help source-help"><summary>À propos des sources inconnues</summary><p>Une provenance ambiguë reste inconnue ; aucune plateforme n’est supposée.</p><p id="platform-group-note" class="panel-helper">Regroupement de lecture : les sources et leurs filtres restent distincts.</p></details><div id="sources"></div><details id="platform-source-details" class="platform-source-details" hidden><summary>Sources qui composent les plateformes</summary><div id="platform-source-list" class="collection-rows" aria-label="Détail des sources par plateforme"></div></details></section>
+    <section id="analysis-history" class="panel traffic-panel"><div class="panel-title"><div><h3>Évolution sur la période</h3><p class="panel-helper">Choisissez un jour pour afficher le détail de ses liens.</p></div><label class="statistics-chart-control">Courbe à afficher<select id="analysis-scope"><option value="all" selected>Toutes les métriques</option><option value="public">Page publique</option><option value="tracked">Liens suivis</option><option value="shared">Liens suivis et campagnes</option><option value="campaigns">Campagnes</option><option value="copies">Copies de codes promo</option></select></label></div><div id="statistics-chart"></div></section>
+    <section class="panel" data-analysis="sources"><div class="panel-title"><div><h3>Provenance de l’activité</h3><p class="panel-helper">Visites et ouvertures partagées, sans double comptage.</p></div><label class="statistics-chart-control">Afficher par<select id="source-level"><option value="platforms">Plateformes</option><option value="sources">Sources individuelles</option></select></label></div><div id="sources"></div><details class="statistics-help source-help"><summary>À propos des sources inconnues</summary><p>Une provenance ambiguë reste inconnue ; aucune plateforme n’est supposée.</p><p id="platform-group-note" class="panel-helper">Regroupement de lecture : les sources et leurs filtres restent distincts.</p></details><details id="platform-source-details" class="platform-source-details" hidden><summary>Sources qui composent les plateformes</summary><div id="platform-source-list" class="collection-rows" aria-label="Détail des sources par plateforme"></div></details></section>
    </div>
-  <form id="analysis-controls" class="analysis-controls" role="search" aria-label="Rechercher dans les résultats">
-   <label>Rechercher un résultat<input id="analysis-search" type="search" placeholder="Lien, campagne, source, code…"></label>
-   <label>Trier les listes<select id="analysis-sort"><option value="total">Volume décroissant</option><option value="name">Nom</option></select></label>
-  </form>
+
+  </section>
+
+  <div class="statistics-primary-grid">
    <section id="statistics-day-detail" class="panel daily-detail" aria-labelledby="daily-detail-title">
     <div class="panel-title"><div><h3 id="daily-detail-title" tabindex="-1">Détail des clics du jour</h3><p id="daily-filter-context" class="panel-helper" role="status" aria-live="polite"></p></div><div class="daily-date-navigation" role="group" aria-label="Choisir le jour à détailler"><button id="daily-previous" type="button" aria-label="Détail du jour précédent">←</button><label>Jour à détailler<input id="daily-date" type="date" required></label><button id="daily-next" type="button" aria-label="Détail du jour suivant">→</button></div></div>
-    <div class="daily-detail-toolbar"><p class="panel-helper">Liens ayant reçu des événements ce jour, pour la source sélectionnée.</p><label>Catégorie<select id="daily-category"><option value="all">Toutes les catégories</option><option value="public">Liens publics</option><option value="tracked">Liens suivis indépendants</option><option value="campaigns">Campagnes partagées</option></select></label></div><details class="statistics-help"><summary>Périmètre du détail quotidien</summary><p>Les visites, impressions et copies de codes ne sont pas des clics. Les fiches et noms reflètent les métadonnées disponibles ; les anciennes provenances incertaines restent identifiées. Les clics publics et les ouvertures restent séparés.</p></details>
+    <div class="daily-detail-toolbar"><p class="panel-helper">Liens ayant reçu des événements ce jour, pour la source sélectionnée.</p><label>Catégorie<select id="daily-category"><option value="all">Toutes les catégories</option><option value="public" selected>Liens publics</option><option value="tracked">Liens suivis indépendants</option><option value="campaigns">Campagnes partagées</option></select></label></div>
     <div class="daily-categories">
      <section data-daily-category="public" aria-labelledby="daily-public-title"><header><h4 id="daily-public-title">Liens publics</h4><span><strong id="daily-public-total">—</strong> clics publics</span></header><div id="daily-public-list"></div></section>
-     <section data-daily-category="tracked" aria-labelledby="daily-tracked-title"><header><h4 id="daily-tracked-title">Liens suivis indépendants</h4><span><strong id="daily-tracked-total">—</strong> ouvertures</span></header><div id="daily-tracked-list"></div></section>
-     <section data-daily-category="campaigns" aria-labelledby="daily-campaigns-title"><header><h4 id="daily-campaigns-title">Campagnes partagées</h4><span><strong id="daily-campaigns-total">—</strong> ouvertures</span></header><div id="daily-campaigns-list"></div></section>
+     <section data-daily-category="tracked" hidden aria-labelledby="daily-tracked-title"><header><h4 id="daily-tracked-title">Liens suivis indépendants</h4><span><strong id="daily-tracked-total">—</strong> ouvertures</span></header><div id="daily-tracked-list"></div></section>
+     <section data-daily-category="campaigns" hidden aria-labelledby="daily-campaigns-title"><header><h4 id="daily-campaigns-title">Campagnes partagées</h4><span><strong id="daily-campaigns-total">—</strong> ouvertures</span></header><div id="daily-campaigns-list"></div></section>
     </div>
+    <details class="statistics-help"><summary>Périmètre du détail quotidien</summary><p>Les visites, impressions et copies de codes ne sont pas des clics. Les fiches et noms reflètent les métadonnées disponibles ; les anciennes provenances incertaines restent identifiées. Les clics publics et les ouvertures restent séparés.</p></details>
    </section>
+  <section class="panel statistics-top-links" aria-labelledby="top-links-title">
+   <div class="panel-title"><div><h3 id="top-links-title"><span data-icon="links" aria-hidden="true"></span>Top liens</h3><p class="panel-helper">Les liens les plus performants sur la période.</p></div></div>
+   <label class="top-links-filter">Classement<select id="top-link-type"><option value="public">Liens publics · clics</option><option value="tracked">Liens suivis · ouvertures</option></select></label>
+  <section id="statistics-tracked" hidden class="statistics-section top-link-family" aria-labelledby="statistics-tracked-title">
+   <header class="statistics-section-heading sr-only"><div><h2 id="statistics-tracked-title" tabindex="-1">Liens suivis</h2><p>Ouvertures des liens indépendants, toutes sources de publication confondues.</p></div></header>
+   <section data-analysis="tracked"><h3 class="sr-only">Ouvertures de liens suivis</h3><div id="tracked-stat-list" aria-live="polite"></div></section>
+
   </section>
-  <section id="statistics-tracked" class="statistics-section" aria-labelledby="statistics-tracked-title">
-   <header class="statistics-section-heading"><div><h2 id="statistics-tracked-title" tabindex="-1">Liens suivis</h2><p>Ouvertures des liens indépendants, toutes sources de publication confondues.</p></div></header>
-   <section class="panel" data-analysis="tracked"><h3>Top liens suivis</h3><div id="tracked-stat-list" aria-live="polite"></div></section>
-   <section class="panel statistics-partner-panel"><h3>Classement des partenaires</h3><p id="partner-stat-note" class="panel-helper">Ouvertures de la période et de la source sélectionnées, selon les associations actuelles des liens.</p>
+  <section id="statistics-public" class="statistics-section top-link-family" aria-labelledby="statistics-public-title">
+   <header class="statistics-section-heading sr-only"><div><h2 id="statistics-public-title" tabindex="-1">Page publique</h2><p>Les visites mesurent les pages vues ; les clics publics mesurent les actions sur ses liens.</p></div></header>
+
+   <section data-analysis="public"><h3 class="sr-only">Clics publics</h3><div id="top-links" aria-live="polite"></div></section>
+
+  </section>
+  </section>
+  <section id="statistics-campaigns" class="statistics-section" aria-labelledby="statistics-campaigns-title">
+   <header class="statistics-section-heading sr-only"><div><h2 id="statistics-campaigns-title" tabindex="-1">Campagnes</h2><p>Impressions, clics publics, ouvertures partagées et copies de codes. Archives et historiques conservés.</p></div></header>
+   <div class="statistics-campaign-grid">
+    <section class="panel statistics-campaign-ranking" data-analysis="campaigns"><div class="panel-title"><h3>Campagnes</h3><label id="campaign-metric-control">Classer les campagnes par<select id="campaign-metric"><option value="shared">Ouvertures partagées</option><option value="clicks">Clics publics</option><option value="impressions">Impressions</option><option value="copies">Copies de codes</option></select></label></div><div id="campaign-details" aria-label="Campagnes avec activité"></div><details id="campaign-inactive" class="campaign-inactive" hidden><summary>Sans activité sur la période · <strong id="campaign-inactive-count">0</strong> campagne(s)</summary><p class="panel-helper">Campagnes actives, archivées et historiques sans événement pour la période et la source sélectionnées.</p><div id="campaign-inactive-list" aria-label="Campagnes sans activité"></div></details></section>
+
+   </div>
+  </section>
+  </div>
+  <div class="statistics-secondary-grid">
+   <details class="statistics-help"><summary>Comprendre les indicateurs</summary><p>Les ouvertures de liens suivis et de campagnes sont comptées séparément des clics sur la page publique. Le CTR = clics publics / visites. Statistiques agrégées, sans identifiant visiteur. Aucun comparatif avec une période précédente n’est calculé.</p></details>
+   <details class="panel statistics-partner-panel statistics-disclosure"><summary>Classement des partenaires</summary><h3>Ouvertures par partenaire</h3><p id="partner-stat-note" class="panel-helper">Ouvertures de la période et de la source sélectionnées, selon les associations actuelles des liens.</p>
     <dl id="partner-attribution-summary" class="partner-attribution-summary" aria-label="Répartition des ouvertures de liens suivis" aria-live="polite" hidden>
      <div><dt>Attribuées à un partenaire</dt><dd data-partner-count="attributed">—</dd></div>
      <div><dt>Sans partenaire déclaré</dt><dd data-partner-count="withoutPartner">—</dd></div>
@@ -100,22 +126,11 @@
     <details id="partner-unattributed" class="partner-unattributed" hidden><summary>Comprendre les ouvertures non attribuées</summary>
      <section id="partner-without-section" aria-labelledby="partner-without-title"><h4 id="partner-without-title">Liens sans partenaire déclaré</h4><p class="panel-helper">Ces liens existent et n’ont actuellement aucun partenaire renseigné. Ce cas est légitime, notamment pour les URL affiliées directes. L’historique ne précise pas si l’absence d’association était un choix volontaire.</p><div id="partner-without-list" aria-live="polite"></div></section>
      <section id="partner-unidentified-section" aria-labelledby="partner-unidentified-title"><h4 id="partner-unidentified-title">Attribution non identifiable</h4><p class="panel-helper">Le lien, son association ou le partenaire référencé ne figure pas dans les métadonnées disponibles. Ces ouvertures restent dans les totaux des liens suivis ; aucun partenaire n’est déduit du domaine.</p><div id="partner-unidentified-list" aria-live="polite"></div></section>
-    </details></section>
-  </section>
-  <section id="statistics-public" class="statistics-section" aria-labelledby="statistics-public-title">
-   <header class="statistics-section-heading"><div><h2 id="statistics-public-title" tabindex="-1">Page publique</h2><p>Les visites mesurent les pages vues ; les clics publics mesurent les actions sur ses liens.</p></div></header>
-
-   <section class="panel" data-analysis="public"><h3>Top liens publics</h3><div id="top-links" aria-live="polite"></div></section>
+    </details></details>
    <details class="panel statistics-daily-panel statistics-disclosure"><summary>Histogramme quotidien de la page</summary><h3>Activité quotidienne de la page</h3><p class="panel-helper">Visites et clics publics par jour. Faites défiler l’histogramme sur les longues périodes ; touchez un jour pour ses valeurs exactes.</p><div id="public-daily-chart"></div></details>
-  </section>
-  <section id="statistics-campaigns" class="statistics-section" aria-labelledby="statistics-campaigns-title">
-   <header class="statistics-section-heading"><div><h2 id="statistics-campaigns-title" tabindex="-1">Campagnes</h2><p>Impressions, clics publics, ouvertures partagées et copies de codes. Archives et historiques conservés.</p></div></header>
-   <div class="statistics-campaign-grid">
-    <section class="panel statistics-campaign-ranking" data-analysis="campaigns"><div class="panel-title"><h3>Performances par campagne</h3><label id="campaign-metric-control">Classer les campagnes par<select id="campaign-metric"><option value="shared">Ouvertures partagées</option><option value="clicks">Clics publics</option><option value="impressions">Impressions</option><option value="copies">Copies de codes</option></select></label></div><div id="campaign-details" aria-label="Campagnes avec activité"></div><details id="campaign-inactive" class="campaign-inactive" hidden><summary>Sans activité sur la période · <strong id="campaign-inactive-count">0</strong> campagne(s)</summary><p class="panel-helper">Campagnes actives, archivées et historiques sans événement pour la période et la source sélectionnées.</p><div id="campaign-inactive-list" aria-label="Campagnes sans activité"></div></details></section>
     <details class="panel stories-card statistics-disclosure" data-analysis="shared"><summary>Provenance des ouvertures partagées</summary><div class="panel-title"><h3>Ouvertures des campagnes partagées</h3><span class="engagement-total"><strong id="story-total">—</strong> ouvertures</span></div><p class="engagement-note" hidden><strong id="story-promos">—</strong> promotion(s)</p><p class="panel-helper">Les anciennes provenances incertaines restent identifiées.</p><div id="story-list" aria-live="polite"></div></details>
     <section class="panel" data-analysis="copies"><div class="panel-title"><h3>Codes promo copiés</h3><span class="engagement-total"><strong id="promo-copy-total">—</strong> copies</span></div><div id="promo-copy-list" aria-live="polite"></div></section>
-   </div>
-  </section>
+  </div>
  </div>
 </section>
 <section class="view" id="content">
