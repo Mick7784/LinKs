@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>LinKs by DomotiK Studio · Administration</title><link rel="icon" href="/mark.svg">
-<script src="/theme-init.js"></script><link rel="stylesheet" href="/style.css"><script src="/dates.js" defer></script><script src="/preview/cards.js" defer></script><script src="/calendar.js" defer></script><script src="/preview/theme.js" defer></script><script src="/uploads.js" defer></script><script src="/navigation.js" defer></script><script src="/charts.js" defer></script><script src="/collection.js" defer></script><script src="/partner-report.js" defer></script><script src="/source-platforms.js" defer></script><script src="/daily-report.js" defer></script><script src="/app.js" defer></script><script src="/tracking.js" defer></script><script src="/appearance.js" defer></script><script src="/shortcuts.js" defer></script><script src="/storage.js" defer></script><script src="/settings.js" defer></script><link rel="stylesheet" href="/appearance.css"></head>
+<script src="/theme-init.js"></script><link rel="stylesheet" href="/style.css"><script src="/dates.js" defer></script><script src="/preview/cards.js" defer></script><script src="/calendar.js" defer></script><script src="/preview/theme.js" defer></script><script src="/uploads.js" defer></script><script src="/navigation.js" defer></script><script src="/charts.js" defer></script><script src="/collection.js" defer></script><script src="/partner-report.js" defer></script><script src="/source-platforms.js" defer></script><script src="/daily-report.js" defer></script><script src="/app.js" defer></script><script src="/page-editor.js" defer></script><script src="/tracking.js" defer></script><script src="/appearance.js" defer></script><script src="/shortcuts.js" defer></script><script src="/storage.js" defer></script><script src="/settings.js" defer></script><link rel="stylesheet" href="/appearance.css"><link rel="stylesheet" href="/page-editor.css"></head>
 <body class="admin-shell">
 <a class="skip-link" href="#main-content">Aller au contenu</a>
 <aside class="sidebar" aria-label="Links">
@@ -136,8 +136,10 @@
  </div>
 </section>
 <section class="view" id="content">
- <div class="section-head"><div><h2>Page publique</h2><p>Organisez les sections dans l’administration et réglez la visibilité de la vidéo. Cet ordre ne change pas celui des sections publiques.</p></div></div>
- <div id="content-list" class="sortable-list"></div>
+ <div class="section-head"><div><h2>Page publique</h2><p>Organisez les sections et les liens dans l’aperçu réel de votre page. L’en-tête et le pied de page restent à leur place.</p></div><div class="profile-image-actions"><button type="button" data-open-view="permanent-links">Gérer les liens permanents</button><button type="button" data-open-view="campaigns">Gérer les campagnes</button></div></div>
+ <div class="panel page-editor-toolbar"><div class="page-editor-devices" role="group" aria-label="Format de l’aperçu"><button type="button" data-layout-device="desktop" aria-pressed="true">Ordinateur</button><button type="button" data-layout-device="mobile" aria-pressed="false">Mobile</button></div><p id="page-editor-status" role="status" aria-live="polite">Chargement de l’aperçu…</p><div class="profile-image-actions"><button type="button" id="page-editor-cancel" disabled>Annuler</button><button type="button" id="page-editor-save" class="primary" disabled>Enregistrer</button></div></div>
+ <p class="panel-helper">Glissez les poignées ou utilisez les flèches. Les modifications restent privées jusqu’à Enregistrer.</p>
+ <div id="page-editor-preview" data-device="desktop"><iframe id="page-editor-frame" title="Éditeur visuel de la page publique" sandbox="allow-scripts allow-same-origin"></iframe></div>
 </section>
 <section class="view" id="permanent-links">
  <div class="section-head"><div><h2>Liens permanents</h2><p>Gérez vos liens classiques et leur classement sur la page publique.</p></div><div class="profile-image-actions"><button class="primary" data-action="new-block">Ajouter un lien</button><button type="button" data-open-view="archives">Archives</button></div></div>

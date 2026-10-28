@@ -476,10 +476,38 @@ def button_list(archived=False):
         for row in db.execute("SELECT * FROM top_buttons WHERE retired=? ORDER BY position,created_at",(int(archived),)):
             item=dict(row);item["active"]=bool(item["active"]);item["clicks"]=clicks.get(("click","button:"+item["id"]),0);result.append(item)
         return result
+PUBLIC_SECTIONS=['video','highlight','classic']
+
+def public_section_order(db):
+    return json.loads(instance.get(db,'public.section_order',json.dumps(PUBLIC_SECTIONS)))
+
+def classic_priority_order(db):
+    # Until the first explicit save, retain legacy public ordering exactly.
+    return '' if instance.get(db,'public.section_order') else "CASE WHEN priority='high' THEN 0 ELSE 1 END,"
+
+def page_layout(db):
+    ids=[r['id'] for r in db.execute("SELECT id FROM content_blocks WHERE type='classic' AND archived=0 AND retired=0 ORDER BY "+classic_priority_order(db)+"position,created_at,id")]
+    layout={'section_order':public_section_order(db),'link_ids':ids}
+    return {**layout,'revision':instance.digest(json.dumps(layout,sort_keys=True))}
+
+def save_page_layout(data):
+    if not isinstance(data,dict) or set(data)!={'section_order','link_ids','revision'}:raise ValueError('Organisation invalide')
+    validate_settings({'public.section_order':json.dumps(data['section_order'])})
+    ids=data['link_ids']
+    if not isinstance(ids,list) or any(not isinstance(x,str) for x in ids) or len(set(ids))!=len(ids):raise ValueError('Ordre des liens invalide')
+    with connection() as db:
+        db.execute('BEGIN IMMEDIATE')
+        current=page_layout(db)
+        if data['revision']!=current['revision'] or set(ids)!=set(current['link_ids']):raise ValueError('Les contenus ont changé. Annulez pour recharger leur organisation avant d’enregistrer.')
+        instance.put(db,'public.section_order',json.dumps(data['section_order']))
+        for position,ident in enumerate(ids):
+            db.execute('UPDATE content_blocks SET position=? WHERE id=?',(position,ident))
+        return page_layout(db)
+
 def public_config(snapshot=False):
     with connection() as db:
         now=datetime.now(timezone.utc)
-        rows=list(db.execute("SELECT * FROM content_blocks WHERE retired=0 AND archived=0 ORDER BY CASE WHEN type IN ('promo','featured') THEN 0 ELSE 1 END,CASE WHEN priority='high' THEN 0 ELSE 1 END,position,created_at,id"))
+        rows=list(db.execute("SELECT * FROM content_blocks WHERE retired=0 AND archived=0 ORDER BY CASE WHEN type IN ('promo','featured') THEN 0 ELSE 1 END,"+classic_priority_order(db)+"position,created_at,id"))
         selection=select_campaigns(rows,now)
         default_image=campaign_image_settings(db)['resolved_image']
         # Keep all eligible campaigns in links for existing PulSe consumers.
@@ -499,6 +527,7 @@ def public_config(snapshot=False):
         result['campaign_default_image']=default_image
         for item in result['links']:
             if item['type'] in CAMPAIGN_TYPES:item['effective_image']=item['image'] or default_image
+        result["section_order"]=public_section_order(db)
         result["appearance"]=themes.public(db)
         result["profile"]["footer_quote"]=quote["text"] if quote else ""
     if result["profile"]["video_enabled"]:result["latestVideo"]={"enabled":True}
@@ -1069,8 +1098,9 @@ def validate_settings(values):
     if 'admin.calendar_timed' in values:
         ids=json.loads(values['admin.calendar_timed'])
         if not isinstance(ids,list) or any(not isinstance(x,str) or not re.fullmatch(r'[a-f0-9-]{36}',x) for x in ids):raise ValueError('Modes horaires invalides')
-    if 'admin.content_order' in values:
-        order=json.loads(values['admin.content_order'])
+    for order_key in ['admin.content_order','public.section_order']:
+        if order_key not in values:continue
+        order=json.loads(values[order_key])
         if not isinstance(order,list) or len(order)!=3 or any(not isinstance(x,str) for x in order) or set(order)!={'classic','video','highlight'}:raise ValueError('Ordre des sections invalide')
     if 'site.url' in values:values['site.url']=instance.site_url(values['site.url'],allow_empty=True)
     if 'app.timezone' in values:instance.timezone_name(values['app.timezone'])
@@ -1510,6 +1540,8 @@ class Handler(BaseHTTPRequestHandler):
             if url.path=="/api/storage":return self.json(200,storage_state())
             if url.path=="/api/stats":
                 q=parse_qs(url.query);today=datetime.now(PARIS).date();return self.json(200,report(q.get("start",[(today-timedelta(days=29)).isoformat()])[0],q.get("end",[today.isoformat()])[0],q.get("source",[""])[0]))
+            if url.path=="/api/page-layout":
+                with connection() as db:return self.json(200,page_layout(db))
             if url.path=="/api/content":return self.json(200,{"items":content_list(parse_qs(url.query).get("archived",["0"])[0]=="1")})
             if url.path=="/api/promotions/selection":
                 values=parse_qs(url.query,keep_blank_values=True).get('at',[None])
@@ -1533,7 +1565,7 @@ class Handler(BaseHTTPRequestHandler):
         if url.path=="/preview/style.css":return self.file(ROOT/"site"/"style.css" if (ROOT/"site"/"style.css").exists() else Path("/usr/share/nginx/html/style.css"),"text/css")
         if url.path=="/preview/preview.css":return self.file(ADMIN/"promo-preview.css","text/css")
         if url.path.startswith("/preview/") and url.path[9:] in {"index.html","app.js","config.js","metrics.js","theme.js","theme.css","theme-tokens.json","asset-library.json"}:return self.file(STATIC/url.path[9:])
-        if url.path in {"/collection.js","/partner-report.js","/source-platforms.js","/daily-report.js","/charts.js","/navigation.js","/appearance.js","/appearance.css","/shortcuts.js","/uploads.js","/storage.js","/settings.js","/tracking.js","/theme-init.js"}:return self.file(ADMIN/url.path[1:])
+        if url.path in {"/collection.js","/partner-report.js","/source-platforms.js","/daily-report.js","/charts.js","/navigation.js","/page-editor.js","/page-editor.css","/page-editor-preview.css","/appearance.js","/appearance.css","/shortcuts.js","/uploads.js","/storage.js","/settings.js","/tracking.js","/theme-init.js"}:return self.file(ADMIN/url.path[1:])
         files={"/":("index.html","text/html;charset=utf-8"),"/app.js":("app.js","application/javascript"),"/dates.js":("dates.js","application/javascript"),"/calendar.js":("calendar.js","application/javascript"),"/style.css":("style.css","text/css")}
         return self.file(ADMIN/files[url.path][0],files[url.path][1]) if url.path in files else self.send(404)
     def do_POST(self):
@@ -1603,6 +1635,7 @@ class Handler(BaseHTTPRequestHandler):
                 ident=data.get('id') or None
                 if ident is not None and (not isinstance(ident,str) or len(ident)>100):raise ValueError('Identifiant de campagne invalide')
                 with connection() as db:return self.json(200,affiliate_partners.preview_campaign(db,data,ident,valid_url))
+            if path=="/api/page-layout":return self.json(200,save_page_layout(data))
             if path=="/api/content":return self.create_content(data)
             if path=="/api/promotions/check":
                 item=block_data(data);return self.json(200,promotion_check(item,data.get("id") or None))
