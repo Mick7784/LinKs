@@ -19,7 +19,7 @@ function rowHTML(item){
  const options=sourceOptions();
  const title=item.archived?"Archivé":!item.enabled?"Désactivé":"Actif";
  return `<article class="tracked-item${item.archived?" archived":""}" data-tracked-id="${safe(item.id)}">
- <div class="tracked-item-top"><button type="button" class="tracked-expand" data-open-statistics="shared" data-analysis-query="${safe(item.name)}" title="Voir les statistiques de ce lien"><span class="tracked-item-icon" aria-hidden="true">↗</span><span class="tracked-item-label"><strong>${safe(item.name)}</strong><small>${safe(item.category||"Lien suivi")} · ${fmt.format(value)} clic(s) · ${title}</small></span><span class="tracked-expander" aria-hidden="true">→</span></button>
+ <div class="tracked-item-top"><button type="button" class="tracked-expand" data-open-statistics="shared" data-analysis-query="${safe(item.name)}" title="Voir les statistiques de ce lien"><span class="tracked-item-icon" aria-hidden="true">↗</span><span class="tracked-item-label"><strong>${safe(item.name)}</strong><small>Lien suivi · ${fmt.format(value)} clic(s) · ${title}</small></span><span class="tracked-expander" aria-hidden="true">→</span></button>
  <div class="tracked-item-actions"><label class="sr-only" for="source-${safe(item.id)}">Source de publication</label><select id="source-${safe(item.id)}" aria-label="Source pour ${safe(item.name)}" ${!usable||!options?"disabled":""}>${options||'<option>Aucune source</option>'}</select>
  <button type="button" data-tracked-action="copy" ${!usable||!options?"disabled":""} aria-label="Copier un lien permanent pour ${safe(item.name)}" title="Copier le lien permanent de cette source">⧉</button>
  <button type="button" data-tracked-action="open" title="Ouvrir la destination de ${safe(item.name)} dans un nouvel onglet">Ouvrir</button>
@@ -29,14 +29,9 @@ function rowHTML(item){
 </article>`;
 }
 function render(){
- const status=get("tracked-status").value,category=get("tracked-category").value;
- const items=state.items.filter(row=>(status==="all"||status==="current"&&!row.archived||status==="active"&&!row.archived&&row.enabled||status==="disabled"&&!row.archived&&!row.enabled||status==="archived"&&row.archived)&&(!category||row.category===category));
- library.setRows(items.map(row=>({...row,total:row.clicks,details:[row.url,row.original_url,row.category,row.notes]})),{query:get("tracked-search").value,sort:"input"});
-}
-function renderCategories(){
- const select=get("tracked-category"),selected=select.value;
- select.replaceChildren(new Option("Toutes les catégories",""),...[...new Set(state.items.map(row=>row.category).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"fr")).map(value=>new Option(value,value)));
- select.value=[...select.options].some(option=>option.value===selected)?selected:"";
+ const status=get("tracked-status").value;
+ const items=state.items.filter(row=>status==="all"||status==="current"&&!row.archived||status==="active"&&!row.archived&&row.enabled||status==="disabled"&&!row.archived&&!row.enabled||status==="archived"&&row.archived);
+ library.setRows(items.map(row=>({...row,total:row.clicks,details:[row.url,row.original_url,row.notes]})),{query:get("tracked-search").value,sort:"input"});
 }
 const sourceLibrary=StudioCollection.create(get("tracked-source-list"),{empty:"Aucune source dans cette vue. Ajustez la recherche ou le filtre.",renderRow(row){
  const node=document.createElement("div");node.className="tracked-source-manager-row";node.dataset.sourceId=row.id;
@@ -59,7 +54,7 @@ async function load(){
  try{
   const [links,sources]=await Promise.all([api("/api/tracked-links"),api("/api/tracking-sources")]);
   state.items=links.items;state.sources=sources.items;
-  renderCategories();render();renderSources();if(get("tracked-reuse-dialog").open)renderReuseSources();
+  render();renderSources();if(get("tracked-reuse-dialog").open)renderReuseSources();
  }catch(error){get("tracked-list").textContent=error.message;}
 }
 let linkPreviewRevision=0,linkPreview=null,manualPartner=false,reapplyPartner=false,savingTracked=false;
@@ -86,7 +81,7 @@ async function openEditor(item){
  try{state.partners=(await api("/api/affiliate-partners")).items}catch(error){say(error.message,true);return}
  state.editing=item?.id||"";
  const form=get("tracked-form");form.reset();
- for(const key of ["name","url","category","notes"])form.elements[key].value=item?.[key]||"";
+ for(const key of ["name","url","notes"])form.elements[key].value=item?.[key]||"";
  form.elements.url.value=item?.original_url||item?.url||"";
  form.elements.partner_id.replaceChildren(new Option("Aucun",""),...state.partners.map(partner=>new Option(partner.name,partner.id)));
  form.elements.partner_id.value=item?.partner_id||"";
@@ -137,7 +132,7 @@ get("tracked-recalculate").addEventListener("click",()=>{reapplyPartner=true;pre
 get("tracked-dialog").addEventListener("close",()=>{++linkPreviewRevision;linkPreview=null});
 async function openDuplicate(id){
  await load();const row=state.items.find(item=>item.id===id);if(!row){say("Lien introuvable.",true);return}
- get("tracked-status").value="all";get("tracked-category").value="";get("tracked-search").value=row.name;render();
+ get("tracked-status").value="all";get("tracked-search").value=row.name;render();
  close("tracked-reuse-dialog");close("tracked-dialog");openEditor(row);
 }
 function renderReuseSources(){
@@ -195,7 +190,6 @@ get("tracked-source-list").addEventListener("click",async event=>{
 get("tracked-filters").addEventListener("submit",event=>event.preventDefault());
 get("tracked-search").addEventListener("input",render);
 get("tracked-status").addEventListener("change",render);
-get("tracked-category").addEventListener("change",render);
 document.querySelector('[data-action="new-tracked"]').addEventListener("click",()=>openEditor());
 get("tracked-manage-sources").addEventListener("click",()=>{renderSources();get("tracked-sources-dialog").showModal()});
 document.querySelectorAll("[data-close-tracked]").forEach(button=>button.addEventListener("click",()=>close("tracked-dialog")));

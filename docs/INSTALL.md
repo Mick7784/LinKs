@@ -48,6 +48,12 @@ Pour restaurer sur une nouvelle installation, terminer d’abord son assistant e
 
 L’export applicatif ne remplace pas une sauvegarde du volume. La restauration remplace les données incluses après validation ; les uploads reçoivent de nouveaux noms pour éviter d’écraser les fichiers courants.
 
+Les exports récents omettent la catégorie des liens suivis. Le nouvel importeur accepte les fichiers v1/v2/v3 avec ou sans cet ancien champ et l'ignore. Cette compatibilité va vers la nouvelle application : une ancienne image peut refuser un nouvel export sans catégorie.
+
+## Suppression des catégories de liens suivis
+
+Cette évolution comprend une migration de retrait de colonne, contrairement aux migrations additives historiques. Lire [la procédure dédiée](MIGRATION-CATEGORIES.md) et la tester sur une copie isolée avant une mise à jour autorisée. SQLite 3.35.0 minimum est requis. Le premier démarrage sauvegarde la base complète dans `pre-category-removal/<identifiant>/analytics.db`, vérifie sa conservation, puis retire uniquement `tracked_links.category`. Toute erreur bloque le démarrage et annule la suppression. Les installations neuves créent directement la table sans cette colonne.
+
 ## Vidéo facultative
 
 Activer la section dans les paramètres et configurer la source côté installation. YouTube Data API v3 se configure dans Paramètres → YouTube (chaîne, clé, test). Le fournisseur Creator Studio historique reste compatible : `CREATOR_STUDIO_URL` et `CREATOR_STUDIO_API_KEY` restent dans la configuration sécurisée ; ne jamais committer la clé.
@@ -60,7 +66,7 @@ Installer et vérifier votre protection externe avant de choisir ce mode dans Pa
 
 ## Retour arrière
 
-Conserver l’image précédente, le code sauvegardé et le volume pré-migration. Sauvegarder également l’état courant avant un retour arrière : ne pas écraser les données créées depuis la mise à jour. Les migrations sont additives, mais un retour d’image ne restaure pas automatiquement le volume.
+Conserver l’image précédente, le code sauvegardé et le volume pré-migration. Sauvegarder également l’état courant avant un retour arrière : ne pas écraser les données créées depuis la mise à jour. Un retour d’image ne restaure pas automatiquement le volume. Après retrait de `tracked_links.category`, l'ancienne image peut nécessiter l'ancien schéma : utiliser un couple image/volume cohérent et suivre [les précautions de retour arrière](MIGRATION-CATEGORIES.md#retour-arrière).
 
 ## Validation et releases
 

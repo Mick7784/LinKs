@@ -7,6 +7,9 @@ import re
 import secrets
 import uuid
 import sqlite3
+from contextlib import closing
+from itertools import zip_longest
+from pathlib import Path
 import short_urls
 from urllib.parse import urlsplit
 from datetime import date
@@ -85,6 +88,96 @@ def check_duplicate_destination(db, url, data, current=None):
     return matches, required
 
 
+def _category_integrity(db):
+    if list(db.execute('PRAGMA integrity_check')) != [('ok',)] or list(db.execute('PRAGMA foreign_key_check')):
+        raise ValueError('Intégrité SQLite ou références invalides : migration des catégories interrompue.')
+
+
+def _category_compare(db, saved, removed=False):
+    """Compare complete schemas and stream every retained value, including duplicates.
+
+    This runs once at upgrade, with writers locked. No application projection or
+    retention window is used: even unknown tables and old counters are checked.
+    """
+    objects = 'SELECT type,name,tbl_name,sql FROM sqlite_master ORDER BY type,name'
+    before, after = list(saved.execute(objects)), list(db.execute(objects))
+    if removed:
+        before = [row for row in before if row[:2] != ('table', 'tracked_links')]
+        after = [row for row in after if row[:2] != ('table', 'tracked_links')]
+    if before != after:
+        raise ValueError('Le schéma utile a changé pendant la migration des catégories.')
+    for (name,) in saved.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"):
+        quoted = '"' + name.replace('"', '""') + '"'
+        expected = [row[1:] for row in saved.execute('PRAGMA table_xinfo('+quoted+')')]
+        if removed and name == 'tracked_links':
+            expected = [row for row in expected if row[0] != 'category']
+        actual = [row[1:] for row in db.execute('PRAGMA table_xinfo('+quoted+')')]
+        if expected != actual or list(saved.execute('PRAGMA foreign_key_list('+quoted+')')) != list(db.execute('PRAGMA foreign_key_list('+quoted+')')):
+            raise ValueError('Colonnes ou contraintes modifiées : '+name)
+        names = ['"'+row[0].replace('"', '""')+'"' for row in expected]
+        columns = ','.join(names + ['typeof('+name+')' for name in names])
+        # BINARY sorting avoids application collations hiding changed text values.
+        order = ','.join('"'+row[0].replace('"', '""')+'" COLLATE BINARY' for row in expected)
+        query = 'SELECT '+columns+' FROM '+quoted+' ORDER BY '+order
+        missing = object()
+        if any(left != right for left, right in zip_longest(db.execute(query), saved.execute(query), fillvalue=missing)):
+            raise ValueError('Données utiles modifiées : '+name)
+
+
+def remove_legacy_category(database):
+    """Startup-only, atomic native DROP; never rebuild tables or disable FKs.
+
+    An independent SQLite backup includes committed WAL pages. BEGIN IMMEDIATE
+    excludes concurrent writers until comparison and commit have both succeeded.
+    Failed or interrupted attempts retain their backup for manual recovery.
+    """
+    path = Path(database).resolve()
+    if not path.is_file():
+        return None
+    target = None
+    with closing(sqlite3.connect(path, timeout=10, isolation_level=None)) as db:
+        if 'category' not in {row[1] for row in db.execute('PRAGMA table_info(tracked_links)')}:
+            return None
+        try:
+            db.execute('PRAGMA foreign_keys=ON')
+            db.execute('BEGIN IMMEDIATE')
+            columns = {row[1]: row for row in db.execute('PRAGMA table_xinfo(tracked_links)')}
+            if 'category' not in columns:  # Another startup may have finished while acquiring the lock.
+                db.rollback()
+                return None
+            if sqlite3.sqlite_version_info < (3, 35, 0):
+                raise ValueError('SQLite 3.35.0 minimum requis pour supprimer les catégories.')
+            if columns['category'][2:] != ('TEXT', 1, "''", 0, 0) or not {'id', 'name', 'url'} <= columns.keys():
+                raise ValueError('Schéma de catégories inconnu : audit complémentaire requis.')
+            for kind, name, table, sql in db.execute("SELECT type,name,tbl_name,sql FROM sqlite_master WHERE sql IS NOT NULL"):
+                linked = table == 'tracked_links' or re.search(r'\btracked_links\b', sql, re.I)
+                if linked and (kind in {'view', 'trigger'} or kind == 'index' and re.search(r'\bcategory\b', sql, re.I)):
+                    raise ValueError('Dépendance SQLite à auditer avant migration : '+name)
+            _category_integrity(db)
+            if any(not isinstance(name, str) or not name.strip() for (name,) in db.execute('SELECT name FROM tracked_links')):
+                raise ValueError('Un lien sans nom doit être corrigé avant la migration des catégories.')
+            directory = path.parent / 'pre-category-removal' / uuid.uuid4().hex
+            directory.mkdir(parents=True)  # Unique directory: never overwrite an earlier safety copy.
+            partial = directory / 'analytics.db.partial'
+            with closing(sqlite3.connect(path, timeout=10)) as source, closing(sqlite3.connect(partial)) as backup:
+                source.backup(backup)
+            with closing(sqlite3.connect(partial)) as backup:
+                _category_integrity(backup)
+                _category_compare(db, backup)
+            target = directory / 'analytics.db'
+            partial.rename(target)
+            with closing(sqlite3.connect(target.as_uri()+'?mode=ro', uri=True)) as backup:
+                db.execute('ALTER TABLE tracked_links DROP COLUMN category')
+                _category_integrity(db)
+                _category_compare(db, backup, removed=True)
+            db.commit()
+        except Exception as exc:
+            db.rollback()
+            location = str(target) if target else 'aucune copie validée'
+            raise RuntimeError('Suppression des catégories annulée. Sauvegarde : '+location+'. '+str(exc)) from exc
+    return target
+
+
 def initialize(db):
     first_install=not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='tracking_sources'").fetchone()
     first_keys=not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='tracking_source_keys'").fetchone()
@@ -97,7 +190,7 @@ def initialize(db):
         db.execute("ALTER TABLE tracking_sources ADD COLUMN story_click_total INTEGER NOT NULL DEFAULT 0")
     db.execute("""CREATE TABLE IF NOT EXISTS tracked_links (
         id TEXT PRIMARY KEY, name TEXT NOT NULL, url TEXT NOT NULL,
-        category TEXT NOT NULL DEFAULT '', notes TEXT NOT NULL DEFAULT '',
+        notes TEXT NOT NULL DEFAULT '',
         archived INTEGER NOT NULL DEFAULT 0 CHECK(archived IN (0,1)),
         enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)),
         created_at TEXT NOT NULL, updated_at TEXT NOT NULL)""")
@@ -218,18 +311,18 @@ def link_input(data,url_valid):
     url=text_field(data,"url",2000,True)
     if not url_valid(url):raise ValueError("Destination HTTP(S) valide requise")
     return {"name":text_field(data,"name",160,True),"url":url,
-            "category":text_field(data,"category",80),"notes":text_field(data,"notes",800)}
+            "notes":text_field(data,"notes",800)}
 
 def create_link(db,data,url_valid,now):
     fields=link_input(data,url_valid);ident=uuid.uuid4().hex
-    db.execute("INSERT INTO tracked_links VALUES(?,?,?,?,?,0,1,?,?)",
-               (ident,fields["name"],fields["url"],fields["category"],fields["notes"],now,now))
+    db.execute("INSERT INTO tracked_links(id,name,url,notes,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+               (ident,fields["name"],fields["url"],fields["notes"],now,now))
     return {"id":ident,**fields}
 
 def update_link(db,ident,data,url_valid,now):
     fields=link_input(data,url_valid)
-    if not db.execute("""UPDATE tracked_links SET name=?,url=?,category=?,notes=?,updated_at=?
-                      WHERE id=?""",(fields["name"],fields["url"],fields["category"],fields["notes"],now,ident)).rowcount:
+    if not db.execute("""UPDATE tracked_links SET name=?,url=?,notes=?,updated_at=?
+                      WHERE id=?""",(fields["name"],fields["url"],fields["notes"],now,ident)).rowcount:
         raise ValueError("Lien introuvable")
     return {"id":ident,**fields}
 
@@ -287,7 +380,8 @@ def tracked_events(db,start,end,source=""):
          WHERE """+where+" ORDER BY c.day",params)]
 
 def list_links(db,start=None,end=None):
-    rows=[dict(r) for r in db.execute("SELECT * FROM tracked_links ORDER BY created_at DESC")]
+    rows=[dict(r) for r in db.execute("""SELECT id,name,url,notes,archived,enabled,created_at,updated_at
+        FROM tracked_links ORDER BY created_at DESC""")]
     lifetime={}
     for r in db.execute("""SELECT t.link_id,t.source_id,s.name AS source_name,SUM(t.click_total) total
         FROM tracked_tokens t JOIN tracking_sources s ON s.id=t.source_id

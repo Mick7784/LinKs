@@ -66,6 +66,10 @@ def instant(value,strict=False,zone=None):
 def init():
     global ORIGIN,PARIS
     Path(DB).parent.mkdir(parents=True,exist_ok=True); UPLOADS.mkdir(parents=True,exist_ok=True)
+    with DATA_LOCK:
+        category_backup=tracked_links.remove_legacy_category(DB)
+    if category_backup:
+        print('LinKs : catégories supprimées ; sauvegarde SQLite vérifiée : '+str(category_backup),flush=True)
     existed=Path(DB).exists() and Path(DB).stat().st_size>0
     if existed:
         with closing(sqlite3.connect(DB)) as before:
@@ -741,6 +745,7 @@ def restore_safety(db):
 def export_backup():
     with DATA_LOCK,connection() as db:
         tables={table:[dict(row) for row in db.execute('SELECT * FROM '+table)] for table in BACKUP_TABLES}
+        for row in tables['tracked_links']:row.pop('category',None)
         references={r['image'] for r in tables['content_blocks']}
         references.update(r['custom_icon'] for r in tables['top_buttons'])
         references.update(r['value'] for r in tables['settings'] if r['key'] in {'profile.avatar','profile.logo','appearance.campaign_image'})
@@ -827,14 +832,21 @@ def restore_backup(data,preview=False):
             if incoming_instance and incoming_instance!=instance.get(db,'app.instance_id'):
                 if db.execute('SELECT 1 FROM counts LIMIT 1').fetchone() or db.execute('SELECT 1 FROM story_links LIMIT 1').fetchone() or db.execute('SELECT 1 FROM tracked_tokens LIMIT 1').fetchone():
                     raise ValueError('Sauvegarde d’une autre instance : fusion des historiques refusée. Utiliser une installation vide pour le transfert.')
+            legacy_link_categories=None
             for table in BACKUP_TABLES:
                 rows=tables[table]
                 if not isinstance(rows,list) or len(rows)>500000:raise ValueError('Table invalide : '+table)
-                schema=list(db.execute('PRAGMA table_info('+table+')'));columns=[c['name'] for c in schema]
+                schema=list(db.execute('PRAGMA table_info('+table+')'))
+                if table=='tracked_links':
+                    if any(column['name']=='category' for column in schema):
+                        legacy_link_categories={row['id']:row['category'] for row in db.execute('SELECT id,category FROM tracked_links')}
+                    schema=[column for column in schema if column['name']!='category']
+                columns=[c['name'] for c in schema]
                 primary=[c['name'] for c in schema if c['pk']]
                 keys=[tuple(row.get(k) for k in primary) for row in rows if isinstance(row,dict)]
                 if len(keys)!=len(set(keys)):raise ValueError('Identifiants en double : '+table)
                 for row in rows:
+                    if table=='tracked_links' and isinstance(row,dict):row.pop('category',None)
                     if table=='tracked_link_partners' and isinstance(row,dict):row.setdefault('original_url','')
                     if table=='content_blocks' and isinstance(row,dict) and 'promo_code' not in row:row['promo_code']=''
                     if table=='top_buttons' and isinstance(row,dict) and 'custom_icon' not in row:row['custom_icon']=''
@@ -1074,6 +1086,9 @@ def restore_backup(data,preview=False):
                 db.executemany('INSERT INTO '+table+' ('+','.join(columns)+') VALUES ('+','.join('?' for _ in columns)+')',[[row[c] for c in columns] for row in tables[table]])
             for table in TRACKING_BACKUP_TABLES+SHORT_BACKUP_TABLES+SOURCE_BACKUP_TABLES+PARTNER_BACKUP_TABLES+CAMPAIGN_PARTNER_BACKUP_TABLES:
                 columns=[c['name'] for c in db.execute('PRAGMA table_info('+table+')')]
+                if table=='tracked_links' and legacy_link_categories is not None:
+                    # Storage compatibility only: never import an obsolete category.
+                    for row in tables[table]:row['category']=legacy_link_categories.get(row['id'],'')
                 db.executemany('INSERT INTO '+table+' ('+','.join(columns)+') VALUES ('+','.join('?' for _ in columns)+')',[[row[c] for c in columns] for row in tables[table]])
             db.execute("INSERT OR REPLACE INTO settings VALUES('content.initialized','1')")
             # New filenames ensure that a failed restore cannot overwrite current images.
@@ -1196,9 +1211,9 @@ def pulse_authenticated(header):
 def pulse_links():
     with connection() as db:
         return {"links":[{"id":r["id"],"name":r["name"],"url":r["url"],
-                          "category":r["category"],"enabled":bool(r["enabled"]),
+                          "enabled":bool(r["enabled"]),
                           "archived":bool(r["archived"])}
-                         for r in db.execute("""SELECT id,name,url,category,enabled,archived
+                         for r in db.execute("""SELECT id,name,url,enabled,archived
                            FROM tracked_links WHERE archived=0 AND enabled=1
                            ORDER BY created_at DESC LIMIT 400""")]}
 
@@ -1253,8 +1268,8 @@ def pulse_youtube_story_link(video_id):
         if not existing:
             title=video.get("title")
             title=title.strip()[:160] if isinstance(title,str) and title.strip() else "Vidéo YouTube"
-            db.execute("INSERT INTO tracked_links VALUES(?,?,?,?,?,0,1,?,?)",
-                       (ident,title,destination,"YouTube","Créé depuis PulSe pour une vidéo précise",now_iso(),now_iso()))
+            db.execute("INSERT INTO tracked_links(id,name,url,notes,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                       (ident,title,destination,"Créé depuis PulSe pour une vidéo précise",now_iso(),now_iso()))
         return tracked_links.token_link(db,ident,source["id"],ORIGIN,now_iso())
 
 

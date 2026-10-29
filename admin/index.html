@@ -158,9 +158,8 @@
   <div class="panel-title"><h3 id="tracked-links-library-heading">Bibliothèque de liens</h3><button type="button" id="tracked-manage-sources">Gérer les sources</button></div>
   <p class="panel-helper">Choisissez une source pour copier un lien permanent. Ouvrir permet de consulter directement sa destination.</p>
   <form id="tracked-filters" class="analysis-controls" role="search" aria-label="Filtrer les liens suivis">
-   <label>Recherche<input id="tracked-search" type="search" placeholder="Nom, destination, catégorie, notes…"></label>
+   <label>Recherche<input id="tracked-search" type="search" placeholder="Nom, destination, notes…"></label>
    <label>État<select id="tracked-status"><option value="current">Non archivés</option><option value="all">Tous les états</option><option value="active">Actifs</option><option value="disabled">Suspendus</option><option value="archived">Archivés</option></select></label>
-   <label>Catégorie<select id="tracked-category"><option value="">Toutes les catégories</option></select></label>
   </form>
   <div id="tracked-list" aria-label="Liens suivis" aria-live="polite"><p class="empty">Chargement des liens suivis…</p></div>
  </section>
@@ -236,7 +235,6 @@
  <button type="button" id="tracked-recalculate" hidden>Recalculer avec la configuration actuelle</button>
  <section aria-labelledby="tracked-final-heading"><h3 id="tracked-final-heading">Destination finale</h3><p id="tracked-final-message" class="field-help" role="status" aria-live="polite"></p><a id="tracked-final-link" target="_blank" rel="noopener noreferrer" hidden></a></section>
  <section id="tracked-duplicates" class="panel" aria-labelledby="tracked-duplicates-heading" hidden><h3 id="tracked-duplicates-heading">Destination déjà enregistrée</h3><p class="field-help">Réutilisez les URL courtes d’un lien existant et ajoutez les sources de publication manquantes. Un nouveau lien identique reste possible après confirmation explicite.</p><div id="tracked-duplicate-list" aria-live="polite"></div></section>
- <label>Catégorie (facultatif)<input name="category" maxlength="80" placeholder="Produit, accessoire, offre…"></label>
  <label>Notes (facultatif)<textarea name="notes" rows="2" maxlength="800"></textarea></label>
  <div class="dialog-actions"><button type="button" data-close-tracked>Annuler</button><button type="submit" class="primary">Enregistrer</button></div>
  </form>
