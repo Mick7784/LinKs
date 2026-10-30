@@ -1,7 +1,7 @@
 name: Build and publish Docker image
 on:
   push:
-    branches: [main]
+    branches: [main, 'feat/pulse-link-management']
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -51,6 +51,8 @@ jobs:
           python3 scripts/campaign_lifecycle_test.py
           python3 scripts/campaign_visual_test.py
           python3 scripts/pulse_bridge_test.py
+          python3 scripts/pulse_manager_test.py
+          python3 scripts/links_pulse_integration_test.py
           python3 scripts/affiliate_partners_test.py
           python3 scripts/campaign_affiliation_test.py
           python3 scripts/tracked_duplicates_test.py

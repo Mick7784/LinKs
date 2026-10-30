@@ -6,6 +6,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlsplit, urlunsplit
 from zoneinfo import ZoneInfo
+from types import SimpleNamespace
 sys.path.insert(0,str(Path(__file__).resolve().parent))
 import instance
 import youtube
@@ -17,6 +18,7 @@ import tracked_batch
 import affiliate_partners
 import short_urls
 import url_inspection
+import pulse_manager
 from urllib.request import urlopen
 
 ROOT=Path(__file__).resolve().parent
@@ -1204,6 +1206,9 @@ def pulse_token_ready():
     value=os.environ.get("PULSE_BRIDGE_TOKEN","")
     return 32<=len(value)<=512
 
+def pulse_services():
+    return SimpleNamespace(connection=connection,story_url_valid=story_url_valid,now_iso=now_iso,ORIGIN=ORIGIN)
+
 def pulse_authenticated(header):
     if not pulse_token_ready():return False
     if not isinstance(header,str) or not header.startswith("Bearer "):return False
@@ -1246,6 +1251,27 @@ def pulse_stats(period=7):
             "period":period,"total":sum(d["clicks"] for d in days),
             "stories":int(story_clicks)+int(independent_story_clicks),
             "days":days}
+
+def pulse_insights(period=7):
+    # Read-only mobile projection of the existing tracked-link reporting engine.
+    window=pulse_stats(period)
+    with connection() as db:
+        rows=tracked_links.list_links(db,window['days'][0]['date'],window['days'][-1]['date'])
+        sources=tracked_links.source_rows(db)
+    totals={}
+    for row in rows:
+        for source in row['sources']:
+            totals[source['id']]=totals.get(source['id'],0)+source['period']
+    ranked=sorted((row for row in rows if row['period_clicks']>0),key=lambda row:(-row['period_clicks'],row['id']))[:5]
+    ranked_sources=sorted((row for row in sources if totals.get(row['id'],0)>0),key=lambda row:(-totals[row['id']],row['id']))[:5]
+    return {'version':1,'period':window['period'],'scope':'tracked-links',
+            'tracked_total':sum(row['period_clicks'] for row in rows),
+            'active_campaigns':len(campaign_selection()['eligible_ids']),
+            'top_links':[{'id':row['id'],'name':row['name'],'clicks':row['period_clicks'],
+                          'available':bool(row['enabled'] and not row['archived'])} for row in ranked],
+            'sources':[{'id':row['id'],'name':row['name'],'platform':row['platform'],
+                        'clicks':totals[row['id']]} for row in ranked_sources]}
+
 
 def pulse_youtube_story_link(video_id):
     # Freeze a video's destination in an existing private tracked link. Never
@@ -1318,11 +1344,12 @@ class Handler(BaseHTTPRequestHandler):
             return self.json(401,{"error":"Accès PulSe refusé"})
         path=urlsplit(self.path).path
         try:
+            if path=="/api/pulse/link-manager":return self.json(200,pulse_manager.catalog(pulse_services()))
             if path=="/api/pulse/links":return self.json(200,pulse_links())
-            if path=="/api/pulse/stats":
+            if path in {"/api/pulse/stats","/api/pulse/insights"}:
                 periods=parse_qs(urlsplit(self.path).query,keep_blank_values=True).get("days",["7"])
                 if len(periods)!=1:raise ValueError("Une seule période PulSe est autorisée")
-                return self.json(200,pulse_stats(periods[0]))
+                return self.json(200,(pulse_insights if path.endswith('/insights') else pulse_stats)(periods[0]))
             return self.send(404)
         except ValueError as exc:
             return self.json(400,{"error":str(exc)})
@@ -1336,7 +1363,17 @@ class Handler(BaseHTTPRequestHandler):
         if not self.headers.get("Content-Type","").lower().startswith("application/json"):
             return self.json(415,{"error":"JSON requis"})
         try:
-            return self.json(200,pulse_story_link(self.body(1024)))
+            path=urlsplit(self.path).path
+            operations={'/api/pulse/link-preview':pulse_manager.preview,'/api/pulse/link-save':pulse_manager.save,'/api/pulse/link-token':pulse_manager.token}
+            if path in operations:
+                result=operations[path](pulse_services(),self.body(32768))
+                return self.json(200,result)
+            if path=="/api/pulse/story-link":return self.json(200,pulse_story_link(self.body(1024)))
+            return self.send(404)
+        except tracked_links.DuplicateDestination as exc:
+            return self.json(409,{'code':'DUPLICATE','error':str(exc),'duplicates':exc.matches})
+        except pulse_manager.Conflict as exc:
+            return self.json(409,{'code':'REVIEW_REQUIRED','error':str(exc)})
         except (ValueError,TypeError,json.JSONDecodeError) as exc:
             return self.json(400,{"error":str(exc) or "Demande PulSe invalide"})
         except (sqlite3.Error,OSError):
@@ -1500,7 +1537,7 @@ class Handler(BaseHTTPRequestHandler):
         except OSError:return self.send(404)
         self.send(200,data,mime or mimetypes.guess_type(path.name)[0] or "application/octet-stream")
     def do_GET(self):
-        if urlsplit(self.path).path in {"/api/pulse/links","/api/pulse/stats"}:
+        if urlsplit(self.path).path.startswith("/api/pulse/"):
             return self.pulse_bridge_get()
         if self.server.admin and self.auth_get():return
         url=urlsplit(self.path)
@@ -1586,7 +1623,7 @@ class Handler(BaseHTTPRequestHandler):
         files={"/":("index.html","text/html;charset=utf-8"),"/app.js":("app.js","application/javascript"),"/dates.js":("dates.js","application/javascript"),"/calendar.js":("calendar.js","application/javascript"),"/style.css":("style.css","text/css")}
         return self.file(ADMIN/files[url.path][0],files[url.path][1]) if url.path in files else self.send(404)
     def do_POST(self):
-        if urlsplit(self.path).path=="/api/pulse/story-link":
+        if urlsplit(self.path).path.startswith("/api/pulse/"):
             return self.pulse_bridge_post()
         if self.server.admin and self.auth_post():return
         path=urlsplit(self.path).path
