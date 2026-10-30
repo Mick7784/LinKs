@@ -130,17 +130,60 @@ async function openEditor(item){
  get("tracked-dialog-title").textContent=item?"Modifier le lien suivi":"Créer un lien suivi";
  get("tracked-dialog").showModal();previewTracked(!item);form.elements.name.focus();
 }
+function prepareClipboard(){
+ // Start the write inside the click activation (not after the network awaits).
+ // The payload stays unresolved until checking/confirmation and token creation finish.
+ let resolve,reject,pending=null;
+ const payload=new Promise((yes,no)=>{resolve=yes;reject=no});
+ payload.catch(()=>{});
+ try{
+  if(navigator.clipboard?.write&&window.ClipboardItem)
+   pending=Promise.resolve(navigator.clipboard.write([
+    new ClipboardItem({'text/plain':payload})
+   ])).then(()=>true,()=>false);
+ }catch{}
+ return {cancel(){reject(new Error('Copie annulée'))},async copy(link){
+  resolve(new Blob([link],{type:'text/plain'}));
+  if(pending&&await pending)return true;
+  try{await navigator.clipboard.writeText(link);return true}catch{}
+  // The active dialog is the only focusable surface when it is modal.
+  const focused=document.activeElement,input=document.createElement('textarea');
+  input.value=link;input.readOnly=true;input.style.position='fixed';input.style.opacity='0';
+  const host=[...document.querySelectorAll('dialog[open]')].at(-1)||document.body;
+  host.append(input);input.focus();input.select();input.setSelectionRange(0,link.length);
+  let copied=false;try{copied=document.execCommand('copy')}catch{}
+  input.remove();focused?.focus({preventScroll:true});
+  return copied;
+ }};
+}
 async function copyTracked(row,sourceId){
  const selected=sourceId||document.getElementById("source-"+row.id)?.value;if(!selected){say("Ajoute d’abord une source de publication.",true);return}
- const response=await api("/api/tracked-links/"+row.id+"/token",{method:"POST",body:JSON.stringify({source_id:selected})});
- const link=response.url;
- try{await navigator.clipboard.writeText(link);say("Lien permanent copié · "+(state.sources.find(s=>s.id===selected)?.name||""))}
- catch{
-   const input=document.createElement("textarea");input.value=link;input.style.position="fixed";input.style.opacity="0";document.body.append(input);input.select();let ok=false;try{ok=document.execCommand("copy")}catch{}input.remove();
-   if(ok)say("Lien permanent copié");
-   else window.prompt("Copier ce lien permanent",link);
- }
- return link;
+ const clipboard=prepareClipboard();
+ const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),12000);
+ let health={status:'unknown'};
+ say('Vérification de la destination…');
+ try{
+  try{health=await api('/api/tracked-links/'+row.id+'/check-destination',{
+   method:'POST',body:'{}',signal:controller.signal
+  })}catch{}finally{clearTimeout(timeout)}
+  const broken=health?.status==='broken'&&[404,410].includes(health.http_status);
+  if(broken&&!confirm('Attention, lien HS ! Vérifie la destination.\n\nCopier quand même le lien LinKs ?')){
+   clipboard.cancel();say('Copie annulée.');return;
+  }
+  const response=await api('/api/tracked-links/'+row.id+'/token',{
+   method:'POST',body:JSON.stringify({source_id:selected})
+  });
+  const link=response.url,copied=await clipboard.copy(link);
+  const warning=broken?'Attention, lien HS ! Vérifie la destination.':
+   health?.status!=='valid'?'Vérification impossible : la destination n’a pas pu être confirmée.':'';
+  if(copied)say((warning?warning+' ':'')+'Lien permanent copié · '+(state.sources.find(s=>s.id===selected)?.name||''),!!warning);
+  else{
+   say((warning?warning+' ':'')+'Le navigateur a refusé la copie automatique.',true);
+   window.prompt('Copier ce lien permanent',link);
+  }
+  return link;
+ }catch(error){clipboard.cancel();throw error}
+ finally{clearTimeout(timeout)}
 }
 get("tracked-list").addEventListener("click",async event=>{
  const button=event.target.closest("button[data-tracked-action]");if(!button)return;

@@ -134,12 +134,14 @@ def _request_once(target, ip, method, max_bytes):
         connection.close()
 
 
-def _fetch(url, *, method, max_bytes=0, requester=None, resolver=None):
+def _fetch(url, *, method, max_bytes=0, requester=None, resolver=None, url_validator=None):
     requester = requester or _request_once
     resolver = resolver or socket.getaddrinfo
     seen = set()
     for _ in range(MAX_REDIRECTS + 1):
         target = _target(url)
+        if url_validator is not None and not url_validator(target.url):
+            raise InspectionError('Destination exclue de la vérification.')
         if target.url in seen:
             raise InspectionError('Boucle de redirection.')
         seen.add(target.url)
@@ -317,18 +319,20 @@ def suggest_title(url, *, requester=None, resolver=None):
         return _slug_suggestion(url)
 
 
-def check_destination(url, *, requester=None, resolver=None):
+def check_destination(url, *, requester=None, resolver=None, url_validator=None):
     """Conservative outcome: valid / broken / unknown.
 
     Only a GET-confirmed 404/410 is broken; blocked robots, 5xx, TLS failures,
     timeouts and ambiguous redirects are unknown. Never calls a LinKs short URL.
     """
     try:
-        response, _ = _fetch(url, method='HEAD', requester=requester, resolver=resolver)
+        response, _ = _fetch(url, method='HEAD', requester=requester, resolver=resolver,
+                             url_validator=url_validator)
         if 200 <= response.status < 300:
             return {'status': 'valid', 'http_status': response.status}
         # HEAD is unreliable on some shops; confirm negative statuses via GET.
-        response, _ = _fetch(url, method='GET', max_bytes=0, requester=requester, resolver=resolver)
+        response, _ = _fetch(url, method='GET', max_bytes=0, requester=requester, resolver=resolver,
+                             url_validator=url_validator)
         if 200 <= response.status < 300:
             return {'status': 'valid', 'http_status': response.status}
         if response.status in (404, 410):

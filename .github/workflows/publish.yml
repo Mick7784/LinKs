@@ -58,6 +58,7 @@ jobs:
           python3 scripts/tracked_title_preview_test.py
           python3 scripts/tracked_title_batch_test.py
           python3 scripts/tracked_batch_test.py
+          python3 scripts/tracked_copy_test.py
           python3 scripts/platform_sources_test.py
           python3 scripts/conservation_test.py
           python3 scripts/tracked_categories_migration_test.py
@@ -79,6 +80,7 @@ jobs:
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/tracked-title-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/tracked-titles-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/tracked-batch-browser-test.cjs
+          NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/tracked-copy-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/tracked-backup-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/affiliate-partners-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/affiliate-detection-browser-test.cjs

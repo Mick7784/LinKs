@@ -1651,6 +1651,14 @@ class Handler(BaseHTTPRequestHandler):
                 ident=tracked_links.text_field(data,'link_id',32)
                 if ident and not tracked_links.IDENT.fullmatch(ident):raise ValueError('Identifiant de lien invalide')
                 with connection() as db:return self.json(200,affiliate_partners.preview_tracked(db,data,ident or None,story_url_valid))
+            match=re.fullmatch(r"/api/tracked-links/([a-f0-9]{32})/check-destination",path)
+            if match:
+                # Only inspect the stored affiliate destination, never a client URL.
+                # Release the database connection before any network operation.
+                with connection() as db:
+                    link=db.execute('SELECT url FROM tracked_links WHERE id=?',(match.group(1),)).fetchone()
+                if not link:return self.json(404,{'error':'Lien introuvable.'})
+                return self.json(200,url_inspection.check_destination(link['url'],url_validator=story_url_valid))
             match=re.fullmatch(r"/api/tracked-links/([a-f0-9]{32})/token",path)
             if match:
                 with connection() as db:
