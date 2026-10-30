@@ -54,6 +54,7 @@ jobs:
           python3 scripts/affiliate_partners_test.py
           python3 scripts/campaign_affiliation_test.py
           python3 scripts/tracked_duplicates_test.py
+          python3 scripts/url_inspection_test.py
           python3 scripts/platform_sources_test.py
           python3 scripts/conservation_test.py
           python3 scripts/tracked_categories_migration_test.py
