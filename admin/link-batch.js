@@ -7,7 +7,7 @@ const createButton=$("tracked-batch-create"),counter=$("tracked-batch-count"),pr
 const openButton=$("tracked-open-batch");
 if(!dialog||!list||!openButton)return;
 
-let rows=[],partners=[],revision=0,controller=null,busy=false,done=0,expected=0;
+let rows=[],partners=[],revision=0,controller=null,busy=false,done=0,expected=0,previewReady=false;
 const items=new Map();
 const elem=(tag,classname="",value)=>{
  const el=document.createElement(tag);
@@ -23,8 +23,9 @@ function update(){
  counter.textContent=chosen.length+" lien"+(chosen.length>1?"s":"")+" sélectionné"+(chosen.length>1?"s":"")+" sur "+rows.length;
  const all=available.length>0&&chosen.length===available.length;
  selectAll.textContent=all?"Tout désélectionner":"Sélectionner tout";
- selectAll.disabled=busy||done<expected||!available.length;
- createButton.disabled=busy||done<expected||!chosen.length;
+ selectAll.disabled=!previewReady||busy||done<expected||!available.length;
+ createButton.disabled=!previewReady||busy||done<expected||!chosen.length;
+ if(!previewReady)return;
  if(busy)return;
  if(done<expected)progress.textContent="Récupération des titres : "+done+" / "+expected;
  else if(rows.length){
@@ -82,8 +83,7 @@ function render(){
   name.addEventListener("input",()=>{
    row.title=name.value;row.manual_title=true;row.title_status="complete";
    if(!name.value.trim())row.selected=false;
-   checkbox.disabled=!usable(row);
-   checkbox.checked=row.selected&&usable(row);
+   showRow(row);
    update();
   });
   partner.addEventListener("change",()=>{
@@ -137,6 +137,7 @@ async function fetchTitles(myRevision,signal){
  if(myRevision===revision&&!signal.aborted){busy=false;update();}
 }
 async function inspect(preserve=false){
+ previewReady=false;update();
  const urls=input.value.split(/\r?\n/).map(line=>line.trim()).filter(Boolean);
  if(!urls.length){say("Ajoutez au moins une URL.",true);return}
  if(urls.length>50){say("50 URL maximum par lot.",true);return}
@@ -168,7 +169,7 @@ async function inspect(preserve=false){
     selected:old?old.selected:true
    };
   });
-  render();
+  previewReady=true;render();
   // The title endpoint is called only for new rows needing a suggestion.
   await fetchTitles(myRevision,controller.signal);
  }catch(error){
@@ -186,7 +187,7 @@ async function open(){
  try{
   const result=await api("/api/affiliate-partners");
   partners=result.items;
-  rows=[];done=0;expected=0;busy=false;
+  rows=[];done=0;expected=0;busy=false;previewReady=false;
   list.replaceChildren();progress.textContent="";
   input.value="";
   dialog.showModal();input.focus();
@@ -203,8 +204,13 @@ selectAll.addEventListener("click",()=>{
  update();
 });
 analyzeButton.addEventListener("click",()=>inspect(true));
+input.addEventListener("input",()=>{
+ ++revision;if(controller)controller.abort();
+ busy=false;previewReady=false;analyzeButton.disabled=false;
+ progress.textContent="Analysez les URL modifiées avant de créer les liens.";update();
+});
 createButton.addEventListener("click",async()=>{
- if(busy||done<expected)return;
+ if(!previewReady||busy||done<expected)return;
  const chosen=selected();
  if(!chosen.length)return;
  busy=true;update();createButton.disabled=true;

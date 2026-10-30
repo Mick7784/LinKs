@@ -1,6 +1,7 @@
 """Read-only bulk previews and atomic imports in a disposable LinKs instance."""
 import json
 import unittest
+from unittest.mock import patch
 
 import analytics_test
 
@@ -129,6 +130,36 @@ class TrackedBatchTests(unittest.TestCase):
         for path in ('preview','create'):
             status,_=self.request(public+'/api/tracked-links/batch/'+path,{'items':[{'url':'https://example.com/p'}]})
             self.assertEqual(status,404)
+
+    def test_partner_recomposition_detects_duplicates_and_validates_final_url(self):
+        admin=self.server(True)
+        url='https://shop.reolink.com/camera'
+        rows=self.preview(admin,[{'url':url},{'url':url+'?aff=1404'}])
+        self.assertEqual(rows[1]['duplicate_of'],0)
+        rows=self.preview(admin,[{'url':url,'manual_partner':True,'partner_id':''},
+                                 {'url':url+'?aff=1404'}])
+        self.assertIsNone(rows[1]['duplicate_of'])
+        payload=self.prepared(url,'Caméra',rows[0])
+        payload['expected_url']='https://example.com/tampered'
+        self.assertEqual(self.create(admin,[payload])[0],400)
+        self.assertEqual(self.stored(admin),[])
+
+    def test_failure_during_second_save_rolls_back_first_link_and_affiliation(self):
+        admin=self.server(True)
+        urls=['https://shop.reolink.com/one','https://example.com/two']
+        rows=self.preview(admin,[{'url':url} for url in urls])
+        batch=[self.prepared(url,'Nom',row) for url,row in zip(urls,rows)]
+        original=self.a.affiliate_partners.save_tracked
+        calls=[]
+        def save(*args,**kwargs):
+            calls.append(True)
+            if len(calls)==2:raise ValueError('Simulated second save failure')
+            return original(*args,**kwargs)
+        with patch.object(self.a.affiliate_partners,'save_tracked',side_effect=save):
+            self.assertEqual(self.create(admin,batch)[0],400)
+        self.assertEqual(self.stored(admin),[])
+        with self.a.connection() as db:
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM tracked_link_partners').fetchone()[0],0)
 
 
 if __name__=='__main__':

@@ -121,6 +121,32 @@ const {join,resolve}=require('node:path');
   assert(!after.some(item=>Object.hasOwn(item,'category')));
   assert.deepEqual(errors,[]);
   assert.equal(createCalls,1);
+  // Missing metadata remains editable; stale/failed previews cannot be submitted.
+  await page.locator('#tracked-open-batch').click();
+  await page.locator('#tracked-batch-urls').fill('https://example.com/no-title');
+  await page.locator('#tracked-batch-analyze').click();
+  await page.waitForFunction(()=>!document.querySelector('#tracked-batch-analyze').disabled);
+  const manual=page.locator('.tracked-batch-row').first();
+  assert.match(await manual.locator('.tracked-batch-row-status').textContent(),/Titre indisponible/);
+  await manual.locator('input[type="text"]').fill('Titre manuel');
+  assert.match(await manual.locator('.tracked-batch-row-status').textContent(),/Prêt à créer/);
+  await manual.locator('input[type="checkbox"]').check();
+  assert(await page.locator('#tracked-batch-create').isEnabled());
+  await context.route('**/api/tracked-links/batch/preview',route=>route.fulfill({
+   status:503,contentType:'application/json',body:JSON.stringify({error:'Indisponible'})
+  }));
+  await manual.locator('select').selectOption('');
+  await page.waitForFunction(()=>!document.querySelector('#tracked-batch-analyze').disabled);
+  assert(await page.locator('#tracked-batch-create').isDisabled());
+  assert.match(await page.locator('#tracked-batch-progress').textContent(),/Analyse impossible/);
+  await context.unroute('**/api/tracked-links/batch/preview');
+  await page.locator('#tracked-batch-analyze').click();
+  await page.waitForFunction(()=>!document.querySelector('#tracked-batch-analyze').disabled);
+  assert(await page.locator('#tracked-batch-create').isEnabled());
+  await page.locator('#tracked-batch-urls').fill('https://example.com/changed');
+  assert(await page.locator('#tracked-batch-create').isDisabled());
+  assert.equal(createCalls,1);
+  assert.deepEqual((await api('/api/tracked-links')).items,after);
   console.log('PASS: bulk preview and creation, auto partner, override, duplicates, select all, manual title, responsive.');
  }finally{
   if(browser)await browser.close();
