@@ -15,6 +15,7 @@ import storage
 import tracked_links
 import affiliate_partners
 import short_urls
+import url_inspection
 from urllib.request import urlopen
 
 ROOT=Path(__file__).resolve().parent
@@ -1625,6 +1626,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json(200,{"url":affiliate_partners.build_url(fields['template'],fields['code'],data.get('test_url',''))})
             if path=="/api/affiliate-partners":
                 with connection() as db:return self.json(201,affiliate_partners.save(db,data,now_iso()))
+            if path=="/api/tracked-links/title-preview":
+                if not isinstance(data,dict):raise ValueError('Requête invalide.')
+                original=tracked_links.text_field(data,'url',2000,True)
+                if not story_url_valid(original):raise ValueError('URL d’origine HTTP(S) valide, extérieure à LinKs, requise.')
+                return self.json(200,url_inspection.suggest_title(original))
             if path=="/api/tracked-links":
                 with connection() as db:
                     db.execute('BEGIN IMMEDIATE')
