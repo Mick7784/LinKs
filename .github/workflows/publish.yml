@@ -50,6 +50,7 @@ jobs:
           python3 scripts/campaign_selection_test.py
           python3 scripts/campaign_lifecycle_test.py
           python3 scripts/campaign_visual_test.py
+          python3 scripts/pulse_today_test.py
           python3 scripts/pulse_bridge_test.py
           python3 scripts/pulse_manager_test.py
           python3 scripts/links_pulse_integration_test.py
