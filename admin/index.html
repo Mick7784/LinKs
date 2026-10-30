@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>LinKs by DomotiK Studio · Administration</title><link rel="icon" href="/mark.svg">
-<script src="/theme-init.js"></script><link rel="stylesheet" href="/style.css"><script src="/dates.js" defer></script><script src="/preview/cards.js" defer></script><script src="/calendar.js" defer></script><script src="/preview/theme.js" defer></script><script src="/uploads.js" defer></script><script src="/navigation.js" defer></script><script src="/charts.js" defer></script><script src="/collection.js" defer></script><script src="/partner-report.js" defer></script><script src="/source-platforms.js" defer></script><script src="/daily-report.js" defer></script><script src="/app.js" defer></script><script src="/page-editor.js" defer></script><script src="/tracking.js" defer></script><script src="/title-batch.js" defer></script><script src="/appearance.js" defer></script><script src="/shortcuts.js" defer></script><script src="/storage.js" defer></script><script src="/settings.js" defer></script><link rel="stylesheet" href="/appearance.css"><link rel="stylesheet" href="/page-editor.css"></head>
+<script src="/theme-init.js"></script><link rel="stylesheet" href="/style.css"><script src="/dates.js" defer></script><script src="/preview/cards.js" defer></script><script src="/calendar.js" defer></script><script src="/preview/theme.js" defer></script><script src="/uploads.js" defer></script><script src="/navigation.js" defer></script><script src="/charts.js" defer></script><script src="/collection.js" defer></script><script src="/partner-report.js" defer></script><script src="/source-platforms.js" defer></script><script src="/daily-report.js" defer></script><script src="/app.js" defer></script><script src="/page-editor.js" defer></script><script src="/tracking.js" defer></script><script src="/title-batch.js" defer></script><script src="/link-batch.js" defer></script><script src="/appearance.js" defer></script><script src="/shortcuts.js" defer></script><script src="/storage.js" defer></script><script src="/settings.js" defer></script><link rel="stylesheet" href="/appearance.css"><link rel="stylesheet" href="/page-editor.css"></head>
 <body class="admin-shell">
 <a class="skip-link" href="#main-content">Aller au contenu</a>
 <aside class="sidebar" aria-label="Links">
@@ -153,7 +153,7 @@
 
 </section>
 <section class="view" id="tracked-links">
- <div class="section-head"><div><h1>Liens suivis</h1><p>Un espace dédié à vos liens suivis et affiliés, indépendant de la page publique.</p></div><button type="button" class="primary" data-action="new-tracked">Créer un lien suivi</button></div>
+ <div class="section-head"><div><h1>Liens suivis</h1><p>Un espace dédié à vos liens suivis et affiliés, indépendant de la page publique.</p></div><div class="tracked-create-tools"><button type="button" class="primary" data-action="new-tracked">Créer un lien suivi</button><button type="button" id="tracked-open-batch">Créer par lot</button></div></div>
  <section class="panel" id="tracked-links-library" aria-labelledby="tracked-links-library-heading">
   <div class="panel-title"><h3 id="tracked-links-library-heading">Bibliothèque de liens</h3><div class="tracked-library-tools"><button type="button" id="tracked-manage-sources">Gérer les sources</button><button type="button" id="tracked-generate-titles">Générer des titres</button></div></div>
   <p class="panel-helper">Choisissez une source pour copier un lien permanent. Ouvrir permet de consulter directement sa destination.</p>
@@ -250,6 +250,17 @@
   <div class="profile-image-actions"><button type="button" id="tracked-reuse-copy" class="primary">Copier le lien court</button><button type="button" id="tracked-reuse-manage">Gérer les sources</button></div>
   <a id="tracked-reuse-url" target="_blank" rel="noopener noreferrer" hidden></a>
   <div class="dialog-actions"><button type="button" id="tracked-reuse-edit">Ouvrir sa fiche</button><button type="button" data-close-reuse>Revenir au lien en cours</button></div>
+ </div>
+</dialog>
+<dialog id="tracked-batch-dialog" class="tracked-dialog tracked-batch-dialog">
+ <div class="tracked-editor">
+  <header><h2>Créer des liens par lot</h2><button type="button" data-close-batch class="icon-button" aria-label="Fermer">×</button></header>
+  <p class="field-help">Collez une URL par ligne. LinKs propose un titre, détecte le partenaire et vérifie les doublons. Les plateformes ne sont choisies qu’au moment du partage.</p>
+  <label>URLs de destination (50 maximum)<textarea id="tracked-batch-urls" rows="5" placeholder="https://exemple.fr/produit-1&#10;https://exemple.fr/produit-2"></textarea></label>
+  <div class="tracked-batch-tools"><button type="button" id="tracked-batch-analyze">Analyser les liens</button><button type="button" id="tracked-batch-select-all" disabled>Sélectionner tout</button><span id="tracked-batch-count" aria-live="polite">0 lien sélectionné</span></div>
+  <p id="tracked-batch-progress" class="field-help" role="status" aria-live="polite"></p>
+  <div id="tracked-batch-list" class="tracked-batch-list" aria-label="Liens analysés"></div>
+  <div class="dialog-actions"><button type="button" data-close-batch>Annuler</button><button type="button" id="tracked-batch-create" class="primary" disabled>Créer les liens sélectionnés</button></div>
  </div>
 </dialog>
 <dialog id="tracked-titles-dialog" class="tracked-dialog tracked-titles-dialog">
