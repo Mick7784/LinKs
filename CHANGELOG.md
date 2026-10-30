@@ -1,5 +1,26 @@
 # Changelog
 
+## V1.327
+
+### Liens suivis sans catégories
+
+- Suppression définitive des catégories des liens suivis dans la base SQLite, les API, les formulaires et les filtres de la bibliothèque. Le nom du lien reste obligatoire ; la recherche utilise le nom, les destinations et les notes.
+- Conservation des identifiants, destinations et URL d’origine, liens courts, redirections, partenaires et règles d’affiliation, sources, plateformes, campagnes, promotions, compteurs et historiques. Les destinations affiliées existantes ne sont pas recalculées.
+- Compatibilité PulSe maintenue sans modification de son interface. Les liens associés aux vidéos YouTube conservent une destination fixe par vidéo et réutilisent leurs identités et URL déjà publiées, sans catégorie.
+
+### Mise à niveau automatique
+
+- Au premier démarrage sur une ancienne base, création et vérification d’une sauvegarde SQLite complète dans `pre-category-removal/<identifiant>/analytics.db`, puis retrait transactionnel de la seule colonne `tracked_links.category`.
+- Contrôles d’intégrité, des références et de conservation des données avant validation. Une erreur annule la suppression et bloque le démarrage ; la sauvegarde validée reste disponible. Les démarrages suivants ne relancent pas la migration.
+- SQLite 3.35.0 minimum requis et vérifié dans les images de test. Les nouvelles installations créent directement le schéma sans catégorie. Aucun nouveau paramètre Compose ou `.env`.
+- La sauvegarde intégrée concerne SQLite. Pour un retour à une ancienne image, utiliser un état antérieur compatible ; un simple changement d’image ne rétablit pas la colonne supprimée. Cette version ne redémarre pas automatiquement l’instance.
+
+### Compatibilité et validation
+
+- Les anciens champs de catégorie reçus par l’API ou les sauvegardes v1/v2/v3 sont ignorés. Les nouveaux exports ne contiennent plus ce champ, sans changer les autres informations exportées. Un ancien importeur peut refuser ce nouvel export.
+- Les catégories des fichiers et les regroupements statistiques restent inchangés : ils sont distincts des anciennes catégories de liens suivis.
+- Tests de conservation, restauration de la sauvegarde intégrée, idempotence, pannes et interruptions sur bases fictives ; parcours ordinateur/mobile en clair/sombre et vérifications des images AMD64/ARM64.
+
 ## V1.326
 
 ### 🔧 Améliorations
