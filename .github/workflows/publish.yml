@@ -56,6 +56,9 @@ jobs:
           python3 scripts/tracked_duplicates_test.py
           python3 scripts/platform_sources_test.py
           python3 scripts/conservation_test.py
+          python3 scripts/tracked_categories_migration_test.py
+          python3 scripts/tracked_backup_compatibility_test.py
+          python3 scripts/tracked_category_schema_test.py
           python3 scripts/instance_test.py
           python3 scripts/release_version_test.py
           python3 scripts/youtube_test.py
@@ -69,6 +72,7 @@ jobs:
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/admin-ui-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/page-editor-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/tracked-library-browser-test.cjs
+          NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/tracked-backup-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/affiliate-partners-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/affiliate-detection-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/campaign-affiliation-browser-test.cjs
@@ -107,9 +111,9 @@ jobs:
             curl -fsS "http://127.0.0.1:18080/$file" -o /dev/null
           done
       - name: Set up ARM64 emulation
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
       - name: Set up multiarchitecture builder
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
       - name: Validate disposable AMD64 and ARM64 images
         run: bash scripts/check-images.sh "$(cat VERSION)" "$GITHUB_SHA"
       - name: Reserve persistent production version

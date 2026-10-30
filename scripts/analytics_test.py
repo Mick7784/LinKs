@@ -39,8 +39,9 @@ class AnalyticsTests(unittest.TestCase):
 
     def test_private_tracked_links_sources_permanent_tokens_and_history(self):
         admin=self.server(True);public=self.server()
-        status,body=self.request(admin+'/api/tracked-links',{'name':'Chargeur UGREEN','url':'https://shop.example/first','category':'Produit'})
+        status,body=self.request(admin+'/api/tracked-links',{'name':'Chargeur UGREEN','url':'https://shop.example/first'})
         self.assertEqual(status,201,body);link_id=json.loads(body)['id']
+        self.assertNotIn('category',json.loads(body))
         self.assertNotIn(link_id,json.dumps(self.a.public_config()))
         sources=json.loads(self.request(admin+'/api/tracking-sources')[1])['items']
         self.assertTrue(any(x['name']=='Instagram Story' for x in sources))
@@ -60,6 +61,7 @@ class AnalyticsTests(unittest.TestCase):
         self.assertEqual(self.redirect(public+'/go/'+token,agent='Googlebot')[0],302)
         rows=json.loads(self.request(admin+'/api/tracked-links')[1])['items']
         item=next(x for x in rows if x['id']==link_id)
+        self.assertNotIn('category',item)
         self.assertEqual(item['clicks'],2)
         self.assertEqual(item['sources'][0]['name'],'YouTube Post perso')
         day=self.a.datetime.now(self.a.PARIS).date().isoformat()
@@ -98,6 +100,68 @@ class AnalyticsTests(unittest.TestCase):
         self.assertGreaterEqual(next(x for x in json.loads(self.request(admin+'/api/tracked-links')[1])['items'] if x['id']==link_id)['clicks'],5)
         self.a.init()
         self.assertEqual(self.redirect(public+'/go/'+token)[0],302)
+
+    def test_categories_are_ignored_without_recreating_the_column_or_changing_share_urls(self):
+        admin=self.server(True);public=self.server()
+        with self.a.connection() as db:
+            columns=[row['name'] for row in db.execute('PRAGMA table_info(tracked_links)')]
+            self.assertNotIn('category',columns)
+            partner=next(row for row in self.a.affiliate_partners.rows(db) if row['name']=='Reolink')
+            source=self.a.tracked_links.source_rows(db)[0]['id']
+        expected_keys={'id','name','url','notes','archived','enabled','created_at','updated_at',
+                       'sources','clicks','period_clicks','partner_id','original_url'}
+        identifiers=[]
+        for affiliated in (False,True):
+            for index,legacy_field in enumerate(({}, {'category':'Ancienne catégorie'}, {'category':{'obsolete':True}})):
+                with self.subTest(affiliated=affiliated,legacy_field=legacy_field):
+                    origin='https://shop.reolink.com/product-'+str(int(affiliated))+'-'+str(index)+'?x=a%2Bb&x=c+d#details'
+                    destination=origin.replace('#','&aff=1404#') if affiliated else origin
+                    fields={'name':'Lien identifié '+str(index),'url':origin,'notes':'Notes conservées : été + %2B.'}
+                    if affiliated:fields.update(partner_id=partner['id'],expected_url=destination)
+                    status,body=self.request(admin+'/api/tracked-links',{**fields,**legacy_field})
+                    self.assertEqual(status,201,body);saved=json.loads(body);ident=saved['id'];identifiers.append(ident)
+                    self.assertNotIn('category',saved)
+                    self.assertEqual((saved['name'],saved['url']),(fields['name'],destination))
+                    with self.a.connection() as db:
+                        row=db.execute('SELECT * FROM tracked_links WHERE id=?',(ident,)).fetchone()
+                        self.assertNotIn('category',row.keys(),'Legacy request fields must not be stored')
+                        created_at=row['created_at']
+                    token=json.loads(self.request(admin+'/api/tracked-links/'+ident+'/token',{'source_id':source})[1])
+                    with self.a.connection() as db:
+                        db.execute('UPDATE tracked_tokens SET click_total=9 WHERE token=?',(token['token'],))
+                    update={**fields,'name':'Nom mis à jour '+str(index),'category':['ignored'],
+                            'previous_url':destination}
+                    status,body=self.request(admin+'/api/tracked-links/'+ident,update,method='PUT')
+                    self.assertEqual(status,200,body);self.assertNotIn('category',json.loads(body))
+                    current=next(row for row in json.loads(self.request(admin+'/api/tracked-links')[1])['items'] if row['id']==ident)
+                    self.assertEqual(set(current),expected_keys)
+                    self.assertEqual((current['name'],current['url'],current['original_url'],current['notes'],current['clicks']),
+                                     (update['name'],destination,origin,fields['notes'],9))
+                    self.assertEqual(current['partner_id'],partner['id'] if affiliated else '')
+                    self.assertEqual(current['created_at'],created_at)
+                    reused=json.loads(self.request(admin+'/api/tracked-links/'+ident+'/token',{'source_id':source})[1])
+                    self.assertEqual(reused,token)
+                    self.assertEqual(self.redirect(public+'/'+token['code'],method='HEAD')[1]['Location'],destination)
+        self.a.init()
+        with self.a.connection() as db:
+            self.assertEqual([row['name'] for row in db.execute('PRAGMA table_info(tracked_links)')],columns)
+        backup=json.loads(self.a.export_backup())
+        self.assertTrue(all('category' not in row for row in backup['tables']['tracked_links']))
+        with self.a.connection() as db:
+            self.assertEqual(len(identifiers),6)
+            self.assertNotIn('category',[row['name'] for row in db.execute('PRAGMA table_info(tracked_links)')])
+
+    def test_tracked_link_http_writes_keep_name_required_without_categories(self):
+        admin=self.server(True)
+        valid={'name':'Nom obligatoire','url':'https://example.org/required-name','notes':'À conserver'}
+        ident=json.loads(self.request(admin+'/api/tracked-links',valid)[1])['id']
+        before=json.loads(self.request(admin+'/api/tracked-links')[1])
+        for invalid in ({},{'name':''},{'name':'   '},{'name':None},{'name':'x'*161}):
+            for method,path in [('POST','/api/tracked-links'),('PUT','/api/tracked-links/'+ident)]:
+                with self.subTest(invalid=invalid,method=method):
+                    status,body=self.request(admin+path,{'url':valid['url'],'notes':valid['notes'],**invalid},method=method)
+                    self.assertEqual(status,400,body)
+                    self.assertEqual(json.loads(self.request(admin+'/api/tracked-links')[1]),before)
 
     def test_opaque_campaign_alias_is_stable_source_bound_and_legacy_safe(self):
         admin=self.server(True);public=self.server();promotion=self.promo()

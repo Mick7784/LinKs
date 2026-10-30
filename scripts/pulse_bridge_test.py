@@ -42,8 +42,14 @@ class PulseBridgeTests(unittest.TestCase):
             with analytics.connection() as db:
                 self.assertEqual(db.execute('SELECT COUNT(*) FROM tracked_tokens').fetchone()[0],1)
                 self.assertEqual(db.execute('SELECT COALESCE(SUM(total),0) FROM counts').fetchone()[0],0)
-                self.assertEqual(db.execute('SELECT url FROM tracked_links').fetchone()[0],
-                                 'https://www.youtube.com/watch?v='+video_id)
+                link=db.execute('SELECT * FROM tracked_links').fetchone()
+                self.assertEqual(link['url'],'https://www.youtube.com/watch?v='+video_id)
+                self.assertEqual(link['name'],'Vidéo test')
+                self.assertNotIn('category',link.keys())
+                self.assertEqual(link['id'],'dbd29cffcd1a536ea699c99ee087ea31')
+            listed=analytics.pulse_links()['links']
+            self.assertEqual(len(listed),1)
+            self.assertNotIn('category',listed[0])
             class NoRedirect(HTTPRedirectHandler):
                 def redirect_request(self,*args):return None
             server=analytics.serve(0,False,'127.0.0.1')
@@ -93,13 +99,13 @@ class PulseBridgeTests(unittest.TestCase):
         db=sqlite3.connect(":memory:")
         db.row_factory=sqlite3.Row
         db.execute("""CREATE TABLE tracked_links (
-          id TEXT,name TEXT,url TEXT,category TEXT,enabled INTEGER,archived INTEGER,
+          id TEXT,name TEXT,url TEXT,enabled INTEGER,archived INTEGER,
           created_at TEXT)""")
         rows=[
-            ("active","Active","https://example.org/a","Produit",1,0,"2026-01-01"),
-            ("disabled","Disabled","https://example.org/b","Produit",0,0,"2026-01-02"),
-            ("archived","Archived","https://example.org/c","Produit",1,1,"2026-01-03")]
-        db.executemany("INSERT INTO tracked_links VALUES(?,?,?,?,?,?,?)",rows)
+            ("active","Active","https://example.org/a",1,0,"2026-01-01"),
+            ("disabled","Disabled","https://example.org/b",0,0,"2026-01-02"),
+            ("archived","Archived","https://example.org/c",1,1,"2026-01-03")]
+        db.executemany("INSERT INTO tracked_links VALUES(?,?,?,?,?,?)",rows)
         @contextmanager
         def conn():
             yield db
@@ -108,7 +114,22 @@ class PulseBridgeTests(unittest.TestCase):
         self.assertEqual([r["id"] for r in result],["active"])
         self.assertTrue(result[0]["enabled"])
         self.assertFalse(result[0]["archived"])
+        self.assertEqual(set(result[0]),{'id','name','url','enabled','archived'})
         db.close()
+
+    def test_new_video_links_keep_a_nonempty_bounded_name_without_category(self):
+        with isolated_database():
+            for video_id,title,expected in [('12345678901','   ','Vidéo YouTube'),
+                                            ('aaaaaaaaaaa',None,'Vidéo YouTube'),
+                                            ('bbbbbbbbbbb','  '+('É'*170)+'  ','É'*160)]:
+                with self.subTest(video_id=video_id),patch.object(analytics,'latest_video',
+                        return_value={'url':'https://youtu.be/'+video_id,'title':title}):
+                    created=analytics.pulse_story_link({'type':'youtube','id':video_id})
+                    with analytics.connection() as db:
+                        row=db.execute('''SELECT l.name FROM tracked_links l
+                            JOIN tracked_tokens t ON t.link_id=l.id WHERE t.token=?''',(created['token'],)).fetchone()
+                        self.assertNotIn('category',[column['name'] for column in db.execute('PRAGMA table_info(tracked_links)')])
+                    self.assertEqual(row['name'],expected)
 
     def test_story_link_accepts_active_featured_and_rejects_classic(self):
         db=sqlite3.connect(":memory:")

@@ -27,7 +27,7 @@ LinKs est une page de liens auto-hébergée, personnalisable et accompagnée d�
 
 ### Liens suivis
 
-- Bibliothèque indépendante : recherche, filtres, création/édition, copie et ouverture des destinations.
+- Bibliothèque indépendante sans catégories de liens : nom obligatoire, recherche par nom/destination/notes, filtre d'état, création/édition, copie et ouverture des destinations.
 - Partenaires facultatifs avec modèles libres, détection par domaine et aperçu de l’URL finale. Les URL affiliées directes restent utilisables sans configuration.
 - Destinations publiées conservées jusqu’à confirmation explicite ; URL d’origine et associations sauvegardées.
 - Détection des doublons après tracking, réutilisation des liens courts et ajout de sources au même lien.
@@ -151,6 +151,8 @@ La migration ajoute uniquement la table de suivi `upload_trash` et libère les i
 Effectuer une sauvegarde avant de mettre à jour. Conserver le fichier Compose, le volume `/data`, les images persistantes et la configuration existante ; mettre à jour uniquement le service LinKs. La publication d’une image ne redémarre pas automatiquement votre instance.
 
 Les sauvegardes applicatives v1, v2 et v3 restent compatibles. Le format v3 comprend les contenus, paramètres, statistiques, citations et images référencées. Les comptes administrateur ne sont pas exportés. Voir [installation, migration et sauvegarde](docs/INSTALL.md) pour les précautions et la procédure complète.
+
+La suppression des catégories de liens suivis retire réellement l'ancienne colonne SQLite, après sauvegarde vérifiée, sans changer les liens, redirections, affiliations, campagnes ou historiques. Les anciens exports restent acceptés par le nouvel importeur ; les nouveaux exports ne contiennent plus ce champ. Voir [la migration des catégories et sa recette](docs/MIGRATION-CATEGORIES.md) avant toute mise à jour d'une instance existante. Ce changement préparé ne modifie pas la version officielle indiquée ci-dessus.
 
 ## Historique des versions
 
