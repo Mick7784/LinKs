@@ -62,7 +62,7 @@ function render(){
   nameLabel.append(name);
   const partnerLabel=elem("label","","Partenaire");
   const partner=document.createElement("select");
-  partner.disabled=!!row.error;
+  // An ambiguous/invalid affiliate rule must remain correctable in this row.
   const autoName=partners.find(p=>p.id===row.partner_id)?.name||"Aucun";
   partner.append(new Option("Automatique · "+autoName,"__auto__"),new Option("Aucun",""));
   for(const item of partners)partner.append(new Option(item.name,item.id));
@@ -165,7 +165,7 @@ async function inspect(preserve=false){
     manual_partner:old?.manual_partner||false,
     chosen_partner_id:old?.chosen_partner_id||"",
     title:old?.title||"",manual_title:old?.manual_title||false,
-    title_status:old?.title_status==="complete"?"complete":item.error?"complete":"pending",
+    title_status:old?.title_status==="complete"&&(!old.error||old.manual_title)?"complete":item.error?"complete":"pending",
     selected:old?old.selected:true
    };
   });

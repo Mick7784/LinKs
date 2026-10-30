@@ -147,6 +147,42 @@ const {join,resolve}=require('node:path');
   assert(await page.locator('#tracked-batch-create').isDisabled());
   assert.equal(createCalls,1);
   assert.deepEqual((await api('/api/tracked-links')).items,after);
+  await page.locator('[data-close-batch]').first().click();
+  // Multiple matching partners require a manual choice, even on an error row.
+  const chosenPartner=await api('/api/affiliate-partners',{
+   name:'Choix A',domains:['ambiguous.example'],code:'A',template:'{url}?ref={code}'
+  });
+  await api('/api/affiliate-partners',{
+   name:'Choix B',domains:['ambiguous.example'],code:'B',template:'{url}?ref={code}'
+  });
+  const invalidPartner=await api('/api/affiliate-partners',{
+   name:'Destination LinKs interdite',domains:[],code:'X',template:'http://127.0.0.1:3003/{code}'
+  });
+  await page.locator('#tracked-open-batch').click();
+  const recoverUrl='https://ambiguous.example/omvi-x16';
+  await page.locator('#tracked-batch-urls').fill(recoverUrl);
+  await page.locator('#tracked-batch-analyze').click();
+  await page.waitForFunction(()=>!document.querySelector('#tracked-batch-analyze').disabled);
+  assert.match(await manual.locator('.tracked-batch-row-status').textContent(),/Erreur/);
+  assert(await manual.locator('select').isEnabled());
+  await manual.locator('select').selectOption(chosenPartner.id);
+  await page.waitForFunction(()=>!document.querySelector('#tracked-batch-analyze').disabled);
+  assert.equal(await manual.locator('.tracked-batch-destination').textContent(),recoverUrl+'?ref=A');
+  assert.equal(await manual.locator('input[type="text"]').inputValue(),'Reolink OMVI X16 PoE');
+  await manual.locator('input[type="text"]').fill('Nom conservé');
+  await manual.locator('select').selectOption(invalidPartner.id);
+  await page.waitForFunction(()=>!document.querySelector('#tracked-batch-analyze').disabled);
+  assert.match(await manual.locator('.tracked-batch-row-status').textContent(),/Erreur/);
+  assert(await page.locator('#tracked-batch-create').isDisabled());
+  assert(await manual.locator('select').isEnabled());
+  await manual.locator('select').selectOption('');
+  await page.waitForFunction(()=>!document.querySelector('#tracked-batch-analyze').disabled);
+  assert.equal(await manual.locator('.tracked-batch-destination').textContent(),recoverUrl);
+  assert.equal(await manual.locator('input[type="text"]').inputValue(),'Nom conservé');
+  assert(await page.locator('#tracked-batch-create').isEnabled());
+  assert.equal(createCalls,1);
+  assert.deepEqual((await api('/api/tracked-links')).items,after);
+  assert.deepEqual(errors,[]);
   console.log('PASS: bulk preview and creation, auto partner, override, duplicates, select all, manual title, responsive.');
  }finally{
   if(browser)await browser.close();
