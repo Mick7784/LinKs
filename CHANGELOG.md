@@ -1,5 +1,11 @@
 # Changelog
 
+## V1.328
+
+### 🔧 Améliorations
+
+- Release V1.328 — Intégration LinKs et passerelle PulSe
+
 ## V1.327
 
 ### Liens suivis sans catégories
