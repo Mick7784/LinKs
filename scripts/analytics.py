@@ -13,6 +13,7 @@ import themes
 import images as user_images
 import storage
 import tracked_links
+import tracked_batch
 import affiliate_partners
 import short_urls
 import url_inspection
@@ -1626,6 +1627,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json(200,{"url":affiliate_partners.build_url(fields['template'],fields['code'],data.get('test_url',''))})
             if path=="/api/affiliate-partners":
                 with connection() as db:return self.json(201,affiliate_partners.save(db,data,now_iso()))
+            if path=="/api/tracked-links/batch/preview":
+                with connection() as db:
+                    return self.json(200,tracked_batch.preview_many(db,data,story_url_valid))
+            if path=="/api/tracked-links/batch/create":
+                with connection() as db:
+                    db.execute('BEGIN IMMEDIATE')
+                    return self.json(201,tracked_batch.create_many(db,data,story_url_valid,now_iso()))
             if path=="/api/tracked-links/titles/bulk-update":
                 with connection() as db:
                     db.execute('BEGIN IMMEDIATE')
