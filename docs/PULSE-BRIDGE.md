@@ -1,5 +1,28 @@
 # PulSe — passerelle privée LinKs
 
+## Extension préparée : gestion mobile des liens (phase 5)
+
+Branche `feat/pulse-link-management`, basée sur la version publiée V1.327 (`079b2987`). Aucun déploiement, version, migration ou changement des règles métier. Les branches distantes et PR ouvertes ont été vérifiées le 30 octobre 2026 : aucune évolution de titres automatiques ou de création par lot de liens suivis n'y était visible. Ces fonctions ne sont pas réimplémentées ici.
+
+Le Bearer existant autorise quatre routes supplémentaires sur le bridge, sans cookie/session admin :
+
+| Route | Opération limitée |
+| --- | --- |
+| `GET /api/pulse/link-manager` | Liens actifs et leurs métadonnées d'édition ; noms/identifiants des partenaires et sources actives, sans modèle d'affiliation, secret ou accès aux réglages. `version: 1` identifie ce contrat. |
+| `POST /api/pulse/link-preview` | `name`, `url`, `partner_id` (vide = Aucun), `detect`, éventuellement `id` et `revision`. Résolution par `affiliate_partners.preview_tracked`, URL finale, doublons et reçu signé valable dix minutes. |
+| `POST /api/pulse/link-save` | Reçu de l'aperçu et `confirm_destination: true` si changement. Vérification du reçu et de la révision, puis `affiliate_partners.save_tracked` sous `BEGIN IMMEDIATE`. Les doublons restent contrôlés dans la transaction ; PulSe ne peut pas forcer leur création. |
+| `POST /api/pulse/link-token` | `id`, `source_id`, `expected_url`. Vérifie la destination actuelle puis appelle `tracked_links.token_link` sous `BEGIN IMMEDIATE`. Renvoie seulement URL courte et source, sans token interne. |
+
+La détection, les choix manuels/Aucun, les destinations originales et finales, les notes, les contrôles de doublons et les alias permanents restent ceux du moteur commun. Une simple modification de nom ne réapplique pas les règles partenaires. Les liens archivés/désactivés et sources archivées ne sont pas réactivés par ce bridge. Les sources historiques sont conservées ; une plateforme reste une source, jamais une catégorie.
+
+Le reçu HMAC utilise le secret bridge existant côté serveur. Il lie les champs normalisés à l'URL finale et à la révision lue ; il ne contient pas le Bearer et n'ajoute aucun stockage. Le moteur revérifie aussi la destination et les doublons au moment de l'écriture. Les aperçus périmés/modifiés ou les éditions concurrentes sont refusés. Les réponses d'erreur ne déclenchent aucune écriture de repli. Une réponse perdue après création peut donner un doublon au réessai : le client doit alors réutiliser le lien enregistré.
+
+Le plafond Nginx de `/api/pulse/` passe de 2 à 32 Kio pour accepter deux URL longues et le reçu ; les anciennes Stories gardent leur limite applicative de 1 Kio. Les autres routes publiques et admin, la configuration Pangolin et les protections de production ne changent pas. Les règles de blocage public de la phase 4 couvrent également ces sous-chemins et doivent rester en place lors d'une future activation.
+
+Tests : `python3 scripts/pulse_manager_test.py` utilise les vrais serveurs LinKs et SQLite temporaire. La CI conserve les régressions métier, UI, images Docker et multiarchitecture. L'intégration smartphone avec le vrai serveur PulSe est exécutée dans le dépôt PulSe avec un checkout LinKs épinglé. Aucun test de redirection vers un site partenaire externe n'est effectué : « URL finale » désigne l'URL produite et validée par le moteur LinKs, sans exploration réseau ni résolution des redirections d'un tiers.
+
+Ordre d'activation futur : publier et valider volontairement le bridge LinKs avant PulSe ; aucun de ces actes n'est réalisé dans cette phase. PulSe signale un bridge ancien sans désactiver Stories/statistiques. Retour arrière : revenir à l'image précédente ; aucun schéma à restaurer, les liens créés restent des liens suivis standards, avec leurs alias et compteurs. Les destinations déjà modifiées ne sont pas automatiquement remises à leur ancienne valeur : une correction exige un nouvel aperçu et une confirmation.
+
 Cette passerelle est développée sur une branche séparée. Elle ne change ni la page publique LinKs, ni l'administration, ni les anciennes URL suivies.
 
 ## Contrat HTTP
