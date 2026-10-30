@@ -1,5 +1,25 @@
 # Changelog
 
+## V1.329
+
+### ✨ Statistiques du jour pour PulSe
+
+- Nouveau `GET /api/pulse/today`, privé Bearer sur le serveur admin, sans paramètre et en lecture seule.
+- Clics d’aujourd’hui et d’hier en Europe/Paris sur les compteurs journaliers existants : clics de la page, campagnes/Stories et liens suivis. Les vues de page sont exclues.
+- Comparaison explicitement avec hier, journée complète. Les données ne permettent pas une comparaison à heure égale.
+- Classements du jour limités aux liens suivis : cinq liens et cinq sources au maximum, sans URLs ni tokens. Leur total est inclus dans le total général et ne doit jamais lui être ajouté.
+- Snapshot cohérent dans une transaction de lecture. Aucun changement de schéma, identifiant, destination, affiliation, source, token, lien court ou historique.
+
+### Compatibilité et validation
+
+Les routes historiques PulSe 7/30 jours restent disponibles et inchangées. PulSe v1.1.3 reste compatible ; PulSe v1.1.4 utilise ce nouvel endpoint. Un fuseau de collecte autre que Europe/Paris produit un état indisponible explicite, sans conversion fictive ni modification de configuration. La collecte désactivée est signalée comme données partielles.
+
+Tests minuit, changements d’heure, zéro clic, classement quotidien distinct des totaux historiques, absence d’écriture, accès privé/public et refus des paramètres. Les suites métier, navigateur et Docker AMD64/ARM64 complètes doivent être vertes avant publication.
+
+### Exploitation
+
+Aucun déploiement ni changement de production. HTTP Basic et les secrets sont conservés. Pour revenir à V1.328, revenir d’abord à PulSe v1.1.3 ; conserver tous les volumes et données LinKs. L’API est additive, aucune migration de données n’est nécessaire.
+
 ## V1.328
 
 ### 🔧 Améliorations
