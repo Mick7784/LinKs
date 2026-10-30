@@ -1,5 +1,13 @@
 # PulSe — passerelle privée LinKs
 
+## Phase 7 — Synthèse mobile en lecture seule
+
+`GET /api/pulse/insights?days=7|30` utilise le Bearer existant et les mêmes refus d'accès que les autres routes. La période vient de `pulse_stats`, les clics et sources de `tracked_links.list_links`, les campagnes éligibles du moteur de sélection existant. Aucune écriture, migration ou création de token.
+
+Réponse `version:1`, `scope:tracked-links` : total des clics des liens suivis sur la période, cinq liens les plus cliqués et cinq sources principales, plus nombre de campagnes actuellement éligibles. Les lignes historiques désactivées/archivées restent comptées ; `available` interdit de proposer leur réutilisation. Les sources conservent leur identité LinKs, sans regroupement approximatif des sources historiques par nom. Les clics de campagne/page publique ne sont **pas** inclus dans ces classements : le total général reste celui de `/stats`. Les tokens, destinations, sessions et données brutes ne sont pas exposés.
+
+Audit du 30 octobre 2026 : la PR #53 `feat/url-inspection-engine` développe les titres automatiques et la gestion par lot, mais n'est pas fusionnée. Cette extension n'en copie pas la logique et ne l'intègre pas prématurément.
+
 ## Extension préparée : gestion mobile des liens (phase 5)
 
 Branche `feat/pulse-link-management`, basée sur la version publiée V1.327 (`079b2987`). Aucun déploiement, version, migration ou changement des règles métier. Les branches distantes et PR ouvertes ont été vérifiées le 30 octobre 2026 : aucune évolution de titres automatiques ou de création par lot de liens suivis n'y était visible. Ces fonctions ne sont pas réimplémentées ici.

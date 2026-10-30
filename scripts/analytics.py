@@ -1250,6 +1250,27 @@ def pulse_stats(period=7):
             "stories":int(story_clicks)+int(independent_story_clicks),
             "days":days}
 
+def pulse_insights(period=7):
+    # Read-only mobile projection of the existing tracked-link reporting engine.
+    window=pulse_stats(period)
+    with connection() as db:
+        rows=tracked_links.list_links(db,window['days'][0]['date'],window['days'][-1]['date'])
+        sources=tracked_links.source_rows(db)
+    totals={}
+    for row in rows:
+        for source in row['sources']:
+            totals[source['id']]=totals.get(source['id'],0)+source['period']
+    ranked=sorted((row for row in rows if row['period_clicks']>0),key=lambda row:(-row['period_clicks'],row['id']))[:5]
+    ranked_sources=sorted((row for row in sources if totals.get(row['id'],0)>0),key=lambda row:(-totals[row['id']],row['id']))[:5]
+    return {'version':1,'period':window['period'],'scope':'tracked-links',
+            'tracked_total':sum(row['period_clicks'] for row in rows),
+            'active_campaigns':len(campaign_selection()['eligible_ids']),
+            'top_links':[{'id':row['id'],'name':row['name'],'clicks':row['period_clicks'],
+                          'available':bool(row['enabled'] and not row['archived'])} for row in ranked],
+            'sources':[{'id':row['id'],'name':row['name'],'platform':row['platform'],
+                        'clicks':totals[row['id']]} for row in ranked_sources]}
+
+
 def pulse_youtube_story_link(video_id):
     # Freeze a video's destination in an existing private tracked link. Never
     # point an old Story at the dynamic "latest video" URL or accept a client URL.
@@ -1323,10 +1344,10 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path=="/api/pulse/link-manager":return self.json(200,pulse_manager.catalog(pulse_services()))
             if path=="/api/pulse/links":return self.json(200,pulse_links())
-            if path=="/api/pulse/stats":
+            if path in {"/api/pulse/stats","/api/pulse/insights"}:
                 periods=parse_qs(urlsplit(self.path).query,keep_blank_values=True).get("days",["7"])
                 if len(periods)!=1:raise ValueError("Une seule période PulSe est autorisée")
-                return self.json(200,pulse_stats(periods[0]))
+                return self.json(200,(pulse_insights if path.endswith('/insights') else pulse_stats)(periods[0]))
             return self.send(404)
         except ValueError as exc:
             return self.json(400,{"error":str(exc)})

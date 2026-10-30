@@ -102,6 +102,28 @@ class PulseManagerTests(unittest.TestCase):
             db.execute('UPDATE tracking_sources SET active=0 WHERE id=?',(source,))
         self.assertEqual(token(saved['url'])[0],400)
 
+    def test_read_only_period_insights_keep_history_and_exclude_private_fields(self):
+        from urllib.parse import urlsplit
+        self.assertEqual(self.call('insights',auth=False)[0],401)
+        self.assertEqual(self.request(self.public+'/api/pulse/insights',headers={'Authorization':'Bearer '+self.secret})[0],404)
+        for query in ['days=','days=8','days=7&days=30']:
+            self.assertEqual(self.call('insights?'+query)[0],400)
+        first=self.save(self.preview())[1]['item']
+        source=next(row for row in self.call('link-manager')[1]['sources'] if row['platform']=='discord')
+        short=self.call('link-token',{'id':first['id'],'source_id':source['id'],'expected_url':first['url']})[1]['url']
+        self.assertEqual(self.redirect(self.public+urlsplit(short).path)[0],302)
+        with self.a.connection() as db:
+            db.execute('UPDATE tracked_links SET archived=1 WHERE id=?',(first['id'],))
+        before=json.loads(self.a.export_backup())['tables']
+        for days in [7,30]:
+            status,value=self.call('insights?days='+str(days));self.assertEqual(status,200)
+            self.assertEqual(value['scope'],'tracked-links');self.assertEqual(value['period'],days)
+            self.assertEqual(value['tracked_total'],1)
+            self.assertEqual(value['top_links'],[{'id':first['id'],'name':first['name'],'clicks':1,'available':False}])
+            self.assertEqual(value['sources'],[{'id':source['id'],'name':source['name'],'platform':'discord','clicks':1}])
+            self.assertNotIn(self.secret,json.dumps(value));self.assertNotIn('token',json.dumps(value));self.assertNotIn(first['url'],json.dumps(value))
+        self.assertEqual(json.loads(self.a.export_backup())['tables'],before)
+
     def test_duplicate_race_and_reuse(self):
         p=self.preview();barrier=threading.Barrier(2)
         def save(_):barrier.wait();return self.save(p)
