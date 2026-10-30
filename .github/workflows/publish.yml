@@ -1,7 +1,7 @@
 name: Build and publish Docker image
 on:
   push:
-    branches: [main]
+    branches: [main, 'feat/pulse-link-management']
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -51,9 +51,16 @@ jobs:
           python3 scripts/campaign_lifecycle_test.py
           python3 scripts/campaign_visual_test.py
           python3 scripts/pulse_bridge_test.py
+          python3 scripts/pulse_manager_test.py
+          python3 scripts/links_pulse_integration_test.py
           python3 scripts/affiliate_partners_test.py
           python3 scripts/campaign_affiliation_test.py
           python3 scripts/tracked_duplicates_test.py
+          python3 scripts/url_inspection_test.py
+          python3 scripts/tracked_title_preview_test.py
+          python3 scripts/tracked_title_batch_test.py
+          python3 scripts/tracked_batch_test.py
+          python3 scripts/tracked_copy_test.py
           python3 scripts/platform_sources_test.py
           python3 scripts/conservation_test.py
           python3 scripts/tracked_categories_migration_test.py
@@ -72,6 +79,10 @@ jobs:
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/admin-ui-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/page-editor-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/tracked-library-browser-test.cjs
+          NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/tracked-title-browser-test.cjs
+          NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/tracked-titles-browser-test.cjs
+          NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/tracked-batch-browser-test.cjs
+          NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/tracked-copy-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/tracked-backup-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/affiliate-partners-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/affiliate-detection-browser-test.cjs

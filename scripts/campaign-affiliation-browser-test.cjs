@@ -19,6 +19,7 @@ const {tmpdir}=require('node:os'),{join,resolve}=require('node:path');
   const source=(await api('/api/tracking-sources')).items[0];const trackedAlias=await api('/api/tracked-links/'+duplicateTracked.id+'/token',{source_id:source.id});
   browser=await chromium.launch({headless:true,...(process.env.CHROMIUM_PATH?{executablePath:process.env.CHROMIUM_PATH}: {})});
   const context=await browser.newContext({viewport:{width:1440,height:1100},permissions:['clipboard-read','clipboard-write'],reducedMotion:'reduce'});
+  await context.route('**/api/tracked-links/*/check-destination',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({status:'valid',http_status:200})}));
   for(const domain of ['shop.reolink.com','eu.sanyipacetoilet.com','www.domadoo.fr'])await context.route('https://'+domain+'/**',route=>route.fulfill({contentType:'text/html',body:'<title>Destination de test</title>'}));
   const page=await context.newPage(),errors=[],confirmations=[];let approve=true;
   page.on('pageerror',error=>errors.push(error.message));page.on('dialog',async dialog=>{confirmations.push(dialog.message());approve?await dialog.accept():await dialog.dismiss()});

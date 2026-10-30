@@ -29,6 +29,7 @@ const {join,resolve}=require('node:path');
   const publicBefore=await fetch(publicOrigin+'/api/public-config').then(r=>r.json());
   browser=await chromium.launch({headless:true,executablePath:process.env.CHROMIUM_PATH});
   const context=await browser.newContext({viewport:{width:1600,height:1000}});
+  await context.route('**/api/tracked-links/*/check-destination',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({status:'valid',http_status:200})}));
   await context.route('https://example.com/**',route=>route.fulfill({body:'Destination de test'}));
   await context.addInitScript(()=>Object.defineProperty(navigator,'clipboard',{value:{writeText:async value=>{window.copiedLink=value}}}));
   const page=await context.newPage(),errors=[],writes=[];page.on('pageerror',error=>errors.push(error.message));

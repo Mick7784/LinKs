@@ -326,6 +326,49 @@ def update_link(db,ident,data,url_valid,now):
         raise ValueError("Lien introuvable")
     return {"id":ident,**fields}
 
+def update_titles(db, data, now):
+    """Atomically rename existing, non-archived links without touching destinations.
+
+    The caller owns a BEGIN IMMEDIATE transaction. Stale titles or modifications
+    reject the entire batch; short URLs, partners, source tokens and click totals
+    are never updated by this operation.
+    """
+    if not isinstance(data, dict) or not isinstance(data.get('items'), list):
+        raise ValueError('Liste de titres invalide.')
+    changes = data['items']
+    if not 1 <= len(changes) <= 2000:
+        raise ValueError('Sélectionnez entre 1 et 2 000 liens.')
+    validated = []
+    seen = set()
+    for item in changes:
+        if not isinstance(item, dict):
+            raise ValueError('Ligne de titre invalide.')
+        ident = item.get('id')
+        if not isinstance(ident, str) or not IDENT.fullmatch(ident) or ident in seen:
+            raise ValueError('Identifiant de lien invalide ou répété.')
+        seen.add(ident)
+        name = text_field(item, 'name', 160, True)
+        expected_name = text_field(item, 'expected_name', 160, True)
+        updated = text_field(item, 'expected_updated_at', 80, True)
+        current = db.execute('SELECT name,updated_at,archived FROM tracked_links WHERE id=?', (ident,)).fetchone()
+        if not current or current['archived']:
+            raise ValueError('Un lien est introuvable ou archivé. Actualisez la liste.')
+        if current['name'] != expected_name or current['updated_at'] != updated:
+            raise ValueError('Un lien a changé depuis l’analyse. Actualisez les titres avant de valider.')
+        validated.append((ident, name, expected_name, updated))
+    changed = []
+    for ident, name, old, updated in validated:
+        if name == old:
+            continue
+        affected = db.execute('''UPDATE tracked_links SET name=?,updated_at=?
+            WHERE id=? AND name=? AND updated_at=? AND archived=0''',
+            (name, now, ident, old, updated)).rowcount
+        if affected != 1:
+            raise ValueError('Un lien a changé pendant l’enregistrement. Réessayez après actualisation.')
+        changed.append({'id': ident, 'name': name})
+    return {'updated': len(changed), 'items': changed}
+
+
 def set_link_flag(db,ident,flag,value):
     if flag not in {"archived","enabled"}:raise ValueError("Action inconnue")
     if not db.execute("UPDATE tracked_links SET "+flag+"=? WHERE id=?",(int(value),ident)).rowcount:

@@ -18,6 +18,7 @@ const {mkdtempSync,rmSync}=require('node:fs'),{tmpdir}=require('node:os'),{join,
   execFileSync(python,['-c',"import sqlite3,sys;db=sqlite3.connect(sys.argv[1]);db.execute('UPDATE tracked_tokens SET click_total=7 WHERE link_id=?',(sys.argv[2],));db.commit()",db,existing.id]);
   browser=await chromium.launch({headless:true,executablePath:process.env.CHROMIUM_PATH});
   const context=await browser.newContext({viewport:{width:1440,height:1000}});
+  await context.route('**/api/tracked-links/*/check-destination',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({status:'valid',http_status:200})}));
   await context.addInitScript(()=>Object.defineProperty(navigator,'clipboard',{value:{writeText:async value=>{window.copiedLink=value}}}));
   const page=await context.newPage(),errors=[],confirmations=[];let approveDuplicate=false;
   page.on('pageerror',error=>errors.push(error.message));page.on('dialog',dialog=>{confirmations.push(dialog.message());return /doublon de destination/.test(dialog.message())&&!approveDuplicate?dialog.dismiss():dialog.accept()});

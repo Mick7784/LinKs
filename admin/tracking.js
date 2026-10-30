@@ -58,6 +58,46 @@ async function load(){
  }catch(error){get("tracked-list").textContent=error.message;}
 }
 let linkPreviewRevision=0,linkPreview=null,manualPartner=false,reapplyPartner=false,savingTracked=false;
+let titlePreviewRevision=0,titlePreviewTimer=null,manualTitle=false,automaticTitle="";
+function titleSuggestionFeedback(text){
+ const node=get("tracked-title-suggestion-status");
+ node.textContent=text;node.hidden=!text;
+}
+function cancelTitleSuggestion(){
+ ++titlePreviewRevision;clearTimeout(titlePreviewTimer);titlePreviewTimer=null;
+}
+function scheduleTitleSuggestion(){
+ cancelTitleSuggestion();
+ const form=get("tracked-form"),input=form.elements.name,url=form.elements.url.value.trim();
+ if(state.editing||manualTitle||!url){titleSuggestionFeedback("");return}
+ let parsed;
+ try{parsed=new URL(url)}catch{titleSuggestionFeedback("");return}
+ if(!["http:","https:"].includes(parsed.protocol)||!parsed.hostname||parsed.username||parsed.password){
+  titleSuggestionFeedback("");return;
+ }
+ // Never overwrite an independently entered title.
+ if(input.value.trim()&&input.value!==automaticTitle){titleSuggestionFeedback("");return}
+ const revision=titlePreviewRevision;
+ titleSuggestionFeedback("Recherche d’un nom court pour cette destination…");
+ titlePreviewTimer=setTimeout(async()=>{
+  try{
+   const result=await api("/api/tracked-links/title-preview",{method:"POST",body:JSON.stringify({url})});
+   if(revision!==titlePreviewRevision||state.editing||manualTitle||!get("tracked-dialog").open
+      ||form.elements.url.value.trim()!==url||input.value.trim()&&input.value!==automaticTitle)return;
+   if(result.status==="ok"&&result.title){
+    input.value=result.title.slice(0,input.maxLength);
+    automaticTitle=input.value;
+    titleSuggestionFeedback("Nom proposé automatiquement. Vous pouvez le modifier.");
+   }else{
+    titleSuggestionFeedback("Titre non détecté. Renseignez un nom manuellement.");
+   }
+  }catch(error){
+   if(revision===titlePreviewRevision&&!manualTitle&&get("tracked-dialog").open)
+    titleSuggestionFeedback("Titre non détecté. Renseignez un nom manuellement.");
+  }
+ },450);
+}
+
 function renderDuplicates(matches=[]){
  get("tracked-duplicates").hidden=!matches.length;
  get("tracked-duplicate-list").innerHTML=matches.map(row=>`<article class="tracked-item"><div class="tracked-item-label"><strong>${safe(row.name)}</strong><small>${row.archived?"Archivé":!row.enabled?"Suspendu":"Actif"}</small></div><div class="profile-image-actions"><button type="button" data-open-duplicate="${safe(row.id)}">Ouvrir sa fiche</button><button type="button" data-reuse-duplicate="${safe(row.id)}">Réutiliser ses liens courts</button></div></article>`).join("");
@@ -85,21 +125,65 @@ async function openEditor(item){
  form.elements.url.value=item?.original_url||item?.url||"";
  form.elements.partner_id.replaceChildren(new Option("Aucun",""),...state.partners.map(partner=>new Option(partner.name,partner.id)));
  form.elements.partner_id.value=item?.partner_id||"";
+ cancelTitleSuggestion();manualTitle=!!item;automaticTitle="";titleSuggestionFeedback("");
  manualPartner=false;reapplyPartner=false;savingTracked=false;get("tracked-recalculate").hidden=!item;
  get("tracked-dialog-title").textContent=item?"Modifier le lien suivi":"Créer un lien suivi";
  get("tracked-dialog").showModal();previewTracked(!item);form.elements.name.focus();
 }
+function prepareClipboard(){
+ // Start the write inside the click activation (not after the network awaits).
+ // The payload stays unresolved until checking/confirmation and token creation finish.
+ let resolve,reject,pending=null;
+ const payload=new Promise((yes,no)=>{resolve=yes;reject=no});
+ payload.catch(()=>{});
+ try{
+  if(navigator.clipboard?.write&&window.ClipboardItem)
+   pending=Promise.resolve(navigator.clipboard.write([
+    new ClipboardItem({'text/plain':payload})
+   ])).then(()=>true,()=>false);
+ }catch{}
+ return {cancel(){reject(new Error('Copie annulée'))},async copy(link){
+  resolve(new Blob([link],{type:'text/plain'}));
+  if(pending&&await pending)return true;
+  try{await navigator.clipboard.writeText(link);return true}catch{}
+  // The active dialog is the only focusable surface when it is modal.
+  const focused=document.activeElement,input=document.createElement('textarea');
+  input.value=link;input.readOnly=true;input.style.position='fixed';input.style.opacity='0';
+  const host=[...document.querySelectorAll('dialog[open]')].at(-1)||document.body;
+  host.append(input);input.focus();input.select();input.setSelectionRange(0,link.length);
+  let copied=false;try{copied=document.execCommand('copy')}catch{}
+  input.remove();focused?.focus({preventScroll:true});
+  return copied;
+ }};
+}
 async function copyTracked(row,sourceId){
  const selected=sourceId||document.getElementById("source-"+row.id)?.value;if(!selected){say("Ajoute d’abord une source de publication.",true);return}
- const response=await api("/api/tracked-links/"+row.id+"/token",{method:"POST",body:JSON.stringify({source_id:selected})});
- const link=response.url;
- try{await navigator.clipboard.writeText(link);say("Lien permanent copié · "+(state.sources.find(s=>s.id===selected)?.name||""))}
- catch{
-   const input=document.createElement("textarea");input.value=link;input.style.position="fixed";input.style.opacity="0";document.body.append(input);input.select();let ok=false;try{ok=document.execCommand("copy")}catch{}input.remove();
-   if(ok)say("Lien permanent copié");
-   else window.prompt("Copier ce lien permanent",link);
- }
- return link;
+ const clipboard=prepareClipboard();
+ const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),12000);
+ let health={status:'unknown'};
+ say('Vérification de la destination…');
+ try{
+  try{health=await api('/api/tracked-links/'+row.id+'/check-destination',{
+   method:'POST',body:'{}',signal:controller.signal
+  })}catch{}finally{clearTimeout(timeout)}
+  const broken=health?.status==='broken'&&[404,410].includes(health.http_status);
+  if(broken&&!confirm('Attention, lien HS ! Vérifie la destination.\n\nCopier quand même le lien LinKs ?')){
+   clipboard.cancel();say('Copie annulée.');return;
+  }
+  const response=await api('/api/tracked-links/'+row.id+'/token',{
+   method:'POST',body:JSON.stringify({source_id:selected})
+  });
+  const link=response.url,copied=await clipboard.copy(link);
+  const warning=broken?'Attention, lien HS ! Vérifie la destination.':
+   health?.status!=='valid'?'Vérification impossible : la destination n’a pas pu être confirmée.':'';
+  if(copied)say((warning?warning+' ':'')+'Lien permanent copié · '+(state.sources.find(s=>s.id===selected)?.name||''),!!warning);
+  else{
+   say((warning?warning+' ':'')+'Le navigateur a refusé la copie automatique.',true);
+   window.prompt('Copier ce lien permanent',link);
+  }
+  return link;
+ }catch(error){clipboard.cancel();throw error}
+ finally{clearTimeout(timeout)}
 }
 get("tracked-list").addEventListener("click",async event=>{
  const button=event.target.closest("button[data-tracked-action]");if(!button)return;
@@ -126,10 +210,27 @@ get("tracked-form").addEventListener("submit",async event=>{
   await api(state.editing?"/api/tracked-links/"+state.editing:"/api/tracked-links",{method:state.editing?"PUT":"POST",body:JSON.stringify(fields)});await load();await loadPartners();close("tracked-dialog");say("Lien suivi enregistré.")
  }catch(error){say(error.message,true);previewTracked()}finally{savingTracked=false;button.disabled=!linkPreview}
 });
-get("tracked-form").elements.url.addEventListener("input",()=>{reapplyPartner=true;previewTracked(!manualPartner)});
+get("tracked-form").elements.name.addEventListener("input",()=>{
+ const input=get("tracked-form").elements.name;
+ manualTitle=!!input.value.trim();
+ automaticTitle="";
+ cancelTitleSuggestion();
+ if(manualTitle)titleSuggestionFeedback("");
+ else scheduleTitleSuggestion();
+});
+get("tracked-form").elements.url.addEventListener("input",()=>{
+ if(!state.editing){
+  const input=get("tracked-form").elements.name;
+  if(automaticTitle&&input.value===automaticTitle&&!manualTitle){
+   input.value="";automaticTitle="";
+  }
+  scheduleTitleSuggestion();
+ }
+ reapplyPartner=true;previewTracked(!manualPartner);
+});
 get("tracked-partner").addEventListener("change",()=>{manualPartner=true;reapplyPartner=true;previewTracked()});
 get("tracked-recalculate").addEventListener("click",()=>{reapplyPartner=true;previewTracked()});
-get("tracked-dialog").addEventListener("close",()=>{++linkPreviewRevision;linkPreview=null});
+get("tracked-dialog").addEventListener("close",()=>{++linkPreviewRevision;linkPreview=null;cancelTitleSuggestion();titleSuggestionFeedback("")});
 async function openDuplicate(id){
  await load();const row=state.items.find(item=>item.id===id);if(!row){say("Lien introuvable.",true);return}
  get("tracked-status").value="all";get("tracked-search").value=row.name;render();
