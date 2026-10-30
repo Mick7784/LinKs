@@ -155,7 +155,7 @@
 <section class="view" id="tracked-links">
  <div class="section-head"><div><h1>Liens suivis</h1><p>Un espace dédié à vos liens suivis et affiliés, indépendant de la page publique.</p></div><button type="button" class="primary" data-action="new-tracked">Créer un lien suivi</button></div>
  <section class="panel" id="tracked-links-library" aria-labelledby="tracked-links-library-heading">
-  <div class="panel-title"><h3 id="tracked-links-library-heading">Bibliothèque de liens</h3><button type="button" id="tracked-manage-sources">Gérer les sources</button></div>
+  <div class="panel-title"><h3 id="tracked-links-library-heading">Bibliothèque de liens</h3><div class="tracked-library-tools"><button type="button" id="tracked-manage-sources">Gérer les sources</button><button type="button" id="tracked-generate-titles">Générer des titres</button></div></div>
   <p class="panel-helper">Choisissez une source pour copier un lien permanent. Ouvrir permet de consulter directement sa destination.</p>
   <form id="tracked-filters" class="analysis-controls" role="search" aria-label="Filtrer les liens suivis">
    <label>Recherche<input id="tracked-search" type="search" placeholder="Nom, destination, notes…"></label>
@@ -250,6 +250,19 @@
   <div class="profile-image-actions"><button type="button" id="tracked-reuse-copy" class="primary">Copier le lien court</button><button type="button" id="tracked-reuse-manage">Gérer les sources</button></div>
   <a id="tracked-reuse-url" target="_blank" rel="noopener noreferrer" hidden></a>
   <div class="dialog-actions"><button type="button" id="tracked-reuse-edit">Ouvrir sa fiche</button><button type="button" data-close-reuse>Revenir au lien en cours</button></div>
+ </div>
+</dialog>
+<dialog id="tracked-titles-dialog" class="tracked-dialog tracked-titles-dialog">
+ <div class="tracked-editor">
+  <header><h2>Générer des titres</h2><button type="button" data-close-titles class="icon-button" aria-label="Fermer">×</button></header>
+  <p class="field-help">Comparez les titres actuels aux propositions détectées sur les destinations. Seuls les liens cochés seront renommés. Les destinations et les statistiques restent inchangées.</p>
+  <div class="tracked-titles-toolbar">
+   <button type="button" id="tracked-titles-select-all" disabled>Sélectionner tout</button>
+   <span id="tracked-titles-count" aria-live="polite">0 sélectionné</span>
+  </div>
+  <p id="tracked-titles-progress" class="field-help" role="status" aria-live="polite"></p>
+  <div id="tracked-titles-list" class="tracked-titles-list" aria-label="Comparaison des titres"></div>
+  <div class="dialog-actions"><button type="button" data-close-titles>Annuler</button><button type="button" id="tracked-titles-save" class="primary" disabled>Enregistrer les titres sélectionnés</button></div>
  </div>
 </dialog>
 <dialog id="tracked-sources-dialog" class="tracked-dialog">
