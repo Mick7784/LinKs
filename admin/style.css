@@ -3231,3 +3231,29 @@ button.drag-handle{touch-action:none;user-select:none;min-width:44px;min-height:
  .tracked-titles-list{max-height:56dvh}
  .tracked-titles-dialog .tracked-editor{padding:12px}
 }
+
+/* Tracked link creation by batch; compatible with the existing LinKs interface. */
+.tracked-create-tools{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+.tracked-create-tools button{min-height:35px}
+.tracked-batch-dialog{width:min(980px,calc(100vw - 28px));max-width:min(980px,calc(100vw - 28px))}
+.tracked-batch-tools{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.tracked-batch-tools button{min-height:35px;padding:6px 12px}
+#tracked-batch-count{font-size:.78rem;color:var(--muted)}
+.tracked-batch-list{display:grid;gap:10px;min-width:0;max-height:48dvh;overflow:auto;overscroll-behavior:contain}
+.tracked-batch-row{display:grid;gap:10px;min-width:0;padding:12px;border:1px solid var(--line);border-radius:9px;background:var(--raised)}
+.tracked-batch-row-check{display:flex!important;align-items:start;gap:10px;min-width:0;overflow-wrap:anywhere}
+.tracked-batch-row-check input{width:auto!important;min-width:15px!important;flex:none;margin:3px 0 0}
+.tracked-batch-row-check strong{font-size:.79rem;line-height:1.45;overflow-wrap:anywhere}
+.tracked-batch-fields{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;min-width:0}
+.tracked-batch-fields label{min-width:0}
+.tracked-batch-fields select{width:100%;min-width:0}
+.tracked-batch-row-foot{display:grid;gap:4px;min-width:0}
+.tracked-batch-destination{color:var(--muted);font-size:.7rem;overflow-wrap:anywhere}
+.tracked-batch-row-status{font-size:.72rem;color:var(--muted);overflow-wrap:anywhere}
+@media(max-width:760px){
+ .tracked-create-tools{width:100%;justify-content:flex-start}
+ .tracked-batch-fields{grid-template-columns:minmax(0,1fr)}
+ .tracked-batch-dialog .tracked-editor{padding:12px}
+ .tracked-batch-list{max-height:50dvh}
+ .tracked-batch-row{padding:10px}
+}
