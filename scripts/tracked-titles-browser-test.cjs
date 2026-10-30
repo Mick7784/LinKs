@@ -69,14 +69,14 @@ const {join,resolve}=require('node:path');
 
   const all=page.locator('#tracked-titles-select-all');
   await all.click();
-  assert.equal(await options.filter({checked:true}).count(),2,'Select all only selects modifiable titles');
+  assert.equal(await page.locator('.tracked-bulk-title-row input[type="checkbox"]:checked').count(),2,'Select all only selects modifiable titles');
   assert.match(await page.locator('#tracked-titles-count').textContent(),/2 titres sélectionnés sur 3/);
   await all.click();
-  assert.equal(await options.filter({checked:true}).count(),0);
+  assert.equal(await page.locator('.tracked-bulk-title-row input[type="checkbox"]:checked').count(),0);
   const row=page.locator('.tracked-bulk-title-row').filter({hasText:'Nom très long ancien 1'});
   await row.locator('input[type="checkbox"]').check();
   await row.locator('input[type="text"]').fill('UGREEN NASync DXP4800 Pro');
-  assert.equal(await options.filter({checked:true}).count(),1);
+  assert.equal(await page.locator('.tracked-bulk-title-row input[type="checkbox"]:checked').count(),1);
 
   for(const width of [1440,390,320]){
    await page.setViewportSize({width,height:850});
