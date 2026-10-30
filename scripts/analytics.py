@@ -1626,6 +1626,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json(200,{"url":affiliate_partners.build_url(fields['template'],fields['code'],data.get('test_url',''))})
             if path=="/api/affiliate-partners":
                 with connection() as db:return self.json(201,affiliate_partners.save(db,data,now_iso()))
+            if path=="/api/tracked-links/titles/bulk-update":
+                with connection() as db:
+                    db.execute('BEGIN IMMEDIATE')
+                    return self.json(200,tracked_links.update_titles(db,data,now_iso()))
             if path=="/api/tracked-links/title-preview":
                 if not isinstance(data,dict):raise ValueError('Requête invalide.')
                 original=tracked_links.text_field(data,'url',2000,True)
