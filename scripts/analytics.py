@@ -1252,6 +1252,44 @@ def pulse_stats(period=7):
             "stories":int(story_clicks)+int(independent_story_clicks),
             "days":days}
 
+def pulse_today(at=None):
+    """One read snapshot of existing daily counters; no hourly inference or writes."""
+    at = at or datetime.now(timezone.utc)
+    if at.tzinfo is None:
+        raise ValueError('Date avec fuseau requise')
+    zone = ZoneInfo('Europe/Paris')
+    day = at.astimezone(zone).date()
+    yesterday = day - timedelta(days=1)
+    with connection() as db:
+        db.execute('BEGIN')
+        # Daily buckets cannot be converted to another timezone after collection.
+        if instance.get(db, 'app.timezone', 'UTC') != 'Europe/Paris':
+            return {'version': 1, 'available': False, 'reason': 'timezone'}
+        totals = {r['day']: int(r['total']) for r in db.execute(
+            """SELECT day,SUM(total) total FROM counts WHERE day BETWEEN ? AND ?
+               AND kind IN ('click','story','tracked') GROUP BY day""",
+            (yesterday.isoformat(), day.isoformat()))}
+        rows = tracked_links.list_links(db, day.isoformat(), day.isoformat())
+        sources = tracked_links.source_rows(db)
+        enabled = instance.get(db, 'analytics.enabled', 'true') == 'true'
+    source_totals = {}
+    for row in rows:
+        for source in row['sources']:
+            source_totals[source['id']] = source_totals.get(source['id'], 0) + source['period']
+    ranked = sorted((r for r in rows if r['period_clicks'] > 0), key=lambda r: (-r['period_clicks'], r['id']))[:5]
+    ranked_sources = sorted((r for r in sources if source_totals.get(r['id'], 0) > 0), key=lambda r: (-source_totals[r['id']], r['id']))[:5]
+    return {'version': 1, 'available': True, 'timezone': 'Europe/Paris',
+            'generated_at': at.astimezone(timezone.utc).isoformat(),
+            'scope': 'all-clicks', 'comparison': 'yesterday-full-day', 'analytics_enabled': enabled,
+            'date': day.isoformat(), 'yesterday_date': yesterday.isoformat(),
+            'today': totals.get(day.isoformat(), 0), 'yesterday': totals.get(yesterday.isoformat(), 0),
+            'ranking_scope': 'tracked-links', 'tracked_total': sum(r['period_clicks'] for r in rows),
+            'top_links': [{'id': r['id'], 'name': r['name'], 'clicks': r['period_clicks'],
+                           'available': bool(r['enabled'] and not r['archived'])} for r in ranked],
+            'sources': [{'id': r['id'], 'name': r['name'], 'platform': r['platform'],
+                         'clicks': source_totals[r['id']]} for r in ranked_sources]}
+
+
 def pulse_insights(period=7):
     # Read-only mobile projection of the existing tracked-link reporting engine.
     window=pulse_stats(period)
@@ -1345,6 +1383,9 @@ class Handler(BaseHTTPRequestHandler):
         path=urlsplit(self.path).path
         try:
             if path=="/api/pulse/link-manager":return self.json(200,pulse_manager.catalog(pulse_services()))
+            if path=="/api/pulse/today":
+                if urlsplit(self.path).query:raise ValueError('Aucun paramètre attendu')
+                return self.json(200,pulse_today())
             if path=="/api/pulse/links":return self.json(200,pulse_links())
             if path in {"/api/pulse/stats","/api/pulse/insights"}:
                 periods=parse_qs(urlsplit(self.path).query,keep_blank_values=True).get("days",["7"])
