@@ -49,6 +49,7 @@ s.serve_forever()`],{cwd:__dirname,env:{...process.env,PYTHONIOENCODING:'utf-8',
   await root.getByRole('button',{name:'Annuler',exact:true}).click();await poll(async()=>(await get(original.id)).text===first);await saved();
   await root.getByRole('button',{name:'Rétablir',exact:true}).click();await poll(async()=>(await get(original.id)).text===latest);await saved();
   // Renaming and restoring affect the draft only, using its original frozen copy.
+  await root.getByRole('button',{name:'Sections',exact:true}).click();
   const support=original.template_snapshot.sections.find(s=>s.id==='support');
   const renamed=latest.replace(support.heading,'😀 Mon soutien personnalisé');await area.fill(renamed);await saved();
   let doc=await get(original.id),supportAnchor=doc.sections.find(s=>s.id==='support');assert.equal(supportAnchor.status,'confirmed');assert(supportAnchor.quote.startsWith('😀 Mon soutien'));

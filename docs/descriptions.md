@@ -1,7 +1,7 @@
-# Descriptions — phases 1 et 2
+# Descriptions — phases 1 à 3
 
 Base d'intégration : V1.4.1, commit `0c26ee2`. Les PR #60 (affiliation) et
-#61 (titres) sont fusionnées. Ces phases ajoutent les modèles, le stockage et l'éditeur ;
+#61 (titres) sont fusionnées. Ces phases ajoutent modèles, stockage, éditeur et analyse locale ;
 elle ne duplique aucun service de titres, partenaires, liens ou sources.
 
 ## Périmètre livré
@@ -74,8 +74,9 @@ après perte de réponse. La saisie reste possible pendant l'enregistrement.
 Un conflit bloque la sauvegarde automatique. L'utilisateur peut consulter le
 texte serveur, ouvrir cette version en gardant sa récupération locale, ou
 enregistrer sa propre copie dans un nouveau brouillon. Aucun écrasement forcé.
-L'API ne permet de modifier que le titre interne, le texte et les repères de
-sections : copie du modèle, liens, sélections et classements restent conservés.
+L'API conserve la copie du modèle et les liens. Les champs éditables sont le
+titre interne, le texte et les repères de sections, complétés en phase 3 par
+les références, sélections et classements explicitement versionnés et validés.
 
 Chaque modification non enregistrée est copiée dans `localStorage`, sous une
 clé propre à l'instance, au brouillon et à l'éditeur. Une interruption propose
@@ -116,8 +117,6 @@ d'environnement. `Dockerfile` embarque le module et son modèle initial.
 
 ## Frontières des phases suivantes
 
-3. Analyse locale et reconnaissance produit, sans requête marchande pendant la
-   saisie ; adaptation du catalogue existant et du moteur de titres partagé.
 4. Fournisseurs de recherche séparés par marchand, avec capacités déclarées :
    recherche intégrée Domadoo si un accès fiable et autorisé est disponible,
    ouverture du site et collage en secours. L'association au partenaire est déjà
@@ -131,8 +130,80 @@ d'environnement. `Dockerfile` embarque le module et son modèle initial.
 L'aperçu d'un modèle ne prétend pas vérifier la santé distante d'un lien.
 Les intitulés du modèle n'écrivent jamais dans les noms des fiches globales.
 
+## Analyse locale et catalogue (phase 3)
+
+Le panneau **Analyse et catalogue** se met à jour automatiquement après 400 ms
+d'inactivité. L'endpoint privé `POST /api/descriptions/drafts/{id}/analyze` est
+en lecture seule : il travaille côté LinKs sur le texte courant et le catalogue
+SQLite, sans DNS, HTTP externe, suivi de redirection, comptage, création ou
+modification de lien, source ou jeton. Le bouton **Actualiser le catalogue**
+relance cette même lecture locale. Une réponse dépassée est ignorée ; les choix
+actuels sont toujours appliqués à la vue des résultats, jamais remplacés par
+ceux d'une ancienne requête.
+
+Les URL HTTP(S), `www.`, `amzn.to` et `link.amazon` sont reconnues avec leurs
+positions Unicode. Une même URL répétée conserve une identité et ses différentes
+occurrences. Les jetons `/go/` et alias ne sont reconnus que sur l'origine LinKs
+configurée, à partir des enregistrements existants, y compris les campagnes.
+Un alias révoqué ou une fiche/source indisponible est signalé. La comparaison
+des destinations réutilise `tracked_links.canonical_destination` sans réécrire
+les URL ; les destinations et URL d'origine du catalogue sont consultées.
+
+Les sources YouTube actuelles, historiques « YouTube Description » / « YouTube
+Post » et les identités explicitement associées au modèle sont proposées. Le
+jeton déjà cité conserve sa source même si elle a été renommée. Une destination
+avec plusieurs fiches ou plusieurs publications YouTube nécessite un choix
+explicite. Les autres sources existantes restent accessibles manuellement.
+
+La reconnaissance des produits est volontairement conservatrice : libellés
+commerciaux devant les URL, noms du catalogue réellement cités et références
+marque/modèle explicites. Les textes permanents, les hashtags (y compris dans
+une ligne), les technologies seules, les boutiques et les vidéos complémentaires
+ne servent pas à déduire des produits. Les accessoires absents de la mention
+ne sont pas proposés par rapprochement de mots. Une variante imprécise reste
+une correspondance possible ; les références proches ne sont pas fusionnées
+arbitrairement. Une référence non reconnue peut être ajoutée et corrigée
+manuellement, et les liens peuvent être associés au produit choisi.
+
+Les propositions sont regroupées par produit et marchand indépendant. Les
+liens déjà présents sont présélectionnés ; les ajouts et déplacements restent
+décochés. Un choix devenu indisponible est inactif, sans perte de son intention
+enregistrée. Un lien direct Amazon conserve exactement l'URL fournie ; aucune
+source de redirection n'est activée pour lui. L'absence de statistiques LinKs
+dans ce mode est affichée.
+Un lien LinKs déjà présent vers Amazon est identifié mais sa réutilisation est
+inactive tant que l'utilisateur n'a pas confirmé une URL affiliée directe dans
+le texte. Son association historique reste lisible ; aucune redirection Amazon
+n'est préparée silencieusement.
+
+`url_inspection.suggest_local_title` expose les règles locales du moteur de
+titres existant, sans sa couche réseau. Les intitulés écrits dans le texte sont
+conservés ; les corrections du panneau restent propres au brouillon. Il n'y a
+ni catalogue produit supplémentaire ni second moteur d'affiliation.
+
+Les références manuelles sont conservées dans `products`, les décisions dans
+`selections.description_analysis` et l'ordre souris/clavier dans `manual_order`.
+Le marqueur `analysis_version: 1` valide ce complément au format existant.
+Les résultats automatiques sont recalculables, identifiés par le texte exact de
+l'URL ou la référence normalisée ; les décisions devenues obsolètes restent
+inactives et peuvent retrouver leur proposition après une annulation. Les
+anciens clients qui n'envoient pas ces champs ne les effacent pas. Les révisions,
+la récupération après interruption et les sauvegardes couvrent aussi ces choix.
+
+Aucune opération n'est appliquée au texte en phase 3. Les recherches externes
+manuelles Domadoo/Amazon restent en phase 4 ; comparaison et application finale
+restent en phase 5. L'aperçu rapide continue d'afficher le texte réellement saisi.
+
 ## Validation
 
+- `python3 scripts/description_analysis_test.py` : référence SMLIGHT, absence
+  d'IO externe et d'écriture catalogue, alias/jetons/campagnes, sources historiques,
+  ambiguïtés, exclusions, URL Amazon exactes et sauvegarde des choix.
+- `node --test scripts/description-analysis.test.cjs` : conservation des choix,
+  invalidation ciblée, classements et présélections.
+- `node scripts/descriptions-analysis-browser-test.cjs` : catalogue réel de test,
+  sources YouTube, intitulés locaux, réponses d'analyse retardées, références
+  manuelles, classements et persistance après modification/rechargement.
 - `python3 scripts/descriptions_test.py` : référence, modèle initial, absence
   d'effets sur les liens/sources/compteurs, reprise historique, isolation des
   brouillons, conflits concurrents, Amazon, sauvegardes et versions immuables ;

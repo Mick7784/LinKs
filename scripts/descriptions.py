@@ -1,6 +1,6 @@
 """Description templates and durable documents, sharing the existing SQLite transaction.
 
-No merchant request, link creation, source creation, title generation or redirect here.
+No merchant request, link creation, source creation or redirect here.
 References are stable catalogue IDs; missing references remain explicit problems.
 """
 import copy
@@ -294,11 +294,14 @@ def save_draft(db, key, data, fork=False):
     mutation = ident(data.get('mutation_id'))
     expected = data.get('expected_revision')
     if type(expected) is not int or expected < 1:raise ValueError('Révision attendue requise.')
-    if set(data) != {'title','text','sections','expected_revision','mutation_id'}:
-        raise ValueError('Seuls le titre, le texte et les repères de sections peuvent être modifiés.')
+    base_fields = {'title','text','sections','expected_revision','mutation_id'}
+    analysis_fields = {'analysis_version','products','selections','manual_order'}
+    if set(data) not in (base_fields, base_fields | analysis_fields):
+        raise ValueError('Champs de brouillon invalides.')
     content = text(data, 'text', MAX_TEXT)
     fields = {'title': text(data,'title',160,True), 'text': content,
               'sections': validate_anchors(data.get('sections'), content, current['template_snapshot']['sections'])}
+    if 'analysis_version' in data:fields.update(validate_choices(data))
     digest = hashlib.sha256(packed(fields).encode('utf-8')).hexdigest()
     receipt = {'id': mutation, 'base_revision': expected, 'digest': digest}
     if fork:
@@ -315,6 +318,44 @@ def save_draft(db, key, data, fork=False):
         raise Conflict('Le brouillon a changé dans un autre onglet. Votre texte est conservé ; comparez ou enregistrez une copie.')
     payload = validate_document({**current, **fields, 'last_mutation': receipt})
     return insert(db, TABLES[1], payload, target) if fork else update(db,TABLES[1],key,payload,expected)
+
+
+def validate_choices(data):
+    if type(data.get('analysis_version')) is not int or data['analysis_version'] != 1:raise ValueError('Version d’analyse invalide.')
+    products=sequence(data.get('products'),100)
+    seen=set()
+    for product in products:
+        if product.get('kind')!='manual-reference':continue  # Preserve earlier/future opaque product state.
+        key=ident(product.get('id'))
+        if key in seen:raise ValueError('Référence manuelle répétée.')
+        seen.add(key);text(product,'query',160,True)
+        if set(product)!={'id','kind','query'}:raise ValueError('Référence manuelle invalide.')
+    selections=data.get('selections')
+    if not isinstance(selections,dict):raise ValueError('Sélections invalides.')
+    choices=selections.get('description_analysis',{})
+    if not isinstance(choices,dict) or len(choices)>1000:raise ValueError('Trop de sélections.')
+    for key,value in choices.items():
+        ident(key)
+        if not isinstance(value,dict) or set(value)-{'selected','link_id','source_id','label','product_id'}:raise ValueError('Choix invalide.')
+        if 'selected' in value:flag(value,'selected')
+        if 'label' in value:text(value,'label',160)
+        for field in ('link_id','source_id','product_id'):
+            if value.get(field):ident(value[field])
+            elif field in value and value[field]!='':raise ValueError('Association invalide.')
+    order=data.get('manual_order')
+    if not isinstance(order,list) or len(order)>1000 or len(set(order))!=len(order):raise ValueError('Classement invalide.')
+    for key in order:ident(key)
+    return copy.deepcopy({key:data[key] for key in ('analysis_version','products','selections','manual_order')})
+
+
+def analyze_draft(db,key,data,origin):
+    from description_analysis import analyze
+    if not isinstance(data,dict):raise ValueError('Requête d’analyse invalide.')
+    current=editor_document(get(db,TABLES[1],key))
+    content=text(data,'text',MAX_TEXT)
+    anchors=validate_anchors(data.get('sections'),content,current['template_snapshot']['sections'])
+    choices=validate_choices(data) if 'analysis_version' in data else {key:current[key] for key in ('products','selections','manual_order')}
+    return analyze(db,{**current,**choices,'text':content,'sections':anchors},origin)
 
 
 def validate_document(data, version=False):
@@ -341,6 +382,7 @@ def validate_document(data, version=False):
     if 'editor_version' in result:
         if result['editor_version'] != 1:raise ValueError('Version d’éditeur incompatible.')
         validate_anchors(result['sections'],result['text'],result['template_snapshot']['sections'])
+    if 'analysis_version' in result:validate_choices(result)
     url = text(result, 'youtube_url', 2000)
     if url and not affiliate_partners.http_url(url):raise ValueError('URL de vidéo invalide.')
     if version:

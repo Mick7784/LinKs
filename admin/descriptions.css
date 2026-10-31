@@ -57,4 +57,15 @@ main:has(#descriptions.active [data-editor-host]){max-width:none}
 .description-text-dialog::backdrop{background:#0008}
 .description-text-dialog textarea{display:block;width:100%;height:55vh;resize:vertical;font:inherit;line-height:1.6;margin:16px 0}
 .description-text-dialog button{margin-right:10px}
+#descriptions .description-product{border-top:2px solid var(--border);padding:18px 0;margin:18px 0}
+#descriptions .description-product>strong,#descriptions .description-product>small,#descriptions .description-detected-url strong,#descriptions .description-detected-url small{display:block;margin:6px 0}
+#descriptions .description-detected-url{padding:12px 0;border-bottom:1px solid var(--border)}
+#descriptions .description-assistant-content code{display:block;white-space:pre-wrap;overflow-wrap:anywhere;font-size:.8rem;margin:10px 0}
+#descriptions .description-assistant-content small{color:var(--muted)}
+#descriptions .description-assistant-content h3{font-size:1rem;margin-top:24px}
+#descriptions .description-analysis-note{padding:10px;background:var(--bg);border-radius:8px;font-size:.85rem}
+#descriptions .description-analysis-status{font-size:.85rem;color:var(--muted)}
+#descriptions .description-assistant-content p{font-size:.88rem;line-height:1.5;margin:10px 0}
+#descriptions .description-assistant-content details>summary::before{content:'›';margin-right:6px}
+#descriptions .description-assistant-content details[open]>summary::before{transform:rotate(90deg)}
 @media(max-width:1000px){#descriptions .description-editor-layout{grid-template-columns:1fr!important}#descriptions .description-editor-separator{display:none}#descriptions .description-editor-layout>aside{height:auto;max-height:600px;min-height:0}}

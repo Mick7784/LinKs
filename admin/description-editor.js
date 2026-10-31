@@ -3,7 +3,7 @@ window.LinksDescriptionEditor=(()=>{'use strict';
  const S=window.DescriptionSections,states=new Map(),clone=value=>structuredClone(value);
  const node=(tag,text,className)=>{const el=document.createElement(tag);if(text!==undefined)el.textContent=text;if(className)el.className=className;return el};
  const request=(path,data,signal)=>api('/api/descriptions/'+path,data===undefined?{signal}:{method:'POST',signal,body:JSON.stringify(data)});
- const fields=doc=>({title:doc.title,text:doc.text,sections:clone(doc.sections)});
+ const fields=doc=>({title:doc.title,text:doc.text,sections:clone(doc.sections),...(doc.analysis_version===1?{analysis_version:1,products:clone(doc.products),selections:clone(doc.selections),manual_order:clone(doc.manual_order)}:{})});
  function action(label,fn){const b=node('button',label);b.type='button';b.addEventListener('click',fn);return b}
  function dialog(title,text,editable=false){
   const modal=node('dialog',undefined,'description-text-dialog'),form=node('form'),area=node('textarea');form.method='dialog';area.value=text;area.readOnly=!editable;area.setAttribute('aria-label',editable?'Description à importer':title);area.rows=18;
@@ -13,7 +13,8 @@ window.LinksDescriptionEditor=(()=>{'use strict';
  }
  class Editor{
   constructor(document,instance){
-   this.doc=clone(document);this.instance=instance;this.writer=crypto.randomUUID();this.generation=0;this.ack=0;this.pending=null;this.pendingGeneration=0;this.saving=false;this.blocked=false;this.history=[];this.future=[];this.selection={start:0,end:0};this.recoveryOrigin=null;this.mode='sections';this.ratio=65;this.message='Enregistré';this.warning='';this.composing=false;
+   this.doc=clone(document);this.instance=instance;this.writer=crypto.randomUUID();this.generation=0;this.ack=0;this.pending=null;this.pendingGeneration=0;this.saving=false;this.blocked=false;this.history=[];this.future=[];this.selection={start:0,end:0};this.recoveryOrigin=null;this.mode='analysis';this.ratio=65;this.message='Enregistré';this.warning='';this.composing=false;
+   this.analysis=new window.LinksDescriptionAnalysis.Panel(this,request);
   }
   prefix(){return `links:description-editor:v1:${this.instance}:${this.doc.id}:`}
   key(){return this.prefix()+this.writer}
@@ -100,7 +101,7 @@ window.LinksDescriptionEditor=(()=>{'use strict';
    this.generation++;this.pending=!this.blocked&&!acknowledged?clone(value.pending):null;
    // An interrupted in-flight save can be retried exactly. Its ack must not clear
    // edits made after that request was captured in the recovered page.
-   this.pendingGeneration=this.pending?(JSON.stringify(value.pending.text)===JSON.stringify(value.fields.text)&&JSON.stringify(value.pending.sections)===JSON.stringify(value.fields.sections)&&value.pending.title===value.fields.title?this.generation:this.generation-1):0;
+   this.pendingGeneration=this.pending?(JSON.stringify(fields(value.pending))===JSON.stringify(fields(value.fields))?this.generation:this.generation-1):0;
    this.copyPending=value.copyPending?clone(value.copyPending):null;
    if(this.copyPending){this.copyPending.generation=this.generation-(value.copyPending.generation!==value.generation?1:0);this.blocked=true}
    this.message=this.blocked?'Copie récupérée — conflit avec la version serveur':'Copie locale récupérée';this.writeArea();if(this.title)this.title.value=this.doc.title;this.persist();this.paint();if(!this.blocked)this.timer=setTimeout(()=>this.save(),700);
@@ -120,6 +121,7 @@ window.LinksDescriptionEditor=(()=>{'use strict';
    try{anchors=S.bind(content,anchors,anchor.id,anchor.start,end);this.apply(content,{anchors,selection:{start:anchor.start,end}})}catch(error){this.message=error.message;this.paint()}
   }
   paint(){
+   this.analysis.schedule();
    if(!this.host?.isConnected||this.host.editorOwner!==this)return;
    this.status.textContent=this.saving?'Enregistrement…':this.message;this.status.dataset.state=this.blocked?'conflict':this.dirty()?'pending':'saved';this.localWarning.textContent=this.warning;
    this.count.textContent=S.points(this.doc.text).length.toLocaleString('fr-FR')+' caractères';this.undoButton.disabled=!this.history.length;this.redoButton.disabled=!this.future.length;
@@ -127,6 +129,7 @@ window.LinksDescriptionEditor=(()=>{'use strict';
    this.recoveryBox.replaceChildren();for(const {key,value} of this.recoveries()){
     const row=node('div',undefined,'description-recovery');row.append(node('p','Copie locale du '+new Date(value.savedAt).toLocaleString('fr-FR')+' (cet appareil, éventuellement un autre onglet)'),action('Voir le texte',()=>dialog('Copie locale — lecture seule',value.fields.text)),action('Reprendre cette copie',()=>this.recover(key,value)),action('Supprimer cette copie locale',()=>{if(confirm('Supprimer cette récupération locale ?')){try{localStorage.removeItem(key)}catch{}this.paint()}}));this.recoveryBox.append(row);
    }
+   if(this.mode==='analysis'){this.analysis.render(this.assistant);return}
    this.assistant.replaceChildren();
    if(this.mode==='preview'){this.assistant.append(node('pre',this.doc.text,'description-text'));return}
    const order=[...this.doc.sections].sort((a,b)=>(a.start??Infinity)-(b.start??Infinity));
@@ -165,7 +168,7 @@ window.LinksDescriptionEditor=(()=>{'use strict';
    const resize=value=>{this.ratio=Math.max(45,Math.min(80,value));layout.style.gridTemplateColumns=`minmax(0,${this.ratio}fr) 8px minmax(280px,${100-this.ratio}fr)`;separator.setAttribute('aria-valuenow',String(Math.round(this.ratio)))};resize(this.ratio);
    separator.addEventListener('keydown',event=>{if(['ArrowLeft','ArrowRight'].includes(event.key)){event.preventDefault();resize(this.ratio+(event.key==='ArrowLeft'?-2:2))}});
    separator.addEventListener('pointerdown',event=>{event.preventDefault();separator.setPointerCapture(event.pointerId);const move=e=>{const rect=layout.getBoundingClientRect();resize(100*(e.clientX-rect.left)/rect.width)};const done=()=>{separator.removeEventListener('pointermove',move);separator.removeEventListener('pointerup',done);separator.removeEventListener('pointercancel',done)};separator.addEventListener('pointermove',move);separator.addEventListener('pointerup',done);separator.addEventListener('pointercancel',done)});
-   const tabs=node('div',undefined,'description-anchor-actions');tabs.append(action('Sections',()=>{this.mode='sections';this.paint()}),action('Aperçu du texte',()=>{this.mode='preview';this.paint()}));this.assistant=node('div',undefined,'description-assistant-content');right.append(node('h2','Assistant de rédaction'),node('p','Les URL collées restent intactes. Un lien marchand inséré directement ne fournit pas de statistiques de clics LinKs.','muted'),tabs,this.assistant);
+   const tabs=node('div',undefined,'description-anchor-actions');tabs.append(action('Analyse et catalogue',()=>{this.mode='analysis';this.paint()}),action('Sections',()=>{this.mode='sections';this.paint()}),action('Aperçu du texte',()=>{this.mode='preview';this.paint()}));this.assistant=node('div',undefined,'description-assistant-content');right.append(node('h2','Assistant de rédaction'),node('p','Les URL collées restent intactes. Un lien marchand inséré directement ne fournit pas de statistiques de clics LinKs.','muted'),tabs,this.assistant);
    layout.append(left,separator,right);host.append(toolbar,this.status,this.count,this.localWarning,this.conflict,this.recoveryBox,layout);this.paint();
   }
  }
