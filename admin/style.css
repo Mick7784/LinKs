@@ -3341,7 +3341,7 @@ button.drag-handle{touch-action:none;user-select:none;min-width:44px;min-height:
  #statistics .statistics-kpis .kpi-label [data-icon]{width:24px;height:28px;flex:0 0 24px}
  #statistics .statistics-kpis .kpi-label svg{width:20px;height:20px}
  #statistics .statistics-kpis .kpi-label>span:first-child{font-size:12px}
- #statistics .statistics-kpis article>strong{grid-column:1;margin:0;font-size:25px}
+ #statistics .statistics-kpis article>strong{grid-column:1;margin:0;font-size:25px;min-width:0;width:100%;line-height:1.2}
  #statistics .statistics-kpis article>small{font-size:11px;margin:0}
  #statistics .statistics-kpis .kpi-action{min-height:36px;font-size:11px;margin:0}
  #statistics .daily-date-navigation{width:100%}
@@ -3352,4 +3352,8 @@ button.drag-handle{touch-action:none;user-select:none;min-width:44px;min-height:
  .tracked-item-actions [data-tracked-action="archive"],.tracked-item-actions [data-tracked-action="disable"],.tracked-item-actions [data-tracked-action="enable"],.tracked-item-actions [data-tracked-action="restore"]{flex:1 1 40%;min-height:36px}
  .mobile-shortcuts{position:sticky;top:0;z-index:20}
  #statistics [id],#campaign-planning,#tracked-links-partners,#tracked-links-library-heading{scroll-margin-top:80px}
+}
+@media(max-width:360px){
+ #statistics .statistics-kpis article>strong{font-size:22px}
+ #statistics .statistics-kpis article>strong.is-long-number{font-size:16px}
 }

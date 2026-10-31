@@ -28,6 +28,8 @@ const {tmpdir}=require('node:os'),{join,resolve}=require('node:path');
   await page.selectOption('#tracked-saved-source',{label:'YouTube'});await page.locator('#tracked-saved-copy').click();await page.waitForFunction(()=>Boolean(window.copiedLink));
   const copied=await page.evaluate(()=>window.copiedLink);assert.equal(new URL(copied).origin,"https://links.example");assert.match(new URL(copied).pathname,/^\/[A-Za-z0-9_-]+$/);
   const redirect=await fetch('http://127.0.0.1:3003'+new URL(copied).pathname,{redirect:'manual'});assert.equal(redirect.status,302);assert.equal(redirect.headers.get('location'),'https://example.com/new');
+  const savedRow=page.locator('#tracked-list [data-tracked-id]').filter({hasText:'Lien créé depuis l’accueil'});await savedRow.locator('select').selectOption({label:'YouTube'});
+  await nav('dashboard');await nav('tracked-links');await savedRow.waitFor();assert.equal(await savedRow.locator('select option:checked').textContent(),'YouTube','source choice survives navigation');
   await page.locator('[data-management-jump="tracked-links-partners"]').click();assert.equal(await page.evaluate(()=>document.activeElement.id),'tracked-links-partners-heading');
   await nav('dashboard');await page.locator(`[data-edit-campaign="${campaign.id}"]`).click();await page.locator('#block-dialog[open]').waitFor();assert.equal(await page.locator('#block-form [name=title]').inputValue(),'Campagne repère');await page.keyboard.press('Escape');
   await nav('campaigns');const order=await page.evaluate(()=>document.querySelector('#campaigns-list').getBoundingClientRect().top<document.querySelector('#campaign-planning').getBoundingClientRect().top);assert(order);
@@ -36,7 +38,7 @@ const {tmpdir}=require('node:os'),{join,resolve}=require('node:path');
   await page.locator('[data-metric-scope=tracked]').click();assert.equal(await page.locator('#analysis-scope').inputValue(),'tracked');assert.equal(await page.locator('#daily-category').inputValue(),'tracked');
   await page.locator('.daily-inspect-action').click();assert.equal(await page.evaluate(()=>document.activeElement.id),'daily-detail-title');
   await page.locator('[data-statistics-jump=statistics-partners]').click();assert(await page.locator('#statistics-partners').getAttribute('open')!==null);
-  await page.fill('#analysis-search','introuvable');await page.locator('#analysis-reset').click();assert.equal(await page.locator('#analysis-search').inputValue(),'');
+  await page.selectOption('#analysis-sort','name');await page.fill('#analysis-search','introuvable');await page.locator('#analysis-reset').click();assert.equal(await page.locator('#analysis-search').inputValue(),'');assert.equal(await page.locator('#analysis-sort').inputValue(),'name','clearing search preserves sorting');
   const unchanged=await page.locator('.statistics-kpis strong').allTextContents();
   // A failed refresh preserves the last report and offers a real retry.
   await page.route('**/api/stats?**',route=>route.fulfill({status:503,json:{error:'Rapport indisponible'}}));

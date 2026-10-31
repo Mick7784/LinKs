@@ -203,7 +203,7 @@ function filterAnalysis(){
  drawCampaignRanking();drawSources();syncAnalysis();
 }
 $("analysis-controls").onsubmit=event=>event.preventDefault();
-$("analysis-reset").onclick=()=>{$("analysis-search").value="";$("analysis-sort").value="total";filterAnalysis();$("analysis-search").focus()};
+$("analysis-reset").onclick=()=>{$("analysis-search").value="";filterAnalysis();$("analysis-search").focus()};
 function jumpToStatistics(id){
  const target=$(id);if(!target)return;
  if(target.tagName==="DETAILS")target.open=true;

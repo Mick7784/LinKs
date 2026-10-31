@@ -154,7 +154,8 @@ db.executemany('INSERT INTO counts VALUES(?,?,?,?,?)',[(day,source,'tracked','tr
      const bounds=label.closest('article').getBoundingClientRect();
      return label.scrollWidth>label.clientWidth||[...label.children].some(child=>{const r=child.getBoundingClientRect();return r.left<bounds.left-1||r.right>bounds.right+1})?[{label:label.textContent,client:label.clientWidth,scroll:label.scrollWidth}]:[];
     }));assert.deepEqual(overflow,[],`KPI title/icon overflow ${context}`);
-    assert(await page.locator('#statistics .statistics-kpis article > strong').evaluateAll(numbers=>numbers.every(n=>n.getBoundingClientRect().height<=parseFloat(getComputedStyle(n).lineHeight)+1&&n.scrollWidth<=n.clientWidth)),`KPI numbers remain readable on one line ${context}`);
+    const numberOverflow=await page.locator('#statistics .statistics-kpis article > strong').evaluateAll(numbers=>numbers.flatMap(n=>n.getBoundingClientRect().height>parseFloat(getComputedStyle(n).lineHeight)+1||n.scrollWidth>n.clientWidth?[{id:n.id,text:n.textContent,width:n.clientWidth,scroll:n.scrollWidth,height:n.getBoundingClientRect().height,lineHeight:getComputedStyle(n).lineHeight,fontSize:getComputedStyle(n).fontSize}]:[]));
+    assert.deepEqual(numberOverflow,[],`KPI numbers remain readable on one line ${context}`);
    };
    await checkKpiLabels(`${width} ${theme}`);
    if(width===320||width===390){
