@@ -54,6 +54,7 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/story-browser" playwright
           "$RUNNER_TEMP/story-browser/node_modules/.bin/playwright" install --with-deps chromium
           python3 -m pip install Pillow
+          python3 scripts/descriptions_test.py
           python3 scripts/storage_test.py
           python3 scripts/images_test.py
           python3 scripts/analytics_test.py
@@ -97,6 +98,7 @@ jobs:
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/admin-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/admin-ui-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/page-editor-browser-test.cjs
+          NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/descriptions-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/tracked-library-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/tracked-title-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/tracked-titles-browser-test.cjs

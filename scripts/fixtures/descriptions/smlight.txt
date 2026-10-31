@@ -1,0 +1,53 @@
+Dans cette vidéo, je t’explique simplement comment fonctionne un réseau Zigbee : le rôle du coordinateur, des routeurs et des appareils terminaux, ainsi que l’importance du maillage pour améliorer la portée et la stabilité du réseau.
+
+Je te montre aussi comment installer des appareils Zigbee dans un endroit éloigné de la maison, comme un garage, un box en sous-sol ou un cabanon.
+
+Avec le SMLIGHT SMHub Nano, il est possible soit de relier ce réseau à Home Assistant avec du CPL et MQTT, soit de créer un réseau Zigbee totalement autonome grâce à Zigbee2MQTT et Node-RED directement intégrés.
+
+Le Zigbee n’a pas besoin du Wi-Fi pour fonctionner. Dans la solution présentée avec les boîtiers CPL, ceux-ci servent uniquement à faire passer le réseau informatique jusqu’au Hub Nano afin de communiquer avec Home Assistant.
+
+🔔 Si tu as des questions sur ton réseau Zigbee ou sur cette installation, pose-les en commentaire. Je réponds à tout ce que je peux.
+
+🙏 SOUTENIR LA CHAÎNE DOMOTIK STUDIO
+👍 Like, abonne-toi et active la cloche
+⭐ Sur mobile, pense au BOOST pour soutenir la vidéo
+🔁 Partage cette vidéo
+
+☕ Sinon, vous pouvez aussi soutenir la chaîne et mes projets en m’offrant un café :
+👉 https://ko-fi.com/domotik_studio
+
+Merci pour votre soutien ❤️
+
+🛒 LIENS AFFILIÉS / LIENS UTILES
+Si tu passes par les liens ci-dessous pour soutenir la chaîne, un grand merci 🙏
+Ça ne te coûte rien de plus et ça m’aide énormément à continuer à créer du contenu sur la domotique, Home Assistant, Zigbee et la maison connectée.
+
+🟠 Chez Domadoo
+✅ SMLIGHT SMHub Nano MG24 : https://www.domadoo.fr/fr/produits-de-domotique/8664-smlight-smhub-nano-mg24-hub-sous-linux-zigbee2mqtt-node-red-et-matterbridge.html?domid=117
+✅ Injecteur PoE SMLIGHT 48 V / 24 W : https://www.domadoo.fr/fr/accessoires-electriques/7614-smlight-injecteur-poe-48v-24w-pour-dongle-smlight.html?domid=117
+✅ Boutique Domadoo : https://www.domadoo.fr/fr/?domid=117
+
+🟠 Sur Amazon
+✅ Kit CPL avec Wi-Fi : https://amzn.to/4yj9H0L
+✅ Kit CPL : https://amzn.to/44ZZQzw
+✅ Injecteur PoE : https://amzn.to/4aKeqia
+
+🎥 VIDÉO COMPLÉMENTAIRE
+
+✅ Mon test du coordinateur SMLIGHT MR1-U : https://youtu.be/eRgBHrvzJDw
+
+🔔 CHAPITRAGE
+00:00 - Introduction
+00:23 - Comment fonctionne un réseau Zigbee ?
+02:34 - Améliorer la portée et la stabilité
+03:35 - Bien choisir son coordinateur Zigbee
+06:11 - Installer du Zigbee dans un lieu éloigné
+07:58 - Relier le Hub Nano à Home Assistant avec du CPL
+10:19 - Créer un réseau Zigbee autonome avec Node-RED
+12:05 - Conclusion
+
+🔗 REJOINDRE LA COMMUNAUTÉ
+✅ Instagram : https://www.instagram.com/domotik_studio/
+✅ Discord AyLabs : https://discord.gg/XYKJEkPtRS
+
+#Zigbee #SMLIGHT #SMHubNano #HubNano #Zigbee2MQTT #NodeRED #HomeAssistant #MQTT #CPL #ReseauZigbee #Domotique #MaisonConnectee #SmartHome #CoordinateurZigbee #Automatisation #DomotiKStudio

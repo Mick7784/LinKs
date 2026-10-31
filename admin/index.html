@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>LinKs by DomotiK Studio · Administration</title><link rel="icon" href="/mark.svg">
-<script src="/theme-init.js"></script><link rel="stylesheet" href="/style.css"><script src="/dates.js" defer></script><script src="/preview/cards.js" defer></script><script src="/calendar.js" defer></script><script src="/preview/theme.js" defer></script><script src="/uploads.js" defer></script><script src="/navigation.js" defer></script><script src="/charts.js" defer></script><script src="/collection.js" defer></script><script src="/partner-report.js" defer></script><script src="/source-platforms.js" defer></script><script src="/daily-report.js" defer></script><script src="/app.js" defer></script><script src="/page-editor.js" defer></script><script src="/tracking.js" defer></script><script src="/title-batch.js" defer></script><script src="/link-batch.js" defer></script><script src="/appearance.js" defer></script><script src="/shortcuts.js" defer></script><script src="/storage.js" defer></script><script src="/settings.js" defer></script><script src="/affiliation.js" defer></script><link rel="stylesheet" href="/affiliation.css"><link rel="stylesheet" href="/appearance.css"><link rel="stylesheet" href="/page-editor.css"></head>
+<script src="/theme-init.js"></script><link rel="stylesheet" href="/style.css"><script src="/dates.js" defer></script><script src="/preview/cards.js" defer></script><script src="/calendar.js" defer></script><script src="/preview/theme.js" defer></script><script src="/uploads.js" defer></script><script src="/navigation.js" defer></script><script src="/charts.js" defer></script><script src="/collection.js" defer></script><script src="/partner-report.js" defer></script><script src="/source-platforms.js" defer></script><script src="/daily-report.js" defer></script><script src="/app.js" defer></script><script src="/page-editor.js" defer></script><script src="/tracking.js" defer></script><script src="/title-batch.js" defer></script><script src="/link-batch.js" defer></script><script src="/appearance.js" defer></script><script src="/shortcuts.js" defer></script><script src="/storage.js" defer></script><script src="/settings.js" defer></script><script src="/affiliation.js" defer></script><link rel="stylesheet" href="/affiliation.css"><link rel="stylesheet" href="/appearance.css"><link rel="stylesheet" href="/page-editor.css"><script src="/descriptions.js" defer></script><link rel="stylesheet" href="/descriptions.css"></head>
 <body class="admin-shell">
 <a class="skip-link" href="#main-content">Aller au contenu</a>
 <aside class="sidebar" aria-label="Links">
@@ -16,6 +16,7 @@
  </div>
  <div class="nav-group" role="group" aria-label="Gérer les liens"><p class="nav-group-label">Gérer les liens</p>
  <button data-tab="tracked-links"><span class="nav-icon" data-icon="links" aria-hidden="true"></span><span>Liens suivis</span></button>
+ <button data-tab="descriptions"><span class="nav-icon" data-icon="links" aria-hidden="true"></span><span>Descriptions</span></button>
  <button data-tab="campaigns"><span class="nav-icon" data-icon="story" aria-hidden="true"></span><span>Campagnes</span></button>
  <button data-tab="permanent-links"><span class="nav-icon" data-icon="external" aria-hidden="true"></span><span>Liens permanents</span></button>
  </div>
@@ -37,6 +38,7 @@
  <nav class="mobile-shortcuts" aria-label="Accès fréquents"><button type="button" data-mobile-view="statistics">Statistiques</button><button type="button" data-mobile-view="tracked-links">Liens suivis</button><button type="button" data-mobile-view="campaigns">Campagnes</button></nav>
  <main id="main-content" tabindex="-1">
 <p id="notice" role="status" aria-live="polite"></p>
+<section class="view" id="descriptions" aria-label="Descriptions YouTube"></section>
 <section class="view" id="affiliation" aria-label="Statistiques d’affiliation"></section>
 <section class="view active" id="dashboard">
  <div class="section-head"><div><h1>Tableau de bord</h1><p>Votre activité, vos liens et vos campagnes en un regard.</p></div><div class="quick-create"><button type="button" class="primary" data-quick-create="tracked">Créer un lien suivi</button><button type="button" data-quick-create="campaign">Créer une campagne</button><button type="button" data-open-view="content">Organiser la page</button></div>
