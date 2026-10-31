@@ -1,5 +1,36 @@
 # Changelog
 
+## V1.4.5
+
+# V1.4.5 — Assistant de description YouTube
+
+### Nouveautés
+
+- Nouvelle page **Descriptions** du back-office LinKs, optimisée pour PC : éditeur libre avec panneau assistant, brouillons et modèles configurables.
+- Modèle **YouTube — DomotiK Studio** avec sept sections personnalisables, sous-sections marchandes, textes permanents et associations aux liens suivis déjà existants.
+- Détection des URL et des produits explicitement mentionnés, reconnaissance des liens courts, des sources YouTube historiques et des doublons, sans générer de clics artificiels.
+- Recherche des produits à la demande, globalement ou individuellement, avec sélection indépendante des marchands et conservation des choix.
+- Comparaison avant/après, opérations validées séparément, création ou réutilisation contrôlée des liens, traitement des erreurs partielles et reprise sans doublons.
+- Finalisation et copie d'une description YouTube (limite de 5 000 caractères), historique immuable des versions et restauration en nouveau brouillon.
+
+### Affiliations et limites
+
+- **Domadoo** : recherche assistée sur le site, collage de la fiche puis traitement via les règles d'affiliation existantes. Aucune recherche automatisée non autorisée n'est activée.
+- **Amazon** : lien affilié créé sur Amazon par l'utilisateur puis collé dans LinKs, conservé à l'identique et inséré directement. Ce mode ne mesure pas de clics dans LinKs et ne garantit pas à lui seul l'attribution des commissions.
+- Les emplacements ambigus et les déplacements de liens intégrés dans une phrase requièrent confirmation ou correction manuelle.
+- L'annulation du texte ne supprime pas les fiches de liens créées lors d'une application déjà validée.
+
+### Conservation et validation
+
+- Stockage ajouté dans la base SQLite existante ; modèles, brouillons et versions inclus dans les sauvegardes/restaurations.
+- Réutilisation des services de titres, partenaires, doublons et sources sans migration destructive de la bibliothèque historique.
+- Tests Python, JavaScript, navigateurs et contrôle des images jetables AMD64/ARM64 validés sur la PR #64.
+- **Aucun déploiement automatique sur le VPS** : sauvegarder la base avant mise à jour et déployer manuellement l'image officielle après vérification de la publication.
+
+### Référence
+
+- [PR #64 — Assistant de description](https://github.com/Mick7784/LinKs/pull/64)
+
 ## V1.4.4
 
 # V1.4.4 — Connexion automatique Domadoo
