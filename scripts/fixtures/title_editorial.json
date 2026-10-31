@@ -223,5 +223,10 @@
     "case": "existing_brand_variant",
     "current": "NABU CASA",
     "expected": "NABU CASA"
+  },
+  {
+    "case": "unknown_unicode_names",
+    "current": "dİscord dıscord ſonoff ézigbee zigbeeé",
+    "expected": "dİscord dıscord ſonoff ézigbee zigbeeé"
   }
 ]

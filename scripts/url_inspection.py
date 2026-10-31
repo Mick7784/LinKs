@@ -592,7 +592,7 @@ _EDITORIAL_BRANDS = ('Home Assistant Green', 'Home Assistant',
                      'Zigbee', 'Discord', 'Instagram', 'MOES', 'SONOFF',
                      'Aqara', 'Tuya', 'Bluetooth')
 _EDITORIAL_BRAND_PATTERN = re.compile(
-    r'(?<![\w@./+#:-])(?:' + '|'.join(map(re.escape, _EDITORIAL_BRANDS)) + r')(?![\w@./+#:-])', re.I)
+    r'(?<![\w@./+#:-])(?ai:' + '|'.join(map(re.escape, _EDITORIAL_BRANDS)) + r')(?![\w@./+#:-])')
 _EDITORIAL_CANONICAL = {name.casefold(): name for name in _EDITORIAL_BRANDS}
 
 
