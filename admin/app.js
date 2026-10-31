@@ -13,7 +13,7 @@ const statusClass=value=>({Actif:"active",Programmé:"scheduled",Expiré:"expire
 function activate(id){StudioNavigation.activate(id,document.querySelectorAll(".view"),document.querySelectorAll(".tabs button"));syncNavigation();$("topbar-current").textContent=document.querySelector(".tabs button.active")?.textContent.trim()||"Links";if(id==="dashboard"||id==="statistics"){$(id+"-filters").append($("analytics-filters"));filterAnalysis();loadStats()}if(id==="content")window.LinksPageEditor?.load();if(["campaigns","permanent-links"].includes(id))Promise.resolve(window.LinksTracking?.load()).then(loadContent);if(id==="tracked-links"){window.LinksTracking?.load();window.LinksTracking?.loadPartners()}if(id==="buttons")loadButtons();if(id==="archives")loadArchives();if(id==="appearance")window.LinksAppearance?.load();else window.LinksAppearance?.cancelUploads();if(id!=="settings")profileUploads.forEach(g=>g.invalidate());if(id==="settings"){loadSettings().then(()=>window.LinksSettings?.open())}}
 const navigation=$("navigation"),menuToggle=$("menu-toggle"),mobileNavigation=matchMedia("(max-width:760px)");
 function closeMenu(restoreFocus=false){navigation.classList.remove("open");menuToggle.setAttribute("aria-expanded","false");if(restoreFocus)menuToggle.focus()}
-function syncNavigation(){document.querySelectorAll(".tabs button").forEach(button=>{const active=button.classList.contains("active");if(active){button.setAttribute("aria-current","page");$("menu-current").textContent=button.textContent.trim()}else button.removeAttribute("aria-current")})}
+function syncNavigation(){document.querySelectorAll(".mobile-shortcuts button").forEach(button=>{const active=$(button.dataset.mobileView)?.classList.contains("active");if(active)button.setAttribute("aria-current","page");else button.removeAttribute("aria-current")});document.querySelectorAll(".tabs button").forEach(button=>{const active=button.classList.contains("active");if(active){button.setAttribute("aria-current","page");$("menu-current").textContent=button.textContent.trim()}else button.removeAttribute("aria-current")})}
 menuToggle.addEventListener("click",()=>{const open=navigation.classList.toggle("open");menuToggle.setAttribute("aria-expanded",String(open))});
 navigation.addEventListener("keydown",event=>{if(event.key==="Escape"&&navigation.classList.contains("open")){event.preventDefault();closeMenu(true)}});
 document.addEventListener("click",event=>{if(!navigation.contains(event.target))closeMenu()});
@@ -203,17 +203,30 @@ function filterAnalysis(){
  drawCampaignRanking();drawSources();syncAnalysis();
 }
 $("analysis-controls").onsubmit=event=>event.preventDefault();
-const statisticsSearchTools=document.querySelector(".statistics-search-tools");
-document.addEventListener("click",event=>{if(!statisticsSearchTools.contains(event.target))statisticsSearchTools.open=false});
-statisticsSearchTools.addEventListener("keydown",event=>{if(event.key==="Escape"){statisticsSearchTools.open=false;statisticsSearchTools.querySelector("summary").focus()}});
+$("analysis-reset").onclick=()=>{$("analysis-search").value="";filterAnalysis();$("analysis-search").focus()};
+function jumpToStatistics(id){
+ const target=$(id);if(!target)return;
+ if(target.tagName==="DETAILS")target.open=true;
+ const heading=target.matches("h2,h3")?target:target.querySelector("summary,h2,h3,h4");
+ target.scrollIntoView({block:"start"});
+ if(heading){heading.tabIndex=-1;heading.focus({preventScroll:true})}
+}
+$("statistics").addEventListener("click",event=>{
+ const jump=event.target.closest("[data-statistics-jump]");if(jump)jumpToStatistics(jump.dataset.statisticsJump);
+ const metric=event.target.closest("[data-metric-scope]");if(!metric)return;
+ const scope=metric.dataset.metricScope;$("analysis-scope").value=scope;
+ if(["public","tracked","campaigns"].includes(scope)){$("daily-category").value=scope;$("daily-category").dispatchEvent(new Event("change"))}
+ if(scope==="public"||scope==="tracked"){$("top-link-type").value=scope;showTopLinkType()}
+ syncAnalysis();jumpToStatistics(metric.dataset.metricTarget||"analysis-history");
+});
 $("analysis-search").oninput=filterAnalysis;$("analysis-sort").onchange=filterAnalysis;
-$("analysis-scope").onchange=syncAnalysis;
+$("analysis-scope").onchange=()=>{const scope=analysisScope();if(scope!=="copies"){$("daily-category").value=["public","tracked","campaigns"].includes(scope)?scope:"all";$("daily-category").dispatchEvent(new Event("change"))}syncAnalysis()};
 $("campaign-metric").onchange=()=>{drawCampaignRanking();syncAnalysis()};
 function focusStatisticsSection(id){
  if(id==="statistics-public"||id==="statistics-tracked"){
   $("top-link-type").value=id==="statistics-public"?"public":"tracked";showTopLinkType();
  }
- const section=$(id);section.scrollIntoView({block:"start"});section.querySelector("h2").focus({preventScroll:true});
+ const section=$(id);section.scrollIntoView({block:"start"});section.querySelector("h2,h3").focus({preventScroll:true});
 }
 function showTopLinkType(){
  const type=$("top-link-type").value;
@@ -232,7 +245,7 @@ $("statistics").addEventListener("click",async event=>{
 });
 document.addEventListener("click",event=>{const button=event.target.closest("[data-open-statistics]");if(button){
  const scope=button.dataset.openStatistics;$("analysis-scope").value=["public","shared","campaigns","copies"].includes(scope)?scope:"all";
- $("analysis-search").value=button.dataset.analysisQuery||"";activate("statistics");
+ $("analysis-search").value=button.dataset.analysisQuery||"";$("daily-category").value=scope==="shared"?"tracked":["public","campaigns"].includes(scope)?scope:"all";$("daily-category").dispatchEvent(new Event("change"));activate("statistics");
  focusStatisticsSection(({shared:"statistics-tracked",public:"statistics-public",campaigns:"statistics-campaigns",copies:"statistics-campaigns"})[scope]||"statistics-overview");
 }});
 let chartRenderedWidth=0;
@@ -240,9 +253,9 @@ function chart(days,labels=["Visites","Clics publics"]){const statistics=$("stat
 
 let statsRequest=0;
 async function loadStats(force=false){if(force===true)reportCache.clear();const request=++statsRequest;let range;
- try{range=dates();$("stats-range-error").textContent=""}catch(error){$("stats-range-error").textContent=error.message;$("analysis-grid").setAttribute("aria-busy","false");return}
+ try{range=dates();$("stats-range-error").textContent=""}catch(error){$("stats-range-error").textContent=error.message;$("analysis-grid").setAttribute("aria-busy","false");$("stats-loading").hidden=true;$("stats-retry").hidden=true;return}
  try{
- $("analysis-grid").setAttribute("aria-busy","true");
+ $("analysis-grid").setAttribute("aria-busy","true");$("stats-loading").hidden=false;$("stats-retry").hidden=true;
  const [data,metadata]=await Promise.all([reportApi("/api/stats?"+new URLSearchParams(range)),reportApi("/api/tracking-sources").catch(()=>null)]),stories=data.stories||[],tracked=data.tracked||[],previous=$("source").value,previousLabel=$("source").selectedOptions[0]?.textContent;
  if(request!==statsRequest)return;
  const sameMetadata=sourceMetadata===(metadata?.items||null);sourceMetadata=metadata?.items||null;
@@ -296,7 +309,8 @@ async function loadStats(force=false){if(force===true)reportCache.clear();const 
  document.querySelectorAll(".statistics-kpis strong").forEach(node=>node.classList.toggle("is-long-number",node.textContent.length>8));
  drawSources();syncAnalysis();renderedData=data;renderedSource=source;
 
- }catch(error){$("stats-range-error").textContent="Actualisation impossible. Les derniers résultats affichés correspondent au filtre précédent.";say(error.message,true)}finally{if(request===statsRequest)$("analysis-grid").setAttribute("aria-busy","false")}}
+ }catch(error){if(request!==statsRequest)return;$("stats-retry").hidden=false;$("stats-range-error").textContent="Actualisation impossible. Les derniers résultats affichés correspondent au filtre précédent.";say(error.message,true)}finally{if(request===statsRequest){$("analysis-grid").setAttribute("aria-busy","false");$("stats-loading").hidden=true}}}
+$("stats-retry").onclick=()=>loadStats(true);
 $("filters").onsubmit=event=>event.preventDefault();
 $("period").addEventListener("change",()=>{const custom=$("period").value==="custom";document.querySelectorAll("[data-custom-period]").forEach(node=>node.hidden=!custom);if(custom&&!$("stats-start").value){$("period").value="14";const range=dates();$("stats-start").value=range.start;$("stats-end").value=range.end;$("period").value="custom"}loadStats()});
 $("stats-start").onchange=loadStats;$("stats-end").onchange=loadStats;$("source").addEventListener("change",loadStats);new ResizeObserver(()=>{const width=$("chart").clientWidth;if(width>0&&width!==chartRenderedWidth&&state.chart.length)chart(state.chart,state.chartLabels)}).observe($("chart"));
@@ -594,12 +608,15 @@ async function loadCampaigns(metrics=new Map(),request=0){try{
  campaignRows=[...allCampaigns.values()].map(item=>{const value=metrics.get(item.id)||{};return {id:item.id,name:item.internal_name,entity:statisticsEntities.has(item.id)?{type:"content",id:item.id}:null,metrics:{clicks:value.clicks||0,shared:value.shared||0,impressions:value.impressions||0,copies:value.copies||0},details:[item.status,"Impressions : "+fmt.format(value.impressions||0),"Clics publics : "+fmt.format(value.clicks||0),"Ouvertures partagées : "+fmt.format(value.shared||0),"Copies : "+fmt.format(value.copies||0),"CTR page : "+(value.impressions?(value.clicks*100/value.impressions).toLocaleString("fr-FR",{maximumFractionDigits:1})+" %":"—")]}});
  drawCampaignRanking();
  const items=campaigns.filter(item=>item.type!=="classic"&&item.status==="Actif").map(item=>{const value=metrics.get(item.id)||{clicks:0,shared:0,impressions:0,copies:0};return {...item,...value,pageClicks:value.clicks,sharedClicks:value.shared,totalClicks:value.clicks+value.shared,ctr:value.impressions?Math.round(value.clicks*1000/value.impressions)/10:null}});
- $("active-campaigns").innerHTML=items.length?items.map(item=>`<article class="campaign-card">${campaignVisual(item)?`<img src="${esc(LinksTheme.asset(campaignVisual(item)))}" alt="" loading="lazy">`:'<span class="type-mark" aria-hidden="true">↗</span>'}<div><strong>${esc(item.internal_name)}</strong><small>${esc(periodText(item.start_at||item.created_at))} → ${esc(periodText(item.end_at))}</small><span class="status state-${esc(item.selection_state)}">${esc(campaignLabel(item))}</span><div class="campaign-metrics"><span><small>Clics publics</small><b>${fmt.format(item.pageClicks||0)}</b></span><span><small>Ouvertures partagées</small><b>${fmt.format(item.sharedClicks||0)}</b></span></div><button type="button" data-open-statistics="campaigns">Statistiques</button></div><button type="button" data-open-content aria-label="Gérer ${esc(item.internal_name)}">→</button></article>`).join(""):'<p class="empty">Aucune campagne en cours.</p>';
+ $("active-campaigns").innerHTML=items.length?items.map(item=>`<article class="campaign-card">${campaignVisual(item)?`<img src="${esc(LinksTheme.asset(campaignVisual(item)))}" alt="" loading="lazy">`:'<span class="type-mark" aria-hidden="true">↗</span>'}<div><strong>${esc(item.internal_name)}</strong><small>${esc(periodText(item.start_at||item.created_at))} → ${esc(periodText(item.end_at))}</small><span class="status state-${esc(item.selection_state)}">${esc(campaignLabel(item))}</span><div class="campaign-metrics"><span><small>Clics publics</small><b>${fmt.format(item.pageClicks||0)}</b></span><span><small>Ouvertures partagées</small><b>${fmt.format(item.sharedClicks||0)}</b></span></div><button type="button" data-open-statistics="campaigns" data-analysis-query="${esc(item.internal_name)}">Statistiques</button></div><button type="button" data-edit-campaign="${esc(item.id)}" aria-label="Modifier ${esc(item.internal_name)}">Modifier</button></article>`).join(""):'<p class="empty">Aucune campagne en cours.</p>';
  }catch(error){$("active-campaigns").textContent=error.message}}
 
 document.addEventListener("click",event=>{
- const destination=event.target.closest("[data-open-view]")?.dataset.openView||(event.target.closest("[data-open-content]")?"campaigns":null);
- if(destination){activate(destination);const heading=$(destination).querySelector("h1,h2");heading?.setAttribute("tabindex","-1");heading?.focus()}
+ const quick=event.target.closest("[data-quick-create]");if(quick){if(quick.dataset.quickCreate==="tracked")window.LinksTracking.createEntity();else openBlock({},"promo")}
+ const edit=event.target.closest("[data-edit-campaign]");if(edit){const item=statisticsEntities.get(edit.dataset.editCampaign);if(item)openBlock(item)}
+ const jump=event.target.closest("[data-management-jump]");if(jump){const target=$(jump.dataset.managementJump);if(target){target.scrollIntoView({block:"start"});const heading=target.matches("h2,h3")?target:target.querySelector("h2,h3");if(heading){heading.tabIndex=-1;heading.focus({preventScroll:true})}}}
+ const destination=event.target.closest("[data-open-view]")?.dataset.openView||event.target.closest("[data-mobile-view]")?.dataset.mobileView||(event.target.closest("[data-open-content]")?"campaigns":null);
+ if(destination){activate(destination);closeMenu();const heading=$(destination).querySelector("h1,h2");heading?.setAttribute("tabindex","-1");heading?.focus()}
  document.querySelectorAll(".row-menu[open]").forEach(menu=>{if(!menu.contains(event.target)||event.target.closest("[data-action]"))menu.open=false});
 });
 document.addEventListener("keydown",event=>{if(event.key==="Escape")document.querySelectorAll(".row-menu[open]").forEach(menu=>{menu.open=false;menu.querySelector("summary").focus()})});

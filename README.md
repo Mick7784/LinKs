@@ -52,6 +52,10 @@ LinKs est une page de liens auto-hébergée, personnalisable et accompagnée d�
 
 L’administration possède sa propre identité LinKs ; votre page publique conserve votre identité.
 
+Les outils sont regroupés par usage : **Analyser**, **Gérer les liens**, **Composer la page**, **Administrer**. Sur mobile, Statistiques, Liens suivis et Campagnes restent accessibles directement pendant le défilement. L’accueil propose la création immédiate d’un lien suivi ou d’une campagne et l’ouverture des fiches des campagnes en cours.
+
+Dans Statistiques, les indicateurs mènent au détail utile : tendance, jour sélectionné, liens et fiches. Période, source, recherche et tri restent visibles ; les catégories d’événements sont distinctes. Après création d’un lien suivi, sa source et sa copie sont accessibles sans rechercher sa ligne. La liste des campagnes précède le planning et les partenaires disposent d’un accès direct depuis la bibliothèque.
+
 - Navigation latérale sur ordinateur et menu compact sur mobile.
 - Pages **Campagnes** (gestion, planning, aperçu de sélection) et **Liens permanents** (liens classiques et classement). **Page publique** organise les trois sections et les liens dans le rendu réel du site : glisser-déposer, flèches et clavier, aperçu ordinateur/mobile, brouillon privé avec Enregistrer / Annuler. L’ordre enregistré est conservé après redémarrage ; l’en-tête et le pied de page gardent leur place. **Liens suivis** reste indépendant. Les archives communes conservent les historiques et les redirections.
 - Thèmes clair, sombre et système, avec préférence conservée.

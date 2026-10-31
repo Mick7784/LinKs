@@ -74,6 +74,7 @@ jobs:
           python3 scripts/release_notes_test.py
           node --test scripts/metrics.test.cjs scripts/dates.test.cjs scripts/video-api.test.mjs scripts/calendar.test.cjs scripts/collection.test.cjs scripts/statistics-charts.test.cjs scripts/partner-report.test.cjs scripts/source-platforms.test.cjs scripts/daily-report.test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/statistics-browser-test.cjs
+          NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/ergonomics-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/instance-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/story-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/admin-browser-test.cjs
