@@ -89,7 +89,8 @@ s.serve_forever()`;
   assert.equal((await api('templates')).items.length,2);
   await root.getByRole('button',{name:'Descriptions',exact:true}).click();
   page.once('dialog',dialog=>dialog.accept('Brouillon de référence'));await root.getByRole('button',{name:'Nouveau brouillon',exact:true}).click();
-  await root.locator('[data-draft-preview] h2').filter({hasText:'Brouillon de référence'}).waitFor();
+  await root.getByLabel('Texte de la description',{exact:true}).waitFor();
+  assert.equal(await root.getByLabel('Titre interne',{exact:true}).inputValue(),'Brouillon de référence');
   const draft=(await api('drafts')).items[0];assert(draft.text.includes('BOOST'));assert(!draft.text.includes('amzn.to'));
   await root.getByRole('button',{name:'Modèles',exact:true}).click();
   for(const theme of ['light','dark']){

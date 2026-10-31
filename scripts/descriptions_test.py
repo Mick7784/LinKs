@@ -180,4 +180,104 @@ class DescriptionTests(unittest.TestCase):
         self.assertEqual(status,200,raw)
 
 
+    def editable(self, draft=None):
+        with self.a.connection() as db:return d.read(db,'drafts/'+(draft or self.draft())['id'],self.a.ORIGIN)['document']
+
+    def edit_payload(self, doc, content=None, mutation='mutation-1'):
+        content=doc['text'] if content is None else content
+        anchors=copy.deepcopy(doc['sections'])
+        if content!=doc['text']:
+            for anchor in anchors:anchor.update(status='ambiguous',start=None,end=None,candidates=[])
+        return {'title':doc['title'],'text':content,'sections':anchors,'expected_revision':doc['revision'],'mutation_id':mutation}
+
+    def test_editor_unicode_positions_roundtrip_and_reject_utf16_offsets(self):
+        doc=self.editable();content='😀é 👩🏽‍💻\nURL https://amzn.to/4yj9H0L?tag=original-21&x=a%2Bb#fragment'
+        payload=self.edit_payload(doc,content)
+        payload['sections'][0].update(status='confirmed',start=0,end=8,quote=content[:8])
+        with self.a.connection() as db:
+            saved=d.write(db,'drafts/'+doc['id']+'/save',payload,self.a.ORIGIN)
+            self.assertEqual(saved['text'],content);self.assertEqual(saved['sections'][0]['quote'],content[:8])
+            invalid=self.edit_payload(saved,mutation='mutation-2');invalid['sections'][0]['end']=12
+            with self.assertRaisesRegex(ValueError,'texte de la section'):d.save_draft(db,doc['id'],invalid)
+            invalid=self.edit_payload(saved,mutation='mutation-3');invalid['text']='isolated\ud800'
+            with self.assertRaises(ValueError):d.save_draft(db,doc['id'],invalid)
+
+    def test_editor_save_preserves_frozen_initial_links_manual_choices_and_model(self):
+        template=self.linked_template();draft=self.draft()
+        with self.a.connection() as db:
+            draft=d.update(db,d.TABLES[1],draft['id'],d.validate_document({**draft,'products':[{'id':'manual-product'}],'selections':{'manual':'kept'},'manual_order':['b','a']}),draft['revision'])
+        doc=self.editable(draft);before=self.tracking_state()
+        with self.a.connection() as db:
+            saved=d.save_draft(db,doc['id'],self.edit_payload(doc,'Mon texte 😀\nhttps://amzn.to/exact?tag=keep-21'))
+            for key in ('initial_sections','template_snapshot','template_revision','products','selections','manual_order','problems'):
+                self.assertEqual(saved[key],doc[key],key)
+            self.assertEqual(d.get(db,d.TABLES[0],template['id']),template)
+            template['sections'][1]['text']='Modification ultérieure du modèle'
+            d.write(db,'templates/'+template['id']+'/save',{**template,'expected_revision':template['revision']},self.a.ORIGIN)
+            self.assertEqual(d.read(db,'drafts/'+doc['id'],self.a.ORIGIN)['document']['initial_sections'],doc['initial_sections'])
+        self.assertEqual(before,self.tracking_state())
+
+    def test_editor_http_revision_conflict_idempotent_retry_and_tampering(self):
+        doc=self.editable();admin=self.server(True);url=admin+'/api/descriptions/drafts/'+doc['id']+'/save';payload=self.edit_payload(doc,'Premier 😀')
+        self.assertEqual(self.request(url,payload)[0],200)
+        self.assertEqual(self.request(url,payload)[0],200)  # response lost; exact retry
+        other={**payload,'mutation_id':'second','text':'Autre onglet'}
+        self.assertEqual(self.request(url,other)[0],409)
+        self.assertEqual(self.request(url,{**payload,'text':'Mutation réutilisée'})[0],409)
+        self.assertEqual(self.request(url,{**payload,'template_snapshot':{}})[0],400)
+        with self.a.connection() as db:
+            saved=d.get(db,d.TABLES[1],doc['id']);self.assertEqual(saved['revision'],doc['revision']+1);self.assertEqual(saved['text'],'Premier 😀')
+        for name in ('description-editor.js','description-sections.js'):
+            self.assertEqual(self.request(admin+'/'+name)[0],200)
+
+    def test_editor_simultaneous_saves_have_one_winner(self):
+        doc=self.editable();barrier=threading.Barrier(2);results=[]
+        def save(name):
+            barrier.wait()
+            try:
+                with self.a.connection() as db:
+                    db.execute('BEGIN IMMEDIATE');d.save_draft(db,doc['id'],self.edit_payload(doc,name,mutation=name))
+                results.append('ok')
+            except d.Conflict:results.append('conflict')
+        threads=[threading.Thread(target=save,args=(name,)) for name in ('first','second')]
+        for thread in threads:thread.start()
+        for thread in threads:thread.join()
+        self.assertCountEqual(results,['ok','conflict'])
+
+    def test_editor_explicit_fork_keeps_server_and_retry_creates_only_one_copy(self):
+        doc=self.editable();mine=self.edit_payload(doc,'Ma saisie perdante 😀',mutation='copy-operation')
+        with self.a.connection() as db:
+            winner=d.save_draft(db,doc['id'],self.edit_payload(doc,'Saisie serveur'))
+            copied=d.save_draft(db,doc['id'],mine,fork=True)
+            self.assertNotEqual(copied['id'],doc['id']);self.assertEqual(copied['text'],mine['text'])
+            self.assertEqual(d.save_draft(db,doc['id'],mine,fork=True),copied)
+            self.assertEqual(d.get(db,d.TABLES[1],doc['id']),winner)
+            self.assertEqual(len(d.rows(db,d.TABLES[1])),2)
+
+    def test_editor_rejects_missing_overlapping_and_stale_section_references(self):
+        doc=self.editable()
+        for change in ('missing','overlap','stale','extra'):
+            payload=self.edit_payload(doc,'😀abcdefgh')
+            payload['sections'][0].update(status='confirmed',start=0,end=4,quote='😀abc')
+            if change=='missing':payload['sections'].pop()
+            if change=='overlap':payload['sections'][1].update(status='confirmed',start=2,end=6,quote='bcde')
+            if change=='stale':payload['sections'][0]['quote']='old'
+            if change=='extra':payload['sections'][0]['id']='unknown'
+            with self.subTest(change=change),self.a.connection() as db,self.assertRaises(ValueError):d.save_draft(db,doc['id'],payload)
+
+    def test_editor_backup_preserves_anchors_initial_copy_and_projects_legacy_without_write(self):
+        legacy=self.draft()
+        with self.a.connection() as db:
+            raw=d.validate_document(legacy);raw.pop('initial_sections')
+            legacy=d.update(db,d.TABLES[1],legacy['id'],raw,legacy['revision'])
+            projected=d.read(db,'drafts/'+legacy['id'],self.a.ORIGIN)['document']
+            self.assertEqual(d.get(db,d.TABLES[1],legacy['id']),legacy)
+            self.assertEqual(len(projected['sections']),7)
+            saved=d.save_draft(db,legacy['id'],self.edit_payload(projected,'Recovered 😀'))
+        backup=json.loads(self.a.export_backup())
+        with self.a.connection() as db:db.execute('DELETE FROM description_drafts')
+        self.a.restore_backup(backup)
+        with self.a.connection() as db:self.assertEqual(d.read(db,'drafts/'+legacy['id'],self.a.ORIGIN)['document'],saved)
+
+
 if __name__=='__main__':unittest.main()

@@ -1,7 +1,7 @@
 "use strict";
 window.LinksDescriptions=(()=>{
  const root=document.getElementById('descriptions'),clone=value=>structuredClone(value);
- let templates=[],drafts=[],catalogue={items:[],partners:[]},model=null,dirty=false,loaded=false,busy=false,tab='templates',editRevision=0;
+ let templates=[],drafts=[],catalogue={items:[],partners:[]},model=null,dirty=false,loaded=false,busy=false,tab='templates',editRevision=0,currentDraftId=null;
  const openItems=new Set(['support']);
  const node=(tag,text,className)=>{const el=document.createElement(tag);if(text!==undefined)el.textContent=text;if(className)el.className=className;return el};
  const request=(path,data)=>api('/api/descriptions/'+path,data===undefined?{}:{method:'POST',body:JSON.stringify(data)});
@@ -104,16 +104,15 @@ window.LinksDescriptions=(()=>{
   const create=button('Nouveau brouillon',async()=>{const t=templates.find(x=>x.id===selector.value);if(!t)return;const title=prompt('Titre interne de la description');if(!title)return;const draft=await request('drafts',{title,template_id:t.id,template_revision:t.revision});await refresh();render();showDraft(draft);message('Brouillon enregistré à partir d’une copie du modèle.')} ,'primary');create.disabled=!templates.length;
   toolbar.append(selector,create);root.append(toolbar);
   if(!drafts.length)root.append(node('p','Aucune description enregistrée. Choisissez un modèle pour préparer un brouillon.'));
-  const list=node('div',undefined,'description-draft-list');for(const draft of drafts){const row=node('article');row.append(node('strong',draft.title),node('span','Brouillon · '+new Date(draft.updated_at).toLocaleString('fr-FR')),button('Consulter',()=>showDraft(draft)));list.append(row)}root.append(list);
-  const host=node('div');host.dataset.draftPreview='';root.append(host);
+  const list=node('div',undefined,'description-draft-list');for(const draft of drafts){const row=node('article');row.append(node('strong',draft.title),node('span','Brouillon · '+new Date(draft.updated_at).toLocaleString('fr-FR')),button('Ouvrir',()=>showDraft(draft)));list.append(row)}root.append(list);
  }
- function showDraft(draft){const host=root.querySelector('[data-draft-preview]');if(!host)return;host.replaceChildren(node('h2',draft.title),node('p','Contenu enregistré','muted'));for(const p of draft.problems)host.append(node('p',(p.label||p.id)+' — '+p.message,'description-problems'));host.append(node('pre',draft.text,'description-text'))}
+ function showDraft(draft){currentDraftId=draft.id;tab='editor';render()}
  function render(){
   for(const details of root.querySelectorAll('details[data-section-id]')){if(details.open)openItems.add(details.dataset.sectionId);else openItems.delete(details.dataset.sectionId)}
   root.replaceChildren();const head=node('div',undefined,'section-head'),title=node('div');title.append(node('h1','Descriptions'),node('p','Vos descriptions YouTube et leurs modèles.'));head.append(title);root.append(head);
-  const nav=node('div',undefined,'description-toolbar');for(const [id,label] of [['drafts','Descriptions'],['templates','Modèles']]){const b=button(label,()=>{tab=id;render();if(id==='templates')return preview()});b.setAttribute('aria-pressed',String(tab===id));nav.append(b)}root.append(nav);
+  const nav=node('div',undefined,'description-toolbar');for(const [id,label] of [['drafts','Descriptions'],['templates','Modèles'],...(currentDraftId?[['editor','Rédaction']]:[])]){const b=button(label,async()=>{tab=id;render();if(id==='templates')return preview();if(id==='drafts'){drafts=(await request('drafts')).items;if(tab===id)render()}});b.setAttribute('aria-pressed',String(tab===id));nav.append(b)}root.append(nav);
   const status=node('p',dirty?'Modifications du modèle non enregistrées':'', 'description-status');status.dataset.descriptionStatus='';status.setAttribute('role','status');status.setAttribute('aria-live','polite');root.append(status);
-  if(tab==='templates')renderTemplates();else renderDrafts();
+  if(tab==='templates')renderTemplates();else if(tab==='drafts')renderDrafts();else{const host=node('div'),draftId=currentDraftId;host.dataset.editorHost='';root.append(host);window.LinksDescriptionEditor.mount(host,draftId,id=>{if(currentDraftId===draftId)currentDraftId=id})}
  }
  async function load(){if(loaded)return;try{await refresh();model=clone(templates[0]||null);loaded=true;render();await preview()}catch(error){root.replaceChildren(node('p',error.message),button('Réessayer',load))}}
  window.addEventListener('beforeunload',event=>{if(dirty){event.preventDefault();event.returnValue=''}});

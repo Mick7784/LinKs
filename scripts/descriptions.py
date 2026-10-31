@@ -4,6 +4,7 @@ No merchant request, link creation, source creation, title generation or redirec
 References are stable catalogue IDs; missing references remain explicit problems.
 """
 import copy
+import hashlib
 import json
 import re
 import uuid
@@ -44,7 +45,7 @@ def initialize(db, seed=True):
 
 def text(data, key, maximum, required=False):
     value = data.get(key, '')
-    if not isinstance(value, str) or len(value) > maximum or '\x00' in value or (required and not value.strip()):
+    if not isinstance(value, str) or len(value) > maximum or '\x00' in value or any(0xD800 <= ord(c) <= 0xDFFF for c in value) or (required and not value.strip()):
         raise ValueError('Champ invalide : '+key)
     return value  # Editable text and URLs are never stripped or normalized.
 
@@ -183,7 +184,7 @@ def resolved_link(db, binding, origin):
 
 
 def render(db, template, origin):
-    problems, output, anchors = [], [], []
+    problems, output, anchors, initial = [], [], [], {}
 
     def body(item):
         parts = [item['text']] if item['text'] else []
@@ -204,12 +205,13 @@ def render(db, template, origin):
             value = body(merchant)
             if value or not merchant['hide_if_empty']:
                 content += ('\n\n' if content else '') + '\n'.join(x for x in [merchant['heading'], value] if x)
+        value = '\n'.join(x for x in [section['heading'], content] if x)
+        initial[section['id']] = value
         if content or not section['hide_if_empty']:
-            value = '\n'.join(x for x in [section['heading'], content] if x)
             start = len('\n\n'.join(output)) + (2 if output else 0)
             anchors.append({'id': section['id'], 'start': start, 'end': start+len(value)})
             output.append(value)
-    return {'text': '\n\n'.join(output), 'sections': anchors, 'problems': problems}
+    return {'text': '\n\n'.join(output), 'sections': anchors, 'problems': problems, 'initial_sections': initial}
 
 
 def create_draft(db, data, origin):
@@ -221,7 +223,98 @@ def create_draft(db, data, origin):
     return insert(db, TABLES[1], {'title': text(data, 'title', 160, True), 'template_id': template['id'],
         'template_revision': template['revision'], 'template_snapshot': snapshot, 'text': prepared['text'],
         'sections': prepared['sections'], 'products': [], 'selections': {}, 'manual_order': [],
-        'problems': prepared['problems'], 'status': 'draft', 'youtube_url': ''})
+        'problems': prepared['problems'], 'status': 'draft', 'youtube_url': '',
+        'initial_sections': prepared['initial_sections']})
+
+
+def editor_document(document):
+    """Upgrade a phase-1 payload in memory, without consulting the mutable catalogue.
+
+    Offsets on the wire and in SQLite are Unicode code points, never UTF-16 units.
+    The initial rendered strings freeze the permanent URLs as well as the wording.
+    """
+    result = copy.deepcopy(document)
+    anchors = {item['id']: item for item in result['sections']}
+    initial = result.setdefault('initial_sections', {})
+    normalized = []
+    for section in result['template_snapshot']['sections']:
+        key = section['id']
+        anchor = anchors.get(key)
+        if key not in initial:
+            # Existing phase-1 drafts have not been edited through an editor yet.
+            # Never render their bindings against today's catalogue as a migration.
+            initial[key] = (result['text'][anchor['start']:anchor['end']] if anchor and anchor.get('start') is not None
+                            else '\n'.join(x for x in (section['heading'], section['text'], section.get('after_text','')) if x))
+        if anchor:
+            anchor.setdefault('status', 'confirmed')
+            anchor.setdefault('quote', result['text'][anchor['start']:anchor['end']] if anchor['status']=='confirmed' else '')
+            anchor.setdefault('candidates', [])
+        else:
+            anchor = {'id': key, 'status': 'ambiguous', 'start': None, 'end': None, 'quote': '', 'candidates': []}
+        normalized.append(anchor)
+    result['sections'] = normalized
+    result['editor_version'] = 1
+    return result
+
+
+def validate_anchors(items, content, definitions):
+    allowed = {section['id'] for section in definitions}
+    seen, intervals = set(), []
+    for anchor in sequence(items, 50):
+        if set(anchor) != {'id','status','start','end','quote','candidates'} or anchor['id'] not in allowed or anchor['id'] in seen:
+            raise ValueError('Association de section invalide.')
+        seen.add(anchor['id'])
+        text(anchor, 'quote', MAX_TEXT)
+        def span(value):
+            start, end = value.get('start'), value.get('end')
+            if type(start) is not int or type(end) is not int or not 0 <= start <= end <= len(content):
+                raise ValueError('Position de section invalide (points de code Unicode requis).')
+            return start, end
+        if anchor['status'] == 'confirmed':
+            start, end = span(anchor)
+            if content[start:end] != anchor['quote']:raise ValueError('Le texte de la section a changé.')
+            if end > start:intervals.append((start,end))
+            if anchor['candidates']:raise ValueError('Une section confirmée ne doit pas contenir de propositions.')
+        elif anchor['status'] == 'ambiguous':
+            if anchor['start'] is not None or anchor['end'] is not None:raise ValueError('Position ambiguë non confirmée.')
+        else:raise ValueError('État de section invalide.')
+        for candidate in sequence(anchor['candidates'], 20):
+            if set(candidate) != {'start','end'}:raise ValueError('Proposition de section invalide.')
+            span(candidate)
+    if seen != allowed:raise ValueError('Toutes les associations de sections doivent être conservées.')
+    intervals.sort()
+    if any(left[1] > right[0] for left,right in zip(intervals,intervals[1:])):
+        raise ValueError('Des sections se chevauchent. Confirmez leurs emplacements.')
+    return copy.deepcopy(items)
+
+
+def save_draft(db, key, data, fork=False):
+    current = editor_document(get(db, TABLES[1], key))
+    if current['status'] != 'draft':raise ValueError('Ouvrez une copie brouillon pour modifier cette description.')
+    mutation = ident(data.get('mutation_id'))
+    expected = data.get('expected_revision')
+    if type(expected) is not int or expected < 1:raise ValueError('Révision attendue requise.')
+    if set(data) != {'title','text','sections','expected_revision','mutation_id'}:
+        raise ValueError('Seuls le titre, le texte et les repères de sections peuvent être modifiés.')
+    content = text(data, 'text', MAX_TEXT)
+    fields = {'title': text(data,'title',160,True), 'text': content,
+              'sections': validate_anchors(data.get('sections'), content, current['template_snapshot']['sections'])}
+    digest = hashlib.sha256(packed(fields).encode('utf-8')).hexdigest()
+    receipt = {'id': mutation, 'base_revision': expected, 'digest': digest}
+    if fork:
+        target = uuid.uuid5(uuid.NAMESPACE_URL, 'links:draft-copy:'+key+':'+mutation).hex
+        previous = db.execute('SELECT * FROM description_drafts WHERE id=?', (target,)).fetchone()
+        if previous:
+            saved = decode(previous)
+            if saved.get('last_mutation') != receipt:raise Conflict('Cette copie a déjà été enregistrée avec un autre contenu.')
+            return saved
+    elif current.get('last_mutation', {}).get('id') == mutation:
+        if current['last_mutation'] != receipt:raise Conflict('Identifiant d’enregistrement déjà utilisé pour un autre contenu.')
+        return current
+    elif expected != current['revision']:
+        raise Conflict('Le brouillon a changé dans un autre onglet. Votre texte est conservé ; comparez ou enregistrez une copie.')
+    payload = validate_document({**current, **fields, 'last_mutation': receipt})
+    return insert(db, TABLES[1], payload, target) if fork else update(db,TABLES[1],key,payload,expected)
 
 
 def validate_document(data, version=False):
@@ -240,6 +333,14 @@ def validate_document(data, version=False):
         if not isinstance(result.get(key), list):raise ValueError('État de description invalide : '+key)
     if not isinstance(result.get('selections'), dict) or result.get('status') not in {'draft', 'finalized'}:
         raise ValueError('État de description invalide.')
+    if 'initial_sections' in result:
+        initial = result['initial_sections']
+        expected_ids = {s['id'] for s in result['template_snapshot']['sections']}
+        if not isinstance(initial,dict) or set(initial) != expected_ids:raise ValueError('Copie initiale des sections invalide.')
+        for key in initial:text(initial,key,MAX_TEXT)
+    if 'editor_version' in result:
+        if result['editor_version'] != 1:raise ValueError('Version d’éditeur incompatible.')
+        validate_anchors(result['sections'],result['text'],result['template_snapshot']['sections'])
     url = text(result, 'youtube_url', 2000)
     if url and not affiliate_partners.http_url(url):raise ValueError('URL de vidéo invalide.')
     if version:
@@ -305,6 +406,10 @@ def read(db, path, origin):
     if path == 'templates':return {'items': rows(db, TABLES[0])}
     if path == 'catalogue':return catalogue(db)
     if path == 'drafts':return {'items': rows(db, TABLES[1])}
+    match = re.fullmatch(r'drafts/([\w-]+)', path)
+    if match:
+        instance = db.execute("SELECT value FROM settings WHERE key='app.instance_id'").fetchone()
+        return {'document': editor_document(get(db,TABLES[1],match[1])), 'instance_id': instance[0] if instance else ''}
     match = re.fullmatch(r'templates/([\w-]+)/preview', path)
     if match:return render(db, get(db, TABLES[0], match[1]), origin)
     raise ValueError('Ressource Descriptions inconnue.')
@@ -315,6 +420,8 @@ def write(db, path, data, origin):
     if path == 'templates':return insert(db, TABLES[0], validate_template(data))
     if path == 'preview':return render(db, validate_template(data), origin)
     if path == 'drafts':return create_draft(db, data, origin)
+    match = re.fullmatch(r'drafts/([\w-]+)/(save|fork)', path)
+    if match:return save_draft(db,match[1],data,match[2]=='fork')
     match = re.fullmatch(r'templates/([\w-]+)/(save|duplicate|delete)', path)
     if match:
         key, action = match.groups()
