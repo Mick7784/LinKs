@@ -16,6 +16,8 @@ export function requestTarget(address){
       if(u.pathname.startsWith('/cdn-cgi/challenge-platform/'))return 'domadoo:verification';
       if(u.pathname==='/fr/authentification')return 'domadoo:authentification';
       if(u.pathname==='/fr/affiliation')return 'domadoo:affiliation';
+      if(u.pathname==='/fr/mon-compte')return 'domadoo:mon-compte';
+      if(u.pathname==='/fr/'||u.pathname==='/')return 'domadoo:accueil';
       return 'domadoo:autre';
     }
     if(u.hostname==='challenges.cloudflare.com')return 'cloudflare:verification';
@@ -57,11 +59,13 @@ export async function browserContext(saved,human=false,{engine=browserEngine(),t
   const options=engine==='chromium'?{executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',args:['--disable-dev-shm-usage']}:
     {firefoxUserPrefs:{'signon.rememberSignons':false,'browser.formfill.enable':false}};
   let browser;
-  try{browser=await require('playwright-core')[engine].launch({headless:true,timeout:20000,...options})}
+  const browserEnv=Object.fromEntries(Object.entries(process.env).filter(([key])=>!['DOMADOO_LOGIN','DOMADOO_PASSWORD'].includes(key)));
+  try{browser=await require('playwright-core')[engine].launch({headless:true,timeout:20000,env:browserEnv,...options})}
   catch{throw new PortalError(`Démarrage ${engine} impossible. Vérifier l’image officielle et la mémoire disponible. Aucun accès au portail tenté.`,'browser_launch')}
   try{
     const restored=restoredState(saved,engine);
-    const diagnostic={browser:engine,version:browser.version(),mode:'headless',session:restored.session,started_at:new Date().toISOString(),stage:'opening',status:null,ray_id:null,challenge_response:false,navigation:[],blocked:[],failures:[],http_errors:[],navigation_error:null};
+    const diagnostic={browser:engine,version:browser.version(),mode:'headless',session:restored.session,started_at:new Date().toISOString(),stage:'opening',status:null,ray_id:null,challenge_response:false,navigation:[],blocked:[],failures:[],http_errors:[],navigation_error:null,policy_navigation:null};
+    let authenticating=false;
     const record=(list,value)=>{if(JSON.stringify(list.at(-1))!==JSON.stringify(value)){list.push(value);if(list.length>8)list.shift()}};
     const context=await browser.newContext({viewport:VIEWPORT,storageState:restored.state,acceptDownloads:false,serviceWorkers:'block',
       // A closed local proxy is a second barrier for fixture redirects: Firefox
@@ -76,8 +80,10 @@ export async function browserContext(saved,human=false,{engine=browserEngine(),t
     if(transport)await context.route('**/*',transport);
     await context.route('**/*',route=>{
       const request=route.request(),navigation=request.isNavigationRequest()&&!request.frame().parentFrame();
-      if(!allowedPortalRequest(request.url(),{human,method:request.method(),mainNavigation:navigation})){
-        record(diagnostic.blocked,{target:requestTarget(request.url()),method:['GET','HEAD','POST'].includes(request.method())?request.method():'OTHER',navigation});
+      if(!allowedPortalRequest(request.url(),{human,authenticating,method:request.method(),mainNavigation:navigation})){
+        const blocked={target:requestTarget(request.url()),method:['GET','HEAD','POST'].includes(request.method())?request.method():'OTHER',navigation};
+        record(diagnostic.blocked,blocked);
+        if(navigation)diagnostic.policy_navigation=blocked;
         return route.abort('blockedbyclient');
       }
       return route.fallback();
@@ -87,6 +93,7 @@ export async function browserContext(saved,human=false,{engine=browserEngine(),t
     page.on('request',request=>{
       if(request.isNavigationRequest()&&!request.frame().parentFrame()){
         diagnostic.status=null;diagnostic.ray_id=null;diagnostic.challenge_response=false;diagnostic.navigation_error=null;
+        diagnostic.policy_navigation=null;
         const previous=request.redirectedFrom();
         if(previous)record(diagnostic.navigation,{target:requestTarget(request.url()),redirected_from:requestTarget(previous.url())});
       }
@@ -109,13 +116,14 @@ export async function browserContext(saved,human=false,{engine=browserEngine(),t
       record(diagnostic.failures,{target:requestTarget(request.url()),reason});
       if(request.isNavigationRequest()&&!request.frame().parentFrame())diagnostic.navigation_error=reason;
     });
-    return {browser,context,page,engine,diagnostic};
+    return {browser,context,page,engine,diagnostic,setAuthenticating:value=>{authenticating=value===true}};
   }catch(error){await browser.close();throw error}
 }
 export async function connectionDiagnostic(runtime){
   let stage;
   try{stage=await authenticationStage(runtime.page)}catch{stage=runtime.page.isClosed()?'browser_closed':'loading'}
   if(runtime.diagnostic.challenge_response&&stage!=='connected')stage='security_check';
+  if(runtime.diagnostic.policy_navigation&&!['connected','security_check','verification','form_error'].includes(stage))stage='request_policy';
   if(stage==='unknown'&&runtime.diagnostic.status>=400)stage='http_error';
   if(stage==='unknown'&&runtime.diagnostic.navigation_error)stage='navigation_error';
   runtime.diagnostic.stage=stage;
@@ -130,6 +138,6 @@ export async function openPortal(runtime){
   return connectionDiagnostic(runtime);
 }
 export function diagnosticMessage(d){
-  const labels={security_check:'contrôle de sécurité du portail',verification:'double vérification',login_form:'formulaire de connexion (session absente ou expirée)',form_error:'formulaire signalant une erreur',http_error:'réponse HTTP refusée',navigation_error:'navigation interrompue',browser_closed:'navigateur fermé',unknown:'page non reconnue',loading:'page en chargement',connected:'espace affilié reconnu'};
-  return `Étape : ${labels[d.stage]||d.stage} ; navigateur : ${d.browser} ${d.version} ; session : ${d.session} ; HTTP : ${d.status??'inconnu'}${d.ray_id?' ; Ray ID : '+d.ray_id:''}${d.navigation_error?' ; navigation : '+d.navigation_error:''}.`;
+  const labels={security_check:'contrôle de sécurité du portail',verification:'double vérification',login_form:'formulaire de connexion (session absente ou expirée)',form_error:'formulaire signalant une erreur',request_policy:'navigation bloquée par LinKs',http_error:'réponse HTTP refusée',navigation_error:'navigation interrompue',browser_closed:'navigateur fermé',unknown:'page non reconnue',loading:'page en chargement',connected:'espace affilié reconnu'};
+  return `Étape : ${labels[d.stage]||d.stage} ; navigateur : ${d.browser} ${d.version} ; session : ${d.session} ; HTTP : ${d.status??'inconnu'}${d.ray_id?' ; Ray ID : '+d.ray_id:''}${d.navigation_error?' ; navigation : '+d.navigation_error:''}${d.policy_navigation?' ; navigation bloquée par LinKs : '+d.policy_navigation.target:''}.`;
 }

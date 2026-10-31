@@ -40,12 +40,44 @@ Ne pas utiliser ce service comme navigateur généraliste.
 
 ## Première connexion
 
+### Connexion automatique facultative (V1.4.4)
+
+Ajouter au service `links` dans Compose les deux variables serveur :
+
+```yaml
+environment:
+  DOMADOO_LOGIN: ${DOMADOO_LOGIN:-}
+  DOMADOO_PASSWORD: ${DOMADOO_PASSWORD:-}
+```
+
+Définir leurs valeurs dans la configuration privée de Dockhand ou dans un fichier
+d'environnement hors dépôt. Ne pas mettre les valeurs dans une URL, une capture,
+un ticket ou les journaux. Aucun changement de volume, port ou tmpfs n'est requis.
+Ces variables facultatives concernent seulement le **Compte Domadoo** intégré
+(`domadoo`), pas les comptes de reporting supplémentaires.
+
+Après redémarrage sur la nouvelle image, cliquer **Synchroniser**. LinKs reprend
+d'abord une session valide ; sinon, il ouvre le formulaire, saisit les identifiants,
+le soumet une seule fois, attend `#my_affiliate_link` et le résumé affilié, puis
+collecte. Le même parcours sert aux synchronisations quotidiennes déjà activées.
+Les variables seules n'activent pas la planification. Une configuration partielle
+est signalée si une reconnexion est nécessaire ; une session valide reste utilisable.
+
+Le mot de passe reste côté serveur, sans stockage SQLite, API de configuration,
+export, capture automatique ou journalisation. Il n'est pas transmis aux processus
+nginx, analytics ou navigateur via leur environnement. La session réussie est
+chiffrée comme auparavant. En cas de vérification supplémentaire, aucun nouvel
+envoi du formulaire n'est tenté pendant cette synchronisation ; la connexion
+humaine ci-dessous permet de reprendre un état intermédiaire chiffré.
+
+### Connexion humaine et secours
+
 1. Ouvrir **Affiliation → Domadoo → Connexion et synchronisation**.
 2. Choisir **Ouvrir la connexion Domadoo**. La fenêtre montre le navigateur du
    serveur ; cliquer le champ souhaité, saisir dans le champ masqué sous l’image,
    puis choisir **Transmettre la saisie**. Tab, Entrée et défilement sont disponibles.
    L’ancienne session est reprise si elle est compatible. Après passage de Chromium
-   à Firefox, une nouvelle authentification humaine est nécessaire ; les cookies
+   à Firefox, une nouvelle authentification est nécessaire ; les cookies
    d’un autre navigateur ne sont pas transférés automatiquement.
 3. Effectuer personnellement l’authentification et toute double vérification.
    La fenêtre se ferme lorsque l’espace affilié est reconnu. Si elle reste ouverte
@@ -60,11 +92,13 @@ Ne pas utiliser ce service comme navigateur généraliste.
 La fenêtre expire après 15 minutes et se ferme automatiquement. Les captures
 restent en mémoire, sans cache ni fichier. L’utilisateur peut réaliser les
 contrôles présentés dans cette fenêtre ; le collecteur automatique s’arrête sur
-une protection ou une session expirée. Aucune technique de furtivité ni résolution
+une protection, ou une session expirée sans identifiants configurés. Aucune technique de furtivité ni résolution
 automatique de CAPTCHA n’est utilisée. Si la protection refuse ce navigateur ou
 nécessite un hôte/une navigation non autorisés, la V1 ne la contourne pas : la
 connexion reste à qualifier avec Domadoo. Le bouton Déconnecter efface la session
 et désactive le passage quotidien, sans effacer l’historique financier.
+Si les variables restent configurées, une prochaine synchronisation manuelle peut
+se reconnecter automatiquement. Retirer les deux variables pour désactiver cette possibilité.
 
 La persistance porte sur les cookies, localStorage, IndexedDB et le sessionStorage
 de Domadoo, chiffrés avec la même clé locale que précédemment. Aucun profil complet,
@@ -144,7 +178,9 @@ L’administration sépare session enregistrée, collecte en cours, dernier succ
 et dernier échec. Une session enregistrée ne garantit pas sa validité actuelle.
 Après un redémarrage, un travail interrompu est marqué en échec. Le prochain
 passage quotidien ou une synchronisation manuelle relit tout l’historique ; aucun
-rejeu de mot de passe n’a lieu. Une échéance quotidienne manquée est exécutée au
+rejeu de mot de passe n'a lieu pendant la lecture des données : seule la phase de
+connexion peut soumettre le formulaire si les variables sont configurées.
+Une échéance quotidienne manquée est exécutée au
 prochain passage du planificateur (environ 30 secondes), sans rafale de rattrapage.
 
 La session fournisseur est chiffrée AES-256-GCM dans `/data/affiliation/*.session`.
@@ -161,7 +197,7 @@ migration d’une base existante. Les nouvelles tables sont additives.
 La sauvegarde JSON habituelle de LinKs inclut comptes, transactions, révisions,
 relevés et journaux financiers, sans session navigateur. Sur une instance vierge,
 la restauration importe cet historique avec collecte désactivée et reconnexion
-humaine obligatoire. Sur une instance ayant déjà un historique financier ou des
+humaine ou automatique nécessaire. Sur une instance ayant déjà un historique financier ou des
 comptes supplémentaires, cet historique est conservé pour éviter tout retour
 en arrière ; le résultat de restauration l’indique. Une ancienne sauvegarde sans
 Affiliation ne supprime pas les données financières existantes.

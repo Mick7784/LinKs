@@ -4,6 +4,7 @@ import {mkdir,readFile,writeFile,rename,unlink} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {PortalError,isConnected,collect} from './domadoo.mjs';
+import {ensureAuthenticated,environmentCredentials} from './domadoo-auth.mjs';
 import {browserContext,browserEngine,captureSession,connectionDiagnostic,diagnosticMessage,openPortal,restoredState,VIEWPORT} from './affiliation-browser.mjs';
 const root=process.env.AFFILIATION_DATA_DIR||'/data/affiliation';
 const token=process.env.AFFILIATION_WORKER_TOKEN;
@@ -56,14 +57,21 @@ async function action(name,data){
     if(login)throw new PortalError('Terminer ou fermer la connexion humaine avant de synchroniser.');
     busy=true;let runtime;
     try{
-      let state;try{state=await loadSession(data.account)}catch{throw new PortalError('Reconnexion requise : session absente ou illisible. Ouvrir une connexion humaine Domadoo.','session_unreadable')}
-      if(restoredState(state,browserEngine()).session!=='restored')throw new PortalError('Reconnexion requise : le navigateur a changé. Ouvrir la connexion Domadoo pour enregistrer une session compatible.','session_browser_changed');
+      let state;try{state=await loadSession(data.account)}catch{/* Missing/corrupt state may be replaced by a successful automatic login. */}
+      if(restoredState(state,browserEngine()).session!=='restored')state=undefined;
+      if(!state&&!environmentCredentials(data.account))throw new PortalError('Reconnexion requise : session absente ou incompatible. Ouvrir la connexion humaine ou configurer DOMADOO_LOGIN et DOMADOO_PASSWORD côté serveur.','session_unreadable');
       runtime=await openBrowser(state);
-      const result=await collect(runtime.page);
-      await saveSession(data.account,await captureSession(runtime));return result;
+      await ensureAuthenticated(runtime,()=>environmentCredentials(data.account));
+      const result=await collect(runtime.page,{currentPage:true});
+      await saveSession(data.account,await captureSession(runtime));await forget(data.account,true);return result;
     }catch(error){
       if(!runtime)throw error;
       const d=await connectionDiagnostic(runtime);
+      if(['security_check','verification'].includes(d.stage)){
+        // Keep only encrypted browser state for the existing human fallback.
+        // Never replace a validated session or return a password/form capture.
+        await saveSession(data.account,{...await captureSession(runtime),saved_at:Date.now()},true).catch(()=>{});
+      }
       const reconnect=['login_form','form_error','verification'].includes(d.stage)?'Reconnexion requise. ':'';
       const message=error instanceof PortalError?error.message:'Lecture interrompue. Dernier relevé conservé.';
       throw new PortalError(reconnect+message+' '+diagnosticMessage(d),error.code||'collection_failed');
