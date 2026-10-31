@@ -1,6 +1,6 @@
 "use strict";
 (()=>{
- const host=$('affiliation');let model=null,account='',tab='overview',page=1,search='',status='',start='',end='',timer=null,loginTimer=null,loginAccount='',renderVersion=0;
+ const host=$('affiliation');let model=null,account='',tab='overview',page=1,search='',status='',start='',end='',timer=null,loginTimer=null,loginAccount='',renderVersion=0,initialRange=true;
  const euro=v=>v===null||v===undefined?'—':new Intl.NumberFormat('fr-FR',{style:'currency',currency:'EUR'}).format(v/100);
  const number=v=>v===null||v===undefined?'—':fmt.format(v);
  const at=v=>v?new Intl.DateTimeFormat('fr-FR',{dateStyle:'short',timeStyle:'short',timeZone:adminTimezone}).format(new Date(v)):'Jamais';
@@ -11,7 +11,6 @@
  const kpi=(label,value,help,tone='cyan')=>`<article class="aff-card aff-${tone}"><span>${esc(label)}</span><strong>${esc(value)}</strong><small>${esc(help)}</small></article>`;
  function range(){return new URLSearchParams({account,start,end})}
  function month(){const d=new Intl.DateTimeFormat('sv-SE',{timeZone:adminTimezone}).format(new Date());start=d.slice(0,7)+'-01';end=d}
- month();
  function chart(rows){
    if(!rows.length)return '<p class="aff-empty">Aucune vente observée pour cette période.</p>';
    const monthly=new Set(rows.map(r=>r.day)).size>60,groups=new Map();
@@ -20,6 +19,7 @@
    return `<svg viewBox="0 0 700 205" role="img" aria-label="Commissions ${monthly?'mensuelles':'quotidiennes'}, par date de vente"><line x1="65" x2="680" y1="${zero}" y2="${zero}" stroke="currentColor" opacity=".3"/><text x="0" y="20">${esc(euro(max))}</text><text x="0" y="160">${esc(euro(min))}</text>${items.map(([day,v],i)=>['approved','not_approved'].map((key,j)=>`<rect class="aff-bar-${key}" x="${70+i*width+j*width*.4}" y="${Math.min(zero,y(v[key]))}" width="${Math.max(1,width*.36)}" height="${Math.max(0,Math.abs(y(v[key])-zero))}"><title>${esc(day)} · ${key==='approved'?'Approuvées':'Non approuvées'} : ${esc(euro(v[key]))}</title></rect>`).join('')+(i===0||i===items.length-1||i%Math.max(1,Math.ceil(items.length/6))===0?`<text x="${70+i*width}" y="188" text-anchor="start">${esc(day.slice(monthly?0:5))}</text>`:'')).join('')}</svg><p class="aff-legend"><span>● Approuvées</span><span>● Non approuvées</span></p>`;
  }
  async function load(){
+   if(initialRange){month();initialRange=false;}
    try{
      model=await request('overview?'+range());render();
      clearTimeout(timer);if(model.accounts.some(a=>a.running))timer=setTimeout(()=>{if(host.classList.contains('active'))load()},3000);
