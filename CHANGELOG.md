@@ -1,5 +1,35 @@
 # Changelog
 
+## V1.330
+
+### ✨ Back-office organisé par usage
+
+- Navigation regroupée en Analyser, Gérer les liens, Composer la page et Administrer, avec les destinations existantes toujours visibles.
+- Accès mobile directs aux statistiques, liens suivis et campagnes ; page courante identifiée et navigation disponible pendant le défilement.
+- Création d’un lien suivi ou d’une campagne depuis l’accueil. Les campagnes en cours ouvrent directement leur fiche ou leurs résultats.
+
+### 📊 Statistiques orientées vers les actions
+
+- Parcours vue d’ensemble → tendance → jour sélectionné → liens et campagnes → fiche, avec détail quotidien sur toute la largeur.
+- Recherche et tri visibles, contexte de période/source lisible, raccourcis depuis les indicateurs et vers les sections.
+- Les catégories d’événements suivent le contexte choisi ; toutes restent consultables. Sources, partenaires, histogramme et historiques sont conservés.
+- Chargement explicite et bouton de reprise après erreur, avec conservation des derniers résultats et indication de leur contexte.
+
+### 🔧 Gestion quotidienne
+
+- Formulaire de lien suivi commençant par l’URL pour proposer le titre existant, toujours modifiable. Après création, choix de source et copie directement accessibles.
+- Destinations lisibles dans la bibliothèque, boutons Copier explicites et source choisie conservée pendant la session de navigation.
+- Liste des campagnes avant le planning, accès directs entre liste et planning ; partenaires et outils de composition reliés par des raccourcis.
+- Densité, libellés, espacements et actions harmonisés sur ordinateur et mobile. Thèmes clair/sombre/système conservés.
+
+### Compatibilité et validation
+
+Back-office uniquement. Aucun changement aux fichiers publics `site/`, aux API, à l’authentification, aux données, aux migrations, aux calculs, à la collecte ou aux URLs publiées. L’intégration PulSe reste inchangée.
+
+La recette automatisée couvre les dix écrans aux largeurs 320, 360, 390, 768, 1024 et 1440 px dans les deux thèmes, les parcours directs, le clavier, la reprise après erreur et la conservation de la configuration publique. Les tests statistiques de référence, métier, navigateur et Docker AMD64/ARM64 doivent tous réussir avant cette publication unique.
+
+La publication ne déploie rien sur une instance ou un VPS. Aucun changement de stockage ne nécessite de migration pour cette refonte.
+
 ## V1.329
 
 ### ✨ Statistiques du jour pour PulSe
