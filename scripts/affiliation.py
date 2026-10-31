@@ -250,7 +250,7 @@ def start_sync(connect, identity, identities=None):
                         message=str(exc) if isinstance(exc,ValueError) else 'Collecte interrompue. Dernier relevé conservé.'
                         with connect() as db:
                             db.execute("UPDATE aff_runs SET status='failed',finished_at=?,message=? WHERE id=?",(stamp(),message,run_id))
-                            db.execute("UPDATE aff_accounts SET last_error=?,session_state=CASE WHEN ? LIKE '%RECONNECT%' THEN 'reconnect' ELSE session_state END WHERE id=?",(message,message,selected))
+                            db.execute("UPDATE aff_accounts SET last_error=?,session_state=CASE WHEN ? LIKE '%Reconnexion requise%' THEN 'reconnect' ELSE session_state END WHERE id=?",(message,message,selected))
             finally: LOCK.release()
         threading.Thread(target=collect,daemon=True).start()
     except Exception:

@@ -37,13 +37,13 @@ export function summaryValues(entries) {
   return result;
 }
 export async function isConnected(page) {
-  return new URL(page.url()).origin===new URL(PORTAL).origin && new URL(page.url()).pathname==='/fr/affiliation' &&
+  const challenge=await page.locator('iframe[src*="captcha"],iframe[src*="challenge"],input[autocomplete="one-time-code"]').evaluateAll(nodes=>nodes.some(n=>n.getBoundingClientRect().width>0));
+  return !challenge && new URL(page.url()).origin===new URL(PORTAL).origin && new URL(page.url()).pathname==='/fr/affiliation' &&
     await page.locator('#myaffiliateaccount-summary .list-group-hover').count()>0;
 }
 export async function assertPortal(page) {
-  const challenge=await page.locator('iframe[src*="captcha"],iframe[src*="challenge"],input[autocomplete="one-time-code"]').evaluateAll(nodes=>nodes.some(n=>n.getBoundingClientRect().width>0));
-  if(challenge||!/\/fr\/affiliation$/.test(new URL(page.url()).pathname)||!await isConnected(page))
-    throw new PortalError('RECONNECT : connexion, double vérification ou protection du portail. Intervention humaine requise.');
+  if(!await isConnected(page))
+    throw new PortalError('Reconnexion requise : connexion, double vérification ou protection du portail. Intervention humaine requise.');
 }
 export async function readSummary(page) {
   const info=await page.locator('#myaffiliateaccount-summary').evaluate(root=>({

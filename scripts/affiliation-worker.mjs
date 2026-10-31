@@ -39,7 +39,7 @@ async function browserContext(state,human=false){
       const request=route.request(),url=new URL(request.url());
       const host=url.hostname,portal=host==='www.domadoo.fr'||host==='domadoo.fr';
       const captcha=['www.google.com','www.gstatic.com','www.recaptcha.net','challenges.cloudflare.com'].includes(host);
-      const allowed=url.protocol==='https:' && (portal||captcha);
+      const allowed=url.protocol==='https:' && (!url.port||url.port==='443') && (portal||captcha);
       if(!allowed)return route.abort();
       if(request.isNavigationRequest()&&request.frame().parentFrame()===null&&(!portal||!/^\/fr\/(affiliation|authentification)(\/|$)/.test(url.pathname)))return route.abort();
       if(!['GET','HEAD'].includes(request.method())&&!(human&&((portal&&url.pathname.startsWith('/fr/authentification'))||captcha)))return route.abort();
@@ -67,7 +67,7 @@ async function action(name,data){
     if(login)throw new PortalError('Terminer ou fermer la connexion humaine avant de synchroniser.');
     busy=true;let runtime;
     try{
-      let state;try{state=await loadSession(data.account)}catch{throw new PortalError('RECONNECT : ouvrir une connexion humaine Domadoo.')}
+      let state;try{state=await loadSession(data.account)}catch{throw new PortalError('Reconnexion requise : ouvrir une connexion humaine Domadoo.')}
       runtime=await browserContext(state);
       const result=await collect(runtime.page);
       await saveSession(data.account,await runtime.context.storageState());return result;
@@ -111,10 +111,10 @@ export function serve(){
     const supplied=Buffer.from(req.headers.authorization||''),expected=Buffer.from('Bearer '+token);
     if(req.method!=='POST'||supplied.length!==expected.length||!timingSafeEqual(supplied,expected)){res.writeHead(403);res.end('{}');return}
     if(inputBusy){res.writeHead(409);res.end(JSON.stringify({error:'Navigateur occupé.'}));return}
+    inputBusy=true;
     let bytes=0,chunks=[];
     try{
       for await(const chunk of req){bytes+=chunk.length;if(bytes>8192)throw new PortalError('Commande trop longue.');chunks.push(chunk)}
-      inputBusy=true;
       const data=JSON.parse(Buffer.concat(chunks).toString());
       const result=await action(req.url.slice(1),data);res.end(JSON.stringify(result));
     }catch(error){res.writeHead(400);res.end(JSON.stringify({error:error instanceof PortalError?error.message:'Navigateur indisponible ou structure du portail modifiée. Dernier relevé conservé.'}))}
