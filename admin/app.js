@@ -203,9 +203,22 @@ function filterAnalysis(){
  drawCampaignRanking();drawSources();syncAnalysis();
 }
 $("analysis-controls").onsubmit=event=>event.preventDefault();
-const statisticsSearchTools=document.querySelector(".statistics-search-tools");
-document.addEventListener("click",event=>{if(!statisticsSearchTools.contains(event.target))statisticsSearchTools.open=false});
-statisticsSearchTools.addEventListener("keydown",event=>{if(event.key==="Escape"){statisticsSearchTools.open=false;statisticsSearchTools.querySelector("summary").focus()}});
+$("analysis-reset").onclick=()=>{$("analysis-search").value="";$("analysis-sort").value="total";filterAnalysis();$("analysis-search").focus()};
+function jumpToStatistics(id){
+ const target=$(id);if(!target)return;
+ if(target.tagName==="DETAILS")target.open=true;
+ const heading=target.matches("h2,h3")?target:target.querySelector("summary,h2,h3,h4");
+ target.scrollIntoView({block:"start"});
+ if(heading){heading.tabIndex=-1;heading.focus({preventScroll:true})}
+}
+$("statistics").addEventListener("click",event=>{
+ const jump=event.target.closest("[data-statistics-jump]");if(jump)jumpToStatistics(jump.dataset.statisticsJump);
+ const metric=event.target.closest("[data-metric-scope]");if(!metric)return;
+ const scope=metric.dataset.metricScope;$("analysis-scope").value=scope;
+ if(["public","tracked","campaigns"].includes(scope)){$("daily-category").value=scope;$("daily-category").dispatchEvent(new Event("change"))}
+ if(scope==="public"||scope==="tracked"){$("top-link-type").value=scope;showTopLinkType()}
+ syncAnalysis();jumpToStatistics("analysis-history");
+});
 $("analysis-search").oninput=filterAnalysis;$("analysis-sort").onchange=filterAnalysis;
 $("analysis-scope").onchange=syncAnalysis;
 $("campaign-metric").onchange=()=>{drawCampaignRanking();syncAnalysis()};
@@ -213,7 +226,7 @@ function focusStatisticsSection(id){
  if(id==="statistics-public"||id==="statistics-tracked"){
   $("top-link-type").value=id==="statistics-public"?"public":"tracked";showTopLinkType();
  }
- const section=$(id);section.scrollIntoView({block:"start"});section.querySelector("h2").focus({preventScroll:true});
+ const section=$(id);section.scrollIntoView({block:"start"});section.querySelector("h2,h3").focus({preventScroll:true});
 }
 function showTopLinkType(){
  const type=$("top-link-type").value;

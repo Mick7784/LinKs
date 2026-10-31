@@ -49,35 +49,37 @@
  <div class="statistics-navigation">
  <div class="statistics-toolbar">
   <div id="statistics-filters"></div>
-  <details class="statistics-search-tools"><summary>Rechercher / trier</summary>
+  <div class="statistics-search-tools">
   <form id="analysis-controls" class="analysis-controls" role="search" aria-label="Rechercher dans les résultats">
    <label>Rechercher un résultat<input id="analysis-search" type="search" placeholder="Lien, campagne, source, code…"></label>
    <label>Trier les listes<select id="analysis-sort"><option value="total">Volume décroissant</option><option value="name">Nom</option></select></label>
+  <button type="button" id="analysis-reset">Effacer la recherche</button>
   </form>
-  </details>
+  </div>
 
  </div>
 
- <p id="statistics-filter-context" class="sr-only" role="status" aria-live="polite"></p>
+ <p id="statistics-filter-context" class="panel-helper" role="status" aria-live="polite"></p>
  </div>
  <p id="analysis-empty" class="empty" hidden>Aucune activité sur cette période pour la source sélectionnée. Les sections et les historiques restent accessibles ci-dessous.</p>
+ <nav class="statistics-jumps" aria-label="Accès aux résultats"><button type="button" data-statistics-jump="statistics-day-detail">Détail du jour</button><button type="button" data-statistics-jump="top-links-title">Liens</button><button type="button" data-statistics-jump="statistics-campaigns">Campagnes</button><button type="button" data-statistics-jump="statistics-sources">Sources</button><button type="button" data-statistics-jump="statistics-partners">Partenaires</button></nav>
  <div id="analysis-grid" class="statistics-sections">
   <section id="statistics-overview" class="statistics-section" aria-labelledby="statistics-overview-title">
    <header class="statistics-section-heading overview-heading sr-only"><h2 id="statistics-overview-title" tabindex="-1">Vue globale</h2></header>
    <div class="statistics-kpis" aria-label="Indicateurs de la période">
-    <article><div class="kpi-label"><span>Visites de la page</span><span data-icon="visits" aria-hidden="true"></span></div><strong id="statistics-views">—</strong><small>Pages vues sur LinKs</small></article>
-    <article><div class="kpi-label"><span>Clics publics</span><span data-icon="click" aria-hidden="true"></span></div><strong id="statistics-clicks">—</strong><small>Liens de la page publique</small></article>
-    <article><div class="kpi-label"><span>Ouvertures de liens suivis</span><span data-icon="links" aria-hidden="true"></span></div><strong id="statistics-tracked-openings">—</strong><small>Liens indépendants de la page</small></article>
-    <article><div class="kpi-label"><span>Ouvertures de campagnes</span><span data-icon="story" aria-hidden="true"></span></div><strong id="statistics-campaign-openings">—</strong><small>Liens partagés des campagnes</small></article>
-    <article><div class="kpi-label"><span>CTR de la page</span><span data-icon="chart" aria-hidden="true"></span></div><strong id="statistics-ratio">—</strong><small>Clics publics / pages vues</small></article>
-    <article><div class="kpi-label"><span>Codes promo copiés</span><span data-icon="click" aria-hidden="true"></span></div><strong id="statistics-copies">—</strong><small>Copies depuis les offres</small></article>
+    <article><div class="kpi-label"><span>Visites de la page</span><span data-icon="visits" aria-hidden="true"></span></div><strong id="statistics-views">—</strong><small>Pages vues sur LinKs</small><button type="button" class="kpi-action" data-metric-scope="public">Voir la tendance →</button></article>
+    <article><div class="kpi-label"><span>Clics publics</span><span data-icon="click" aria-hidden="true"></span></div><strong id="statistics-clicks">—</strong><small>Liens de la page publique</small><button type="button" class="kpi-action" data-metric-scope="public">Voir les liens publics →</button></article>
+    <article><div class="kpi-label"><span>Ouvertures de liens suivis</span><span data-icon="links" aria-hidden="true"></span></div><strong id="statistics-tracked-openings">—</strong><small>Liens indépendants de la page</small><button type="button" class="kpi-action" data-metric-scope="tracked">Voir les liens suivis →</button></article>
+    <article><div class="kpi-label"><span>Ouvertures de campagnes</span><span data-icon="story" aria-hidden="true"></span></div><strong id="statistics-campaign-openings">—</strong><small>Liens partagés des campagnes</small><button type="button" class="kpi-action" data-metric-scope="campaigns">Voir les campagnes →</button></article>
+    <article><div class="kpi-label"><span>CTR de la page</span><span data-icon="chart" aria-hidden="true"></span></div><strong id="statistics-ratio">—</strong><small>Clics publics / pages vues</small><button type="button" class="kpi-action" data-metric-scope="public">Voir la tendance →</button></article>
+    <article><div class="kpi-label"><span>Codes promo copiés</span><span data-icon="click" aria-hidden="true"></span></div><strong id="statistics-copies">—</strong><small>Copies depuis les offres</small><button type="button" class="kpi-action" data-metric-scope="copies">Voir les codes →</button></article>
    </div>
 
 
 
    <div class="statistics-overview-grid">
-    <section id="analysis-history" class="panel traffic-panel"><div class="panel-title"><div><h3>Évolution sur la période</h3><p class="panel-helper">Choisissez un jour pour afficher le détail de ses liens.</p></div><label class="statistics-chart-control">Courbe à afficher<select id="analysis-scope"><option value="all" selected>Toutes les métriques</option><option value="public">Page publique</option><option value="tracked">Liens suivis</option><option value="shared">Liens suivis et campagnes</option><option value="campaigns">Campagnes</option><option value="copies">Copies de codes promo</option></select></label></div><div id="statistics-chart"></div></section>
-    <section class="panel" data-analysis="sources"><div class="panel-title"><div><h3>Provenance de l’activité</h3><p class="panel-helper">Visites et ouvertures partagées, sans double comptage.</p></div><label class="statistics-chart-control">Afficher par<select id="source-level"><option value="platforms">Plateformes</option><option value="sources">Sources individuelles</option></select></label></div><div id="sources"></div><details class="statistics-help source-help"><summary>À propos des sources inconnues</summary><p>Une provenance ambiguë reste inconnue ; aucune plateforme n’est supposée.</p><p id="platform-group-note" class="panel-helper">Regroupement de lecture : les sources et leurs filtres restent distincts.</p></details><details id="platform-source-details" class="platform-source-details" hidden><summary>Sources qui composent les plateformes</summary><div id="platform-source-list" class="collection-rows" aria-label="Détail des sources par plateforme"></div></details></section>
+    <section id="analysis-history" class="panel traffic-panel"><div class="panel-title"><div><h3>Évolution sur la période</h3><p class="panel-helper">Choisissez un jour pour afficher le détail de ses liens.</p></div><label class="statistics-chart-control">Courbe à afficher<select id="analysis-scope"><option value="all" selected>Toutes les métriques</option><option value="public">Page publique</option><option value="tracked">Liens suivis</option><option value="shared">Liens suivis et campagnes</option><option value="campaigns">Campagnes</option><option value="copies">Copies de codes promo</option></select></label></div><div id="statistics-chart"></div><button type="button" class="daily-inspect-action" data-statistics-jump="statistics-day-detail">Consulter les liens du jour sélectionné ↓</button></section>
+
    </div>
 
   </section>
@@ -94,7 +96,7 @@
     <details class="statistics-help"><summary>Périmètre du détail quotidien</summary><p>Les visites, impressions et copies de codes ne sont pas des clics. Les fiches et noms reflètent les métadonnées disponibles ; les anciennes provenances incertaines restent identifiées. Les clics publics et les ouvertures restent séparés.</p></details>
    </section>
   <section class="panel statistics-top-links" aria-labelledby="top-links-title">
-   <div class="panel-title"><div><h3 id="top-links-title"><span data-icon="links" aria-hidden="true"></span>Top liens</h3><p class="panel-helper">Les liens les plus performants sur la période.</p></div></div>
+   <div class="panel-title"><div><h3 id="top-links-title" tabindex="-1"><span data-icon="links" aria-hidden="true"></span>Top liens</h3><p class="panel-helper">Les liens les plus performants sur la période.</p></div></div>
    <label class="top-links-filter">Classement<select id="top-link-type"><option value="public">Liens publics · clics</option><option value="tracked">Liens suivis · ouvertures</option></select></label>
   <section id="statistics-tracked" hidden class="statistics-section top-link-family" aria-labelledby="statistics-tracked-title">
    <header class="statistics-section-heading sr-only"><div><h2 id="statistics-tracked-title" tabindex="-1">Liens suivis</h2><p>Ouvertures des liens indépendants, toutes sources de publication confondues.</p></div></header>
@@ -117,8 +119,9 @@
   </section>
   </div>
   <div class="statistics-secondary-grid">
+    <section id="statistics-sources" class="panel" data-analysis="sources"><div class="panel-title"><div><h3>Provenance de l’activité</h3><p class="panel-helper">Visites et ouvertures partagées, sans double comptage.</p></div><label class="statistics-chart-control">Afficher par<select id="source-level"><option value="platforms">Plateformes</option><option value="sources">Sources individuelles</option></select></label></div><div id="sources"></div><details class="statistics-help source-help"><summary>À propos des sources inconnues</summary><p>Une provenance ambiguë reste inconnue ; aucune plateforme n’est supposée.</p><p id="platform-group-note" class="panel-helper">Regroupement de lecture : les sources et leurs filtres restent distincts.</p></details><details id="platform-source-details" class="platform-source-details" hidden><summary>Sources qui composent les plateformes</summary><div id="platform-source-list" class="collection-rows" aria-label="Détail des sources par plateforme"></div></details></section>
    <details class="statistics-help"><summary>Comprendre les indicateurs</summary><p>Les ouvertures de liens suivis et de campagnes sont comptées séparément des clics sur la page publique. Le CTR = clics publics / visites. Statistiques agrégées, sans identifiant visiteur. Aucun comparatif avec une période précédente n’est calculé.</p></details>
-   <details class="panel statistics-partner-panel statistics-disclosure"><summary>Classement des partenaires</summary><h3>Ouvertures par partenaire</h3><p id="partner-stat-note" class="panel-helper">Ouvertures de la période et de la source sélectionnées, selon les associations actuelles des liens.</p>
+   <details id="statistics-partners" class="panel statistics-partner-panel statistics-disclosure"><summary>Classement des partenaires</summary><h3>Ouvertures par partenaire</h3><p id="partner-stat-note" class="panel-helper">Ouvertures de la période et de la source sélectionnées, selon les associations actuelles des liens.</p>
     <dl id="partner-attribution-summary" class="partner-attribution-summary" aria-label="Répartition des ouvertures de liens suivis" aria-live="polite" hidden>
      <div><dt>Attribuées à un partenaire</dt><dd data-partner-count="attributed">—</dd></div>
      <div><dt>Sans partenaire déclaré</dt><dd data-partner-count="withoutPartner">—</dd></div>
