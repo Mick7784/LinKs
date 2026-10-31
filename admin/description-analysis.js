@@ -18,7 +18,7 @@ window.LinksDescriptionAnalysis=(()=>{'use strict';
   return {...value,item,errors,selected:!!value.selected&&!errors.length};
  }
  class Panel{
-  constructor(editor,request){this.editor=editor;this.request=request;this.result=null;this.key='';this.sequence=0;this.message='Analyse locale en attente';}
+  constructor(editor,request){this.editor=editor;this.request=request;this.result=null;this.key='';this.sequence=0;this.message='Analyse locale en attente';this.search=new window.LinksDescriptionSearch.Panel(this);}
   input(){const d=this.editor.doc;return {text:d.text,sections:d.sections,...(d.analysis_version===1?{analysis_version:1,products:d.products,selections:d.selections,manual_order:d.manual_order}:{})}}
   signature(){const d=this.editor.doc;return JSON.stringify([d.id,d.text,d.sections,d.products])}
   schedule(force=false){
@@ -40,9 +40,9 @@ window.LinksDescriptionAnalysis=(()=>{'use strict';
   render(host){
    const active=document.activeElement,focus=host.contains(active)?{key:active.dataset.analysisFocus,start:active.selectionStart,end:active.selectionEnd}:null;
    for(const key of ['urls','loose']){const existing=host.querySelector('[data-analysis-panel="'+key+'"]');if(existing)this[key+'Open']=existing.open}
-   host.replaceChildren();host.append(node('p',this.message,'description-analysis-status'),node('p','Le texte reste inchangé. Aucun site marchand n’est interrogé ; les choix préparent une validation ultérieure.','muted'));
+   host.replaceChildren();host.append(node('p',this.message,'description-analysis-status'),node('p','Le texte reste inchangé. Les recherches marchandes sont déclenchées uniquement par vos actions.','muted'));
    const controls=node('div',undefined,'description-anchor-actions');
-   controls.append(button('Actualiser le catalogue',()=>{this.schedule(true);this.editor.paint()}),button('Ajouter une référence',()=>{const query=prompt('Référence explicitement mentionnée, à retrouver dans LinKs (recherche marchande en phase 4)');if(!query?.trim()||query.length>160)return;this.editor.doc.analysis_version=1;this.editor.doc.products.push({id:'manual-'+crypto.randomUUID(),kind:'manual-reference',query});this.editor.changed()}));host.append(controls);
+   controls.append(button('Actualiser le catalogue',()=>{this.schedule(true);this.editor.paint()}),button('Ajouter une référence',()=>{const query=prompt('Référence explicitement mentionnée à rechercher');if(!query?.trim()||query.length>160)return;this.editor.doc.analysis_version=1;this.editor.doc.products.push({id:'manual-'+crypto.randomUUID(),kind:'manual-reference',query});this.editor.changed()}));this.search.controls(controls);host.append(controls);
    for(const ref of this.editor.doc.products.filter(p=>p.kind==='manual-reference')){
     const row=node('div',undefined,'description-manual-reference'),label=node('label','Référence manuelle'),input=node('input');input.value=ref.query;input.maxLength=160;input.dataset.analysisFocus=ref.id;
     input.addEventListener('input',()=>{ref.query=input.value;this.editor.changed()});label.append(input);row.append(label,button('Retirer cette référence',()=>{this.editor.doc.products=this.editor.doc.products.filter(p=>p.id!==ref.id);this.editor.changed()}));host.append(row);
@@ -63,6 +63,7 @@ window.LinksDescriptionAnalysis=(()=>{'use strict';
      grip.addEventListener('keydown',e=>{if(['ArrowUp','ArrowDown'].includes(e.key)){e.preventDefault();this.move(product.id,index+(e.key==='ArrowUp'?-1:1))}});
      const up=button('↑',()=>this.move(product.id,index-1)),down=button('↓',()=>this.move(product.id,index+1));up.disabled=index===0;down.disabled=index===products.length-1;up.setAttribute('aria-label','Monter '+product.name);down.setAttribute('aria-label','Descendre '+product.name);order.append(grip,up,down);card.append(order);
      if(product.evidence.length)card.append(button('Voir la mention',()=>{this.editor.selection=clone(product.evidence[0]);this.editor.writeArea()}));
+     this.search.render(product,card);
      for(const row of rows.filter(p=>p.product_id===product.id))card.append(this.proposal(row));
      const candidates=node('details');candidates.append(node('summary','Correspondances dans le catalogue ('+product.matches.length+')'));
      for(const match of product.matches){const item=result.catalogue.find(i=>i.id===match.link_id);candidates.append(node('p',item.name+' · '+this.merchant(item.merchant)+' · '+(match.confidence==='exact'?'nom identique':'incertain')))}card.append(candidates);host.append(card);

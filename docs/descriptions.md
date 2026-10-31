@@ -1,9 +1,9 @@
-# Descriptions — phases 1 à 3
+# Descriptions — phases 1 à 4
 
 Base d'intégration : V1.4.3, commit `55c64e8`. Les PR #60 (affiliation) et
 #61 (titres), ainsi que les correctifs ultérieurs de main, sont intégrés.
-Ces phases ajoutent modèles, stockage, éditeur et analyse locale ;
-elle ne duplique aucun service de titres, partenaires, liens ou sources.
+Ces phases ajoutent modèles, stockage, éditeur, analyse locale et préparation
+marchande ; elles ne dupliquent aucun service de titres, partenaires, liens ou sources.
 
 ## Périmètre livré
 
@@ -191,11 +191,107 @@ inactives et peuvent retrouver leur proposition après une annulation. Les
 anciens clients qui n'envoient pas ces champs ne les effacent pas. Les révisions,
 la récupération après interruption et les sauvegardes couvrent aussi ces choix.
 
-Aucune opération n'est appliquée au texte en phase 3. Les recherches externes
-manuelles Domadoo/Amazon restent en phase 4 ; comparaison et application finale
-restent en phase 5. L'aperçu rapide continue d'afficher le texte réellement saisi.
+Aucune opération n'est appliquée au texte. La préparation marchande est décrite
+ci-dessous ; comparaison et application finale restent en phase 5. L'aperçu
+rapide continue d'afficher le texte réellement saisi.
+
+## Phase 4 — recherche marchande et préparation
+
+Le panneau de chaque produit comporte un volet compact **Recherche marchande**.
+**Rechercher tous les produits** parcourt les références de l'analyse courante,
+en consultant d'abord le catalogue LinKs et les URL explicitement présentes.
+Les marchands déjà résolus sont ignorés individuellement. **Rechercher à nouveau**
+relance un seul produit, avec des mots-clés modifiables. Aucune recherche marchande
+ne part pendant la frappe, le chargement ou la récupération d'un brouillon.
+
+Les fiches existantes et les destinations fournies sont proposées séparément par
+marchand, avec titre, référence et URL. Plusieurs correspondances demandent un
+choix explicite. Les références du catalogue sont ses noms existants : aucune
+référence fabricant manquante n'est inventée. Les états sont : lien existant,
+produit trouvé, recherche nécessaire, lien Amazon à fournir, aucune correspondance
+et erreur de recherche. Une absence de résultat peut être signalée manuellement
+après recherche sur le site ; elle n'est pas déduite d'une erreur technique.
+
+### Domadoo : parcours assisté effectif
+
+Vérification ciblée du 31 octobre 2026 : la page publique
+[Domadoo](https://www.domadoo.fr/fr/) expose un formulaire GET
+`https://www.domadoo.fr/fr/recherche?s=…`. Le fichier public
+[robots.txt](https://www.domadoo.fr/robots.txt) exclut notamment les chemins de
+recherche et `controller=search`. Aucune API produit publique autorisée n'a été
+identifiée. Les deux pages publiques ont répondu HTTP 200 ; aucune interrogation
+automatisée des résultats, connexion affilié ou tentative de contournement n'a
+été effectuée. La recherche intégrée distante n'est donc **pas activée**.
+
+Le bouton **Ouvrir sur Domadoo** ouvre les résultats dans un nouvel onglet.
+L'utilisateur choisit une fiche et colle son URL dans le panneau. Le point
+d'entrée `description_search.merchant_search` est isolé et remplaçable par un
+futur fournisseur officiellement autorisé ; il retourne actuellement un parcours
+assisté et n'utilise ni `affiliation.py`, ni le connecteur de reporting.
+
+**Préparer ce lien** utilise `affiliate_partners.preview_tracked`, la détection du
+partenaire existant, sa règle courante et `tracked_links.duplicate_destinations`.
+La règle Domadoo retire les occurrences existantes de sa clé avant de l'ajouter
+une seule fois (`domid=117` avec la configuration initiale). Une règle absente ou
+une destination incompatible bloque la préparation. Une fiche existante choisie
+conserve sa destination enregistrée. Les doublons sont proposés pour réutilisation ;
+plusieurs fiches équivalentes demandent un choix. Aucun doublon n'est créé.
+
+### Amazon : URL officielle fournie par l'utilisateur
+
+Les correspondances disponibles proviennent du catalogue et du texte, sans
+requête automatique à Amazon. **Ouvrir sur Amazon** ouvre les résultats de la
+recherche ; chaque résultat connu permet aussi d'ouvrir sa fiche. **J'ai déjà un
+lien affilié** donne accès au champ de collage du lien généré officiellement.
+
+La préparation conserve exactement la chaîne fournie : `amzn.to`, `link.amazon`,
+URL longues, paramètres répétés, encodages et fragments. Aucun appel au moteur
+d'affiliation, résolution de lien court, reconstruction d'ASIN, changement de tag
+ou redirection LinKs. Le seul mode proposé est **direct**, avec le message
+**sans statistiques de clics LinKs**. Les liens nus reconnus peuvent être validés
+sur une copie absolue, mais la destination stockée reste la chaîne originale.
+Les champs acceptent 2 000 caractères, comme le moteur de liens existant.
+
+### Conservation et limites
+
+Les intitulés courts proviennent de `suggest_local_title`, sans requête distante.
+Ils sont modifiables dans le brouillon uniquement. Chaque préparation indique la
+destination, la sous-section de la copie du modèle et, pour Domadoo, une source
+YouTube existante. Une publication historique disponible est réutilisée ; si elle
+n'existe pas, son état reste à préparer, sans allocation de jeton.
+
+Les nouvelles propositions sont décochées. Les recherches et préparations restent
+dans `selections.merchant_search` (version 1), sous les identifiants stables des
+produits et des marchands : mots-clés, résultats temporaires, saisie d'URL,
+destination préparée, choix, intitulé, source et emplacement. Ces instantanés
+appartiennent exclusivement au brouillon ; ils ne constituent pas un catalogue
+produit supplémentaire. Les sauvegardes/restaurations, révisions et récupération
+locale de l'éditeur les couvrent sans migration de table. Les anciens clients
+omettant l'état d'analyse conservent ces données.
+
+Une réponse tardive ne remplace ni une recherche plus récente ni une saisie
+d'URL ou d'intitulé récente. Une erreur conserve les résultats et choix précédents.
+Les références retirées deviennent inactives, leurs choix restant disponibles
+après annulation. Une recherche interrompue demande une relance manuelle. Les
+liens marchands s'ouvrent avec `noopener noreferrer` sans navigation de l'éditeur.
+
+La préparation ne crée aucun lien suivi, source, jeton, alias ou version finalisée.
+Elle ne modifie jamais le texte. La phase 5 devra revalider la disponibilité des
+fiches/sources et la règle du partenaire avant toute application : les instantanés
+du brouillon ne sont pas une autorisation de créer. Comparaison, application,
+copie et historique finalisé restent hors du périmètre livré.
 
 ## Validation
+
+- `python3 scripts/description_search_test.py` : fournisseurs simulés, catalogue
+  prioritaire, destinations exactes, doublons, sources historiques, aucune écriture
+  catalogue, erreurs, états de recherche et sauvegarde/restauration des choix.
+- `node --test scripts/description-search.test.cjs` : déclenchement explicite,
+  relance ciblée, marchands résolus ignorés, choix conservés et réponses tardives.
+- `node scripts/descriptions-search-browser-test.cjs` : SMLIGHT, recherche globale
+  et individuelle, plusieurs fiches, erreur simulée, onglet marchand simulé,
+  intitulés/sélections/ordre, URL Amazon exacte, reprise hors ligne et thèmes.
+  Aucun test ne dépend de la disponibilité de Domadoo ou d'Amazon.
 
 - `python3 scripts/description_analysis_test.py` : référence SMLIGHT, absence
   d'IO externe et d'écriture catalogue, alias/jetons/campagnes, sources historiques,

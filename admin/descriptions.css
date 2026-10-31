@@ -65,6 +65,14 @@ main:has(#descriptions.active [data-editor-host]){max-width:none}
 #descriptions .description-assistant-content h3{font-size:1rem;margin-top:24px}
 #descriptions .description-analysis-note{padding:10px;background:var(--bg);border-radius:8px;font-size:.85rem}
 #descriptions .description-analysis-status{font-size:.85rem;color:var(--muted)}
+#descriptions .description-merchant-search{margin:14px 0;padding:10px;border:1px solid var(--border);border-radius:8px}
+#descriptions .description-merchant{padding:10px 0;border-top:1px solid var(--border);margin-top:12px}
+#descriptions .description-merchant-result{padding:12px 0;border-bottom:1px solid var(--border)}
+#descriptions .description-merchant-result strong,#descriptions .description-merchant-result small{display:block}
+#descriptions .description-merchant-search label{display:block;margin:10px 0}
+#descriptions .description-merchant-search input:not([type=checkbox]),#descriptions .description-merchant-search select{width:100%;max-width:100%}
+#descriptions .description-merchant-search button,#descriptions .description-merchant-open{margin:5px 6px 5px 0}
+#descriptions .description-merchant-open{display:inline-block;font-size:.85rem}
 #descriptions .description-assistant-content p{font-size:.88rem;line-height:1.5;margin:10px 0}
 #descriptions .description-assistant-content details>summary::before{content:'›';margin-right:6px}
 #descriptions .description-assistant-content details[open]>summary::before{transform:rotate(90deg)}

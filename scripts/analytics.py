@@ -1671,7 +1671,7 @@ class Handler(BaseHTTPRequestHandler):
         if url.path=="/preview/style.css":return self.file(ROOT/"site"/"style.css" if (ROOT/"site"/"style.css").exists() else Path("/usr/share/nginx/html/style.css"),"text/css")
         if url.path=="/preview/preview.css":return self.file(ADMIN/"promo-preview.css","text/css")
         if url.path.startswith("/preview/") and url.path[9:] in {"index.html","app.js","config.js","metrics.js","theme.js","theme.css","theme-tokens.json","asset-library.json"}:return self.file(STATIC/url.path[9:])
-        if url.path in {"/description-analysis.js","/description-sections.js","/description-editor.js","/descriptions.js","/descriptions.css","/affiliation.js","/affiliation.css","/collection.js","/partner-report.js","/source-platforms.js","/daily-report.js","/charts.js","/navigation.js","/page-editor.js","/page-editor.css","/page-editor-preview.css","/appearance.js","/appearance.css","/shortcuts.js","/uploads.js","/storage.js","/settings.js","/tracking.js","/title-batch.js","/link-batch.js","/theme-init.js"}:return self.file(ADMIN/url.path[1:])
+        if url.path in {"/description-search.js","/description-analysis.js","/description-sections.js","/description-editor.js","/descriptions.js","/descriptions.css","/affiliation.js","/affiliation.css","/collection.js","/partner-report.js","/source-platforms.js","/daily-report.js","/charts.js","/navigation.js","/page-editor.js","/page-editor.css","/page-editor-preview.css","/appearance.js","/appearance.css","/shortcuts.js","/uploads.js","/storage.js","/settings.js","/tracking.js","/title-batch.js","/link-batch.js","/theme-init.js"}:return self.file(ADMIN/url.path[1:])
         files={"/":("index.html","text/html;charset=utf-8"),"/app.js":("app.js","application/javascript"),"/dates.js":("dates.js","application/javascript"),"/calendar.js":("calendar.js","application/javascript"),"/style.css":("style.css","text/css")}
         return self.file(ADMIN/files[url.path][0],files[url.path][1]) if url.path in files else self.send(404)
     def do_POST(self):
@@ -1694,6 +1694,11 @@ class Handler(BaseHTTPRequestHandler):
         try:
             data=self.body(BACKUP_LIMIT if path in {'/api/restore','/api/restore/preview'} else themes.MAX_BYTES if path=="/api/appearance/import" else 8*1024*1024)
             if path.startswith("/api/descriptions/"):
+                merchant_match=re.fullmatch(r'/api/descriptions/drafts/([\w-]+)/(search|prepare)',path)
+                if merchant_match:
+                    import description_search
+                    operation=description_search.search_product if merchant_match[2]=='search' else description_search.prepare_link
+                    with connection() as db:return self.json(200,operation(db,merchant_match[1],data,ORIGIN))
                 analysis_match=re.fullmatch(r'/api/descriptions/drafts/([\w-]+)/analyze',path)
                 if analysis_match:
                     with connection() as db:return self.json(200,descriptions.analyze_draft(db,analysis_match[1],data,ORIGIN))

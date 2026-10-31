@@ -332,6 +332,9 @@ def validate_choices(data):
         if set(product)!={'id','kind','query'}:raise ValueError('Référence manuelle invalide.')
     selections=data.get('selections')
     if not isinstance(selections,dict):raise ValueError('Sélections invalides.')
+    if 'merchant_search' in selections:
+        from description_search import validate_state
+        validate_state(selections['merchant_search'])
     choices=selections.get('description_analysis',{})
     if not isinstance(choices,dict) or len(choices)>1000:raise ValueError('Trop de sélections.')
     for key,value in choices.items():
