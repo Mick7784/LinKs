@@ -9,6 +9,8 @@ services:
       CREATOR_STUDIO_URL: ${CREATOR_STUDIO_URL:-}
       CREATOR_STUDIO_API_KEY: ${CREATOR_STUDIO_API_KEY:-}
       ADMIN_ORIGIN: ${ADMIN_ORIGIN:-}
+      DOMADOO_LOGIN: ${DOMADOO_LOGIN:-}
+      DOMADOO_PASSWORD: ${DOMADOO_PASSWORD:-}
     volumes:
       - links-data:/data
     init: true

@@ -21,6 +21,10 @@ function stop(code) {
   else nginx.once("exit", () => process.exit(code));
 }
 affiliation=spawn(process.execPath,["/app/affiliation-worker.mjs"],{stdio:"inherit"});
+// Only the affiliation worker needs the optional Domadoo credentials. They are
+// never forwarded to nginx, analytics, the public API or browser subprocesses.
+delete process.env.DOMADOO_LOGIN;
+delete process.env.DOMADOO_PASSWORD;
 affiliation.on("error",()=>stop(1));
 affiliation.on("exit",()=>{if(!stopping)stop(1)});
 // Content/admin are always available; analytics.enabled controls collection only.

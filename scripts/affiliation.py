@@ -242,7 +242,7 @@ def start_sync(connect, identity, identities=None):
             try:
                 for selected,run_id in runs:
                     try:
-                        payload=worker('collect',{'account':selected},timeout=1900)
+                        payload=worker('collect',{'account':selected},timeout=2000)
                         with connect() as db:
                             ingest(db,selected,payload)
                             db.execute("UPDATE aff_runs SET status='success',finished_at=?,rows=?,pages=? WHERE id=?",(stamp(),len(payload['transactions']),payload['pages'],run_id))
