@@ -15,6 +15,7 @@ import images as user_images
 import storage
 import tracked_links
 import tracked_batch
+import descriptions
 import affiliate_partners
 import affiliation
 import short_urls
@@ -121,6 +122,7 @@ def init():
         affiliate_partners.initialize(db)
         affiliation.initialize(db)
         short_urls.initialize(db)
+        descriptions.initialize(db)
         instance.initialize(db,legacy,CONFIG,[DATA_DIR/"assets",STATIC/"assets"],DATA_DIR)
         db.execute("INSERT OR IGNORE INTO settings VALUES('app.instance_id',?)",(uuid.uuid4().hex,))
         themes.initialize(db)
@@ -770,7 +772,7 @@ def export_backup():
         assets={}
         for path in (DATA_DIR/'assets').glob('*'):
             if path.is_file():assets[path.name]=base64.b64encode(path.read_bytes()).decode('ascii')
-        result={'format':'links-backup','version':3,'created_at':now_iso(),'software_version':software_version(),'instance_id':instance.get(db,'app.instance_id'),'tables':tables,'images':images,'assets':assets,'affiliation':affiliation.export_backup(db)}
+        result={'format':'links-backup','version':3,'created_at':now_iso(),'software_version':software_version(),'instance_id':instance.get(db,'app.instance_id'),'tables':tables,'images':images,'assets':assets,'affiliation':affiliation.export_backup(db),'descriptions':descriptions.export_backup(db)}
         encoded=json.dumps(result,ensure_ascii=False).encode()
         if len(encoded)>BACKUP_LIMIT:raise ValueError('Sauvegarde supérieure à 64 Mo : sauvegarder le volume serveur')
         return encoded
@@ -1070,8 +1072,9 @@ def restore_backup(data,preview=False):
             refs=[r['image'] for r in tables['content_blocks']]+[r['value'] for r in tables['settings'] if r['key'] in {'profile.logo','profile.avatar','appearance.campaign_image'}]
             for ref in refs:
                 if ref.startswith('/assets/') and not (STATIC/ref[1:]).is_file() and not (DATA_DIR/ref[1:]).is_file() and ref[8:] not in asset_bytes:raise ValueError('Asset référencé manquant')
+            description_restore=descriptions.restore_backup(db,data.get('descriptions'))
             affiliation_restore=affiliation.restore_backup(db,data.get('affiliation'))
-            summary={'affiliation':affiliation_restore,'blocks':len(tables['content_blocks']),'buttons':len(tables['top_buttons']),'images':len(images),
+            summary={'descriptions':description_restore,'affiliation':affiliation_restore,'blocks':len(tables['content_blocks']),'buttons':len(tables['top_buttons']),'images':len(images),
                      'retained_content':len(retained_rows),'published_redirects':len(tables['story_links'])+len(tables['tracked_tokens']),
                      'counter_total':sum(row['total'] for row in tables['counts'])}
             canonical={r['token'] for r in tables['story_links']}|{r['token'] for r in tables['tracked_tokens']}
@@ -1615,6 +1618,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.file(UPLOADS/name) if re.fullmatch(r"[a-f0-9-]{36}\.(jpg|png|webp|gif)",name) else self.send(404)
         if not self.server.admin:return self.json(200,public_config()) if url.path=="/api/public-config" else self.send(404)
         try:
+            if url.path.startswith("/api/descriptions/"):
+                with connection() as db:return self.json(200,descriptions.read(db,url.path.removeprefix("/api/descriptions/"),ORIGIN))
             if url.path.startswith("/api/affiliation/"):
                 return self.json(200,affiliation.get(connection,url.path.removeprefix("/api/affiliation/"),{k:v[0] for k,v in parse_qs(url.query).items()}))
             if url.path=="/api/appearance":
@@ -1666,7 +1671,7 @@ class Handler(BaseHTTPRequestHandler):
         if url.path=="/preview/style.css":return self.file(ROOT/"site"/"style.css" if (ROOT/"site"/"style.css").exists() else Path("/usr/share/nginx/html/style.css"),"text/css")
         if url.path=="/preview/preview.css":return self.file(ADMIN/"promo-preview.css","text/css")
         if url.path.startswith("/preview/") and url.path[9:] in {"index.html","app.js","config.js","metrics.js","theme.js","theme.css","theme-tokens.json","asset-library.json"}:return self.file(STATIC/url.path[9:])
-        if url.path in {"/affiliation.js","/affiliation.css","/collection.js","/partner-report.js","/source-platforms.js","/daily-report.js","/charts.js","/navigation.js","/page-editor.js","/page-editor.css","/page-editor-preview.css","/appearance.js","/appearance.css","/shortcuts.js","/uploads.js","/storage.js","/settings.js","/tracking.js","/title-batch.js","/link-batch.js","/theme-init.js"}:return self.file(ADMIN/url.path[1:])
+        if url.path in {"/description-search.js","/description-analysis.js","/description-sections.js","/description-editor.js","/descriptions.js","/descriptions.css","/affiliation.js","/affiliation.css","/collection.js","/partner-report.js","/source-platforms.js","/daily-report.js","/charts.js","/navigation.js","/page-editor.js","/page-editor.css","/page-editor-preview.css","/appearance.js","/appearance.css","/shortcuts.js","/uploads.js","/storage.js","/settings.js","/tracking.js","/title-batch.js","/link-batch.js","/theme-init.js"}:return self.file(ADMIN/url.path[1:])
         files={"/":("index.html","text/html;charset=utf-8"),"/app.js":("app.js","application/javascript"),"/dates.js":("dates.js","application/javascript"),"/calendar.js":("calendar.js","application/javascript"),"/style.css":("style.css","text/css")}
         return self.file(ADMIN/files[url.path][0],files[url.path][1]) if url.path in files else self.send(404)
     def do_POST(self):
@@ -1688,6 +1693,19 @@ class Handler(BaseHTTPRequestHandler):
             except (sqlite3.Error,OSError):return self.send(503)
         try:
             data=self.body(BACKUP_LIMIT if path in {'/api/restore','/api/restore/preview'} else themes.MAX_BYTES if path=="/api/appearance/import" else 8*1024*1024)
+            if path.startswith("/api/descriptions/"):
+                merchant_match=re.fullmatch(r'/api/descriptions/drafts/([\w-]+)/(search|prepare)',path)
+                if merchant_match:
+                    import description_search
+                    operation=description_search.search_product if merchant_match[2]=='search' else description_search.prepare_link
+                    with connection() as db:return self.json(200,operation(db,merchant_match[1],data,ORIGIN))
+                analysis_match=re.fullmatch(r'/api/descriptions/drafts/([\w-]+)/analyze',path)
+                if analysis_match:
+                    with connection() as db:return self.json(200,descriptions.analyze_draft(db,analysis_match[1],data,ORIGIN))
+                with connection() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result=descriptions.write(db,path.removeprefix("/api/descriptions/"),data,ORIGIN)
+                return self.json(200,result)  # Acknowledge only after the transaction commits.
             if path.startswith("/api/affiliation/"):
                 return self.json(200,affiliation.post(connection,path.removeprefix("/api/affiliation/"),data))
             if path=="/api/appearance/css":return self.json(200,themes.css_import(data.get("css")))
@@ -1787,6 +1805,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json(200,storage_state(action))
             if path=="/api/settings":return self.save_settings(data)
             return self.send(404)
+        except descriptions.Conflict as exc:return self.json(409,{"error":str(exc),"conflict":True})
         except tracked_links.DuplicateDestination as exc:return self.json(409,{"error":str(exc),"duplicates":exc.matches})
         except (ValueError,TypeError,json.JSONDecodeError,binascii.Error,sqlite3.IntegrityError) as exc:return self.json(400,{"error":str(exc) or "Requête invalide"})
         except (OSError,sqlite3.OperationalError):return self.json(503,{"error":"Stockage indisponible. Les données n’ont pas été remplacées."})

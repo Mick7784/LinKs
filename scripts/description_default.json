@@ -1,0 +1,135 @@
+{
+  "name": "YouTube — DomotiK Studio",
+  "platform": "youtube",
+  "sections": [
+    {
+      "id": "summary",
+      "name": "Résumé de la vidéo",
+      "heading": "",
+      "mode": "manual",
+      "hide_if_empty": false,
+      "text": "",
+      "links": [],
+      "merchants": [],
+      "after_text": ""
+    },
+    {
+      "id": "support",
+      "name": "Soutenir la chaîne et Ko-fi",
+      "heading": "🙏 SOUTENIR LA CHAÎNE DOMOTIK STUDIO",
+      "mode": "permanent",
+      "hide_if_empty": false,
+      "text": "👍 Like, abonne-toi et active la cloche\n⭐ Sur mobile, pense au BOOST pour soutenir la vidéo\n🔁 Partage cette vidéo\n\n☕ Sinon, vous pouvez aussi soutenir la chaîne et mes projets en m’offrant un café :",
+      "links": [
+        {
+          "id": "kofi",
+          "label": "👉 ",
+          "reference_url": "https://ko-fi.com/domotik_studio",
+          "link_id": "",
+          "source_id": ""
+        }
+      ],
+      "merchants": [],
+      "after_text": "Merci pour votre soutien ❤️"
+    },
+    {
+      "id": "affiliate",
+      "name": "Liens affiliés et utiles",
+      "heading": "🛒 LIENS AFFILIÉS / LIENS UTILES",
+      "mode": "smart",
+      "hide_if_empty": false,
+      "text": "Si tu passes par les liens ci-dessous pour soutenir la chaîne, un grand merci 🙏\nÇa ne te coûte rien de plus et ça m’aide énormément à continuer à créer du contenu sur la domotique, Home Assistant, Zigbee et la maison connectée.",
+      "links": [],
+      "merchants": [
+        {
+          "id": "domadoo",
+          "name": "Domadoo",
+          "heading": "🟠 Chez Domadoo",
+          "text": "",
+          "partner_id": "",
+          "hide_if_empty": false,
+          "links": [
+            {
+              "id": "domadoo-shop",
+              "label": "✅ Boutique Domadoo : ",
+              "reference_url": "https://www.domadoo.fr/fr/?domid=117",
+              "link_id": "",
+              "source_id": ""
+            }
+          ],
+          "after_text": ""
+        },
+        {
+          "id": "amazon",
+          "name": "Amazon",
+          "heading": "🟠 Sur Amazon",
+          "text": "",
+          "partner_id": "",
+          "hide_if_empty": true,
+          "links": [],
+          "after_text": ""
+        }
+      ],
+      "after_text": ""
+    },
+    {
+      "id": "videos",
+      "name": "Vidéos complémentaires",
+      "heading": "🎥 VIDÉO COMPLÉMENTAIRE",
+      "mode": "smart",
+      "hide_if_empty": true,
+      "text": "",
+      "links": [],
+      "merchants": [],
+      "after_text": ""
+    },
+    {
+      "id": "chapters",
+      "name": "Chapitrage",
+      "heading": "🔔 CHAPITRAGE",
+      "mode": "manual",
+      "hide_if_empty": true,
+      "text": "",
+      "links": [],
+      "merchants": [],
+      "after_text": ""
+    },
+    {
+      "id": "community",
+      "name": "Communauté Instagram / Discord",
+      "heading": "🔗 REJOINDRE LA COMMUNAUTÉ",
+      "mode": "permanent",
+      "hide_if_empty": false,
+      "text": "",
+      "links": [
+        {
+          "id": "instagram",
+          "label": "✅ Instagram : ",
+          "reference_url": "https://www.instagram.com/domotik_studio/",
+          "link_id": "",
+          "source_id": ""
+        },
+        {
+          "id": "discord",
+          "label": "✅ Discord AyLabs : ",
+          "reference_url": "https://discord.gg/XYKJEkPtRS",
+          "link_id": "",
+          "source_id": ""
+        }
+      ],
+      "merchants": [],
+      "after_text": ""
+    },
+    {
+      "id": "hashtags",
+      "name": "Hashtags",
+      "heading": "",
+      "mode": "manual",
+      "hide_if_empty": true,
+      "text": "",
+      "links": [],
+      "merchants": [],
+      "after_text": ""
+    }
+  ]
+}
