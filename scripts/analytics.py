@@ -1708,7 +1708,7 @@ class Handler(BaseHTTPRequestHandler):
                     with connection() as db:return self.json(200,descriptions.analyze_draft(db,analysis_match[1],data,ORIGIN))
                 with connection() as db:
                     db.execute("BEGIN IMMEDIATE")
-                    result=descriptions.write(db,path.removeprefix("/api/descriptions/"),data,ORIGIN)
+                    result=descriptions.write(db,path.removeprefix("/api/descriptions/"),data,ORIGIN,story_url_valid)
                 return self.json(200,result)  # Acknowledge only after the transaction commits.
             if path.startswith("/api/affiliation/"):
                 return self.json(200,affiliation.post(connection,path.removeprefix("/api/affiliation/"),data))

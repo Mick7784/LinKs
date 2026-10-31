@@ -59,6 +59,15 @@ class WorkflowTests(unittest.TestCase):
         self.assertTrue(again['replayed']);self.assertEqual(after,self.tracking_state())
         self.assertEqual(after['counts'],before['counts']);self.assertEqual(after['tracking_sources'],before['tracking_sources'])
 
+    def test_application_uses_existing_destination_validator(self):
+        doc,op=self.proposal(self.doc());doc['selections']['operations']={'hide-empty':{'selected':False}};doc=self.store(doc);plan=self.compare(doc);before=self.tracking_state()
+        request={k:plan[k] for k in ('expected_revision','text_hash','plan_hash')};request['mutation_id']='validator-check'
+        validator=unittest.mock.Mock(return_value=False)
+        with self.a.connection() as db:
+            db.execute('BEGIN IMMEDIATE');result=d.write(db,'drafts/'+doc['id']+'/apply',request,self.a.ORIGIN,validator)
+        self.assertTrue(validator.called);self.assertEqual(next(r for r in result['results'] if r['id']==op)['status'],'failed')
+        self.assertEqual(before,self.tracking_state());self.assertEqual(doc['text'],result['document']['text'])
+
     def test_amazon_direct_exact_no_business_writes_and_bare_warning(self):
         doc,op=self.proposal(self.doc(),'amazon','link.amazon/Exact?tag=keep-21&x=+&x=%2b#😀');before=self.tracking_state();plan=self.compare(doc)
         self.assertTrue(any('sans schéma' in x for x in plan['warnings']));result,_=self.apply(doc,plan)

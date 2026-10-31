@@ -204,7 +204,7 @@ def resolve(db,doc,op,items,origin):
     elif op['option'].get('allow_create') and op.get('raw') and not op.get('amazon'):
         from urllib.parse import urlsplit
         raw=op['raw']
-        if not partners.http_url(raw) or urlsplit(raw).netloc==urlsplit(origin).netloc:raise ValueError('Une destination externe HTTP(S) exacte est requise.')
+        if not partners.http_url(raw) or (urlsplit(raw).hostname or '').lower().rstrip('.')==(urlsplit(origin).hostname or '').lower().rstrip('.'):raise ValueError('Une destination externe HTTP(S) exacte est requise.')
         preview=partners.preview_tracked(db,{'url':raw,'detect':True})
         if preview['duplicates']:raise ValueError('Cette destination existe déjà : choisissez sa fiche avant de créer.')
         op.update(destination=preview['url'],partner_id=preview['partner_id'],original_url=raw)
@@ -301,7 +301,7 @@ def compare(db,key,data,origin):
     return plan
 
 
-def apply(db,key,data,origin):
+def apply(db,key,data,origin,url_valid=partners.http_url):
     mutation=d.ident(data.get('mutation_id'));fingerprint=digest({k:v for k,v in data.items() if k!='mutation_id'})
     existing=d.editor_document(d.get(db,d.TABLES[1],key));receipt=existing.get('workflow',{}).get('receipts',{}).get(mutation)
     if receipt:
@@ -328,7 +328,7 @@ def apply(db,key,data,origin):
                         if len(preview['duplicates'])!=1:raise ValueError('Doublons ambigus : choisissez une fiche.')
                         ident=preview['duplicates'][0]['id']
                     else:
-                        saved=partners.save_tracked(db,{'name':op['label'] or 'Lien de description','url':op['original_url'],'partner_id':op['partner_id'],'expected_url':preview['url']},partners.http_url,d.stamp());ident=saved['id']
+                        saved=partners.save_tracked(db,{'name':op['label'] or 'Lien de description','url':op['original_url'],'partner_id':op['partner_id'],'expected_url':preview['url']},url_valid,d.stamp());ident=saved['id']
                     op['link_id']=ident
                 # Existing publications are reused byte for byte, including a
                 # historical /go/token without allocating a replacement alias.

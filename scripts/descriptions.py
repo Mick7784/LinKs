@@ -472,12 +472,13 @@ def read(db, path, origin):
     raise ValueError('Ressource Descriptions inconnue.')
 
 
-def write(db, path, data, origin):
+def write(db, path, data, origin, url_valid=affiliate_partners.http_url):
     if not isinstance(data, dict):raise ValueError('Requête invalide.')
     match = re.fullmatch(r'drafts/([\w-]+)/(apply|finalize)',path)
     if match:
         import description_workflow as workflow
-        return (workflow.apply if match[2]=='apply' else workflow.finalize)(db,match[1],data,origin)
+        if match[2]=='apply':return workflow.apply(db,match[1],data,origin,url_valid)
+        return workflow.finalize(db,match[1],data,origin)
     match = re.fullmatch(r'versions/([\w-]+)/restore',path)
     if match:
         from description_workflow import restore
