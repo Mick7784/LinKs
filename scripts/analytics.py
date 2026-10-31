@@ -16,6 +16,7 @@ import storage
 import tracked_links
 import tracked_batch
 import affiliate_partners
+import affiliation
 import short_urls
 import url_inspection
 import pulse_manager
@@ -71,6 +72,7 @@ def init():
     global ORIGIN,PARIS
     Path(DB).parent.mkdir(parents=True,exist_ok=True); UPLOADS.mkdir(parents=True,exist_ok=True)
     with DATA_LOCK:
+        affiliation.migration_backup(DB)
         category_backup=tracked_links.remove_legacy_category(DB)
     if category_backup:
         print('LinKs : catégories supprimées ; sauvegarde SQLite vérifiée : '+str(category_backup),flush=True)
@@ -117,6 +119,7 @@ def init():
         db.execute("CREATE TABLE IF NOT EXISTS footer_quotes(id TEXT PRIMARY KEY,text TEXT NOT NULL UNIQUE,active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),created_at TEXT NOT NULL)")
         tracked_links.initialize(db)
         affiliate_partners.initialize(db)
+        affiliation.initialize(db)
         short_urls.initialize(db)
         instance.initialize(db,legacy,CONFIG,[DATA_DIR/"assets",STATIC/"assets"],DATA_DIR)
         db.execute("INSERT OR IGNORE INTO settings VALUES('app.instance_id',?)",(uuid.uuid4().hex,))
@@ -767,7 +770,7 @@ def export_backup():
         assets={}
         for path in (DATA_DIR/'assets').glob('*'):
             if path.is_file():assets[path.name]=base64.b64encode(path.read_bytes()).decode('ascii')
-        result={'format':'links-backup','version':3,'created_at':now_iso(),'software_version':software_version(),'instance_id':instance.get(db,'app.instance_id'),'tables':tables,'images':images,'assets':assets}
+        result={'format':'links-backup','version':3,'created_at':now_iso(),'software_version':software_version(),'instance_id':instance.get(db,'app.instance_id'),'tables':tables,'images':images,'assets':assets,'affiliation':affiliation.export_backup(db)}
         encoded=json.dumps(result,ensure_ascii=False).encode()
         if len(encoded)>BACKUP_LIMIT:raise ValueError('Sauvegarde supérieure à 64 Mo : sauvegarder le volume serveur')
         return encoded
@@ -1067,7 +1070,8 @@ def restore_backup(data,preview=False):
             refs=[r['image'] for r in tables['content_blocks']]+[r['value'] for r in tables['settings'] if r['key'] in {'profile.logo','profile.avatar','appearance.campaign_image'}]
             for ref in refs:
                 if ref.startswith('/assets/') and not (STATIC/ref[1:]).is_file() and not (DATA_DIR/ref[1:]).is_file() and ref[8:] not in asset_bytes:raise ValueError('Asset référencé manquant')
-            summary={'blocks':len(tables['content_blocks']),'buttons':len(tables['top_buttons']),'images':len(images),
+            affiliation_restore=affiliation.restore_backup(db,data.get('affiliation'))
+            summary={'affiliation':affiliation_restore,'blocks':len(tables['content_blocks']),'buttons':len(tables['top_buttons']),'images':len(images),
                      'retained_content':len(retained_rows),'published_redirects':len(tables['story_links'])+len(tables['tracked_tokens']),
                      'counter_total':sum(row['total'] for row in tables['counts'])}
             canonical={r['token'] for r in tables['story_links']}|{r['token'] for r in tables['tracked_tokens']}
@@ -1611,6 +1615,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.file(UPLOADS/name) if re.fullmatch(r"[a-f0-9-]{36}\.(jpg|png|webp|gif)",name) else self.send(404)
         if not self.server.admin:return self.json(200,public_config()) if url.path=="/api/public-config" else self.send(404)
         try:
+            if url.path.startswith("/api/affiliation/"):
+                return self.json(200,affiliation.get(connection,url.path.removeprefix("/api/affiliation/"),{k:v[0] for k,v in parse_qs(url.query).items()}))
             if url.path=="/api/appearance":
                 with connection() as db:return self.json(200,themes.state(db))
             if url.path=='/api/appearance/campaign-image':
@@ -1660,7 +1666,7 @@ class Handler(BaseHTTPRequestHandler):
         if url.path=="/preview/style.css":return self.file(ROOT/"site"/"style.css" if (ROOT/"site"/"style.css").exists() else Path("/usr/share/nginx/html/style.css"),"text/css")
         if url.path=="/preview/preview.css":return self.file(ADMIN/"promo-preview.css","text/css")
         if url.path.startswith("/preview/") and url.path[9:] in {"index.html","app.js","config.js","metrics.js","theme.js","theme.css","theme-tokens.json","asset-library.json"}:return self.file(STATIC/url.path[9:])
-        if url.path in {"/collection.js","/partner-report.js","/source-platforms.js","/daily-report.js","/charts.js","/navigation.js","/page-editor.js","/page-editor.css","/page-editor-preview.css","/appearance.js","/appearance.css","/shortcuts.js","/uploads.js","/storage.js","/settings.js","/tracking.js","/title-batch.js","/link-batch.js","/theme-init.js"}:return self.file(ADMIN/url.path[1:])
+        if url.path in {"/affiliation.js","/affiliation.css","/collection.js","/partner-report.js","/source-platforms.js","/daily-report.js","/charts.js","/navigation.js","/page-editor.js","/page-editor.css","/page-editor-preview.css","/appearance.js","/appearance.css","/shortcuts.js","/uploads.js","/storage.js","/settings.js","/tracking.js","/title-batch.js","/link-batch.js","/theme-init.js"}:return self.file(ADMIN/url.path[1:])
         files={"/":("index.html","text/html;charset=utf-8"),"/app.js":("app.js","application/javascript"),"/dates.js":("dates.js","application/javascript"),"/calendar.js":("calendar.js","application/javascript"),"/style.css":("style.css","text/css")}
         return self.file(ADMIN/files[url.path][0],files[url.path][1]) if url.path in files else self.send(404)
     def do_POST(self):
@@ -1682,6 +1688,8 @@ class Handler(BaseHTTPRequestHandler):
             except (sqlite3.Error,OSError):return self.send(503)
         try:
             data=self.body(BACKUP_LIMIT if path in {'/api/restore','/api/restore/preview'} else themes.MAX_BYTES if path=="/api/appearance/import" else 8*1024*1024)
+            if path.startswith("/api/affiliation/"):
+                return self.json(200,affiliation.post(connection,path.removeprefix("/api/affiliation/"),data))
             if path=="/api/appearance/css":return self.json(200,themes.css_import(data.get("css")))
             if path=='/api/appearance/campaign-image':return self.json(200,save_campaign_image(data))
             if path=="/api/appearance/css-export":return self.json(200,{'css':themes.css_export(themes.record(data.get('theme')))})
@@ -1976,4 +1984,4 @@ class Handler(BaseHTTPRequestHandler):
 def serve(port,admin,host):
     server=ThreadingHTTPServer((host,port),Handler);server.admin=admin;return server
 if __name__=="__main__":
-    init();write_public_fallback();threading.Thread(target=campaign_worker,daemon=True).start();threading.Thread(target=storage_worker,daemon=True).start();public=serve(3003,False,"127.0.0.1");threading.Thread(target=public.serve_forever,daemon=True).start();serve(8081,True,"0.0.0.0").serve_forever()
+    init();threading.Thread(target=affiliation.scheduler,args=(connection,),daemon=True).start();write_public_fallback();threading.Thread(target=campaign_worker,daemon=True).start();threading.Thread(target=storage_worker,daemon=True).start();public=serve(3003,False,"127.0.0.1");threading.Thread(target=public.serve_forever,daemon=True).start();serve(8081,True,"0.0.0.0").serve_forever()

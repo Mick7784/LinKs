@@ -1,0 +1,7 @@
+{
+  "name": "links-affiliation-runtime",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Private Domadoo browser worker; no third-party connector enabled by default",
+  "dependencies": { "playwright-core": "1.64.1" }
+}
