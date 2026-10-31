@@ -103,7 +103,7 @@ function showResult(row){
  node.check.disabled=!row.proposed.trim()||row.proposed.trim()===row.original;
  node.check.checked=false;
  const reliability={high:"élevée",medium:"moyenne",low:"faible"}[row.confidence];
- node.status.textContent=(row.status==="generated"?"Amélioration proposée. Modifiable avant validation.":
+ node.status.textContent=(row.status==="generated"?(row.source==="editorial"?"Correction rédactionnelle du titre existant. Modifiable avant validation.":"Amélioration proposée depuis la destination. Modifiable avant validation."):
   row.status==="unchanged"?"Titre déjà pertinent, conservé.":
   row.status==="retained"?"Aucun gain certain : titre actuel conservé.":
   "Analyse incomplète : titre actuel conservé.")+
@@ -111,7 +111,7 @@ function showResult(row){
   (reliability&&row.status!=="unavailable"?" Fiabilité "+reliability+".":"");
  if(row.diagnostics){
   const fetch=row.diagnostics.fetch||{},extraction=row.diagnostics.extraction||{};
-  const parts=[/^http_/.test(fetch.code||"")?"":reasonLabel(fetch.code),Number.isInteger(fetch.http_status)?"HTTP "+fetch.http_status:"",
+  const parts=[reasonLabel(row.diagnostics.destination_decision?.reason),reasonLabel(extraction.code),/^http_/.test(fetch.code||"")?"":reasonLabel(fetch.code),Number.isInteger(fetch.http_status)?"HTTP "+fetch.http_status:"",
    Number.isInteger(fetch.redirects)?fetch.redirects+" redirection(s)":"",
    fetch.truncated?"Lecture limitée à 256 Ko":"",
    Number.isInteger(extraction.candidates)?extraction.candidates+" candidat(s)":"Extraction non effectuée",
@@ -135,7 +135,7 @@ async function inspectAll(mySession){
     row.proposed=title||row.original;
     row.status=["unchanged","retained","unavailable"].includes(result.status)?result.status:
       !title?"unavailable":title===row.original?"unchanged":"generated";
-    row.confidence=result.confidence;row.reason=result.reason;row.diagnostics=result.diagnostics;row.engine=result.engine;
+    row.confidence=result.confidence;row.reason=result.reason;row.source=result.source;row.diagnostics=result.diagnostics;row.engine=result.engine;
    }catch(error){
     if(mySession!==session||controller.signal.aborted)return;
     row.proposed=row.original;row.status="unavailable";row.reason="preview_failed";

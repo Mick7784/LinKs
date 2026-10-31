@@ -41,8 +41,9 @@ entraînent l'abstention.
 
 Le nettoyage retire les enseignes et formulations commerciales reconnues ; il
 ne coupe plus au premier séparateur et ne tronque pas une référence longue.
-La limite d'une proposition automatique est de 120 caractères ; au-delà, ce
-candidat est écarté. Le champ manuel reste limité à 160 caractères.
+La limite d'un candidat extrait est de 120 caractères ; au-delà, ce candidat
+est écarté. Le champ manuel et les corrections locales du titre existant restent
+limités à 160 caractères, sans troncature.
 
 La provenance et la concordance de sources distinctes déterminent une fiabilité
 `high`, `medium` ou `low`. Ce sont des niveaux heuristiques, pas des probabilités.
@@ -55,7 +56,7 @@ source est prioritaire. Le titre HTML n'est jamais privilégié automatiquement.
 Avec `current_title`, le moteur conserve les mots utiles et les références du nom
 courant. Il accepte un enrichissement démontrable ou le remplacement d'une marque
 ou d'un libellé générique reconnu. L'ajout de la seule marque connue, les variations
-de ponctuation, de casse ou d'ordre ne sont pas comptés comme des améliorations.
+de ponctuation ou d'ordre sans correction démontrée ne sont pas comptés comme des améliorations.
 Une formulation plus courte mais sémantiquement incertaine est volontairement
 écartée. Les noms existants inconnus d'un seul mot ne sont pas réputés génériques.
 
@@ -74,7 +75,7 @@ L'API renvoie `title`, `source`, `status`, `confidence`, `reason`, ainsi que
 
 | État | Signification |
 | --- | --- |
-| `ok` | Proposition nouvelle ou amélioration démontrable |
+| `ok` | Proposition nouvelle, enrichissement ou correction rédactionnelle sûre |
 | `unchanged` | Nom déjà pertinent, conservé exactement |
 | `retained` | Titre conservé sans gain démontré ; un slug concordant n'atteste pas une extraction réussie |
 | `unavailable` | Identification impossible, contradictoire ou récupération refusée |
@@ -83,6 +84,34 @@ Sans `current_title`, le contrat de création reste `ok` ou `unavailable`.
 La prévisualisation ne modifie aucune donnée. La fenêtre laisse toutes les cases
 décochées, affiche les états et la fiabilité, permet une correction manuelle même
 après un échec et n'active la validation que pour des modifications sélectionnées.
+
+## Corrections rédactionnelles locales
+
+Quand la destination ne fournit pas d'amélioration, la même décision finale peut
+corriger le titre existant : « Paye moi un cafe » → « Paye-moi un café », accents
+dans les expressions françaises de température/humidité et détecteur, casse d'une
+liste explicite de marques/technologies (Home Assistant Green, Zigbee, Discord…),
+espacement français de la ponctuation finale dans ces formulations reconnues.
+La variante correcte « Paie-moi » reste acceptée. Un titre déjà correct ne change
+pas pour varier le résultat. Aucune traduction ni réécriture libre des formulations
+inconnues ; seuls les mots et contextes explicitement reconnus sont corrigés.
+
+Ce n'est pas un correcteur linguistique général : les règles contextuelles sont
+locales, déterministes et limitées. Les noms cités, les références explicites et
+les identifiants techniques sont protégés ; aucune unité, caractéristique ou
+référence n'est inventée, retirée ou tronquée. Les règles incertaines s'abstiennent.
+Une proposition fiable venant de la destination reste prioritaire. Sans titre
+existant, le comportement de création est inchangé.
+
+Une correction retourne `source: editorial`, `reason: editorial_correction`,
+`status: ok` et une fiabilité élevée sur la correction seule, jamais sur la
+destination. `diagnostics.destination_decision` conserve la décision d'extraction
+initiale et `diagnostics.editorial.rules` liste uniquement des identifiants de
+règles. Les erreurs réseau et les refus de sécurité restent visibles dans le
+diagnostic, même si le texte peut être corrigé localement. La fenêtre indique
+discrètement « Correction rédactionnelle du titre existant », conserve la
+comparaison, l'édition et la sélection explicite. Aucune donnée n'est enregistrée
+avant validation ; une correction compte seulement si le texte change.
 
 ## Récupération distante
 
@@ -114,6 +143,11 @@ pas d'identification d'un produit Amazon à partir du seul ASIN. Lorsque la port
 lue et l'URL ne suffisent pas, le titre actuel est conservé avec un motif précis.
 
 ## Tests reproductibles
+
+`scripts/fixtures/title_editorial.json` couvre les corrections locales, les titres
+déjà corrects, les formulations inconnues et la conservation des références/unités.
+Les tests vérifient aussi l’absence de nouvelle proposition après correction,
+la provenance, les diagnostics et la prévisualisation HTTP sans écriture.
 
 `scripts/fixtures/title_metadata.json` couvre les exemples Domadoo, Amazon, Ko-fi,
 Discord, Instagram, les titres déjà corrects, catégories, marques seules,

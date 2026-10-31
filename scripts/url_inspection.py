@@ -582,15 +582,74 @@ def _result(title, source, status, confidence, reason):
     return {'title': title, 'source': source, 'status': status, 'confidence': confidence, 'reason': reason}
 
 
+# Deliberately small, contextual rules, not a general spelling/grammar checker.
+# Protect opaque identifiers, quoted names and explicit model/reference tails.
+_EDITORIAL_PROTECTED = re.compile(
+    r'"[^"\n]*"|«[^»\n]*»|`[^`\n]*`|'
+    r'\b(?:réf(?:érence)?\.?|ref(?:erence)?\.?|modèle|model)\s*[:=]?\s+[^,;\n]+|'
+    r'\S*[\d_/@#=+\\]\S*|\S*\w[-.:]\w\S*', re.I)
+_EDITORIAL_BRANDS = ('Home Assistant Green', 'Home Assistant',
+                     'Zigbee', 'Discord', 'Instagram', 'MOES', 'SONOFF',
+                     'Aqara', 'Tuya', 'Bluetooth')
+_EDITORIAL_BRAND_PATTERN = re.compile(
+    r'(?<![\w@./+#:-])(?:' + '|'.join(map(re.escape, _EDITORIAL_BRANDS)) + r')(?![\w@./+#:-])', re.I)
+_EDITORIAL_CANONICAL = {name.casefold(): name for name in _EDITORIAL_BRANDS}
+
+
+def _editorial_title(current):
+    """Only attested local corrections; never truncate or infer technical facts."""
+    value, rules = current, []
+
+    def apply(pattern, replacement, rule):
+        nonlocal value
+        protected = [match.span() for match in _EDITORIAL_PROTECTED.finditer(value)
+                     if match.group().casefold() not in {'paye-moi', 'paie-moi'}]
+        def replace(match):
+            if any(start < match.end() and match.start() < end for start, end in protected):
+                return match.group()
+            return replacement(match)
+        updated = pattern.sub(replace, value)
+        if updated != value:
+            rules.append(rule)
+            value = updated
+
+    # Exact French phrase: preserve either accepted spelling, paye or paie.
+    apply(re.compile(r'^(Paye|paye|Paie|paie)(?: +|-)[Mm]oi +un +caf[eé](?=\s*[!?…]?\s*$)'),
+          lambda m: m[1].capitalize() + '-moi un café', 'coffee_phrase')
+    apply(re.compile(r'\b((?:[Cc]apteurs?|[Ss]ondes?|[Mm]esures?) de )temperature(s?)\b'),
+          lambda m: m[1] + 'température' + m[2], 'temperature_accent')
+    apply(re.compile(r"\b((?:[Cc]apteurs?|[Ss]ondes?|[Mm]esures?|et) d['’])humidite\b"),
+          lambda m: m[1] + 'humidité', 'humidity_accent')
+    apply(re.compile(r'\b([Dd])etecteur(s? de )'),
+          lambda m: m[1] + 'étecteur' + m[2], 'detector_accent')
+    apply(_EDITORIAL_BRAND_PATTERN,
+          lambda m: _EDITORIAL_CANONICAL[m.group().casefold()], 'brand_case')
+    # French terminal punctuation, only after recognisable French prose. Do not
+    # rewrite decimals, ratios, model separators, apostrophes or arbitrary names.
+    if re.match(r"^(?:Paye-moi un café|Paie-moi un café|[Cc]apteurs? de |[Ss]ondes? de |[Dd]étecteurs? de )", value):
+        apply(re.compile(r'(?<=[a-zà-ÿ])([!?])$'),
+              lambda m: '\u00a0' + m[1], 'french_punctuation')
+    # The existing manual field accepts 160 characters; no information is cut.
+    return (value, rules) if len(value) <= 160 else (current, [])
+
+
 def suggest_title(url, *, current_title='', requester=None, resolver=None, url_validator=None):
     """One engine for creation and bulk review; never persists or rewrites URLs.
 
-    Existing titles are preserved unless a candidate demonstrably adds information.
+    Existing titles change only for demonstrated information gains or safe local corrections.
     Confidence is an evidence grade, not a statistical probability.
     """
     current_title = current_title.strip() if isinstance(current_title, str) else ''
     trace = {'fetch': {'outcome': 'not_started'}, 'extraction': {'outcome': 'not_attempted'}}
     def finish(result):
+        # A reliable destination improvement takes precedence. Otherwise improve
+        # only the current text, independently of network/extraction availability.
+        if current_title and result['status'] != 'ok':
+            corrected, rules = _editorial_title(current_title)
+            if corrected != current_title:
+                trace['destination_decision'] = {key: result[key] for key in ('status', 'reason', 'source', 'confidence')}
+                trace['editorial'] = {'rules': rules}
+                result = _result(corrected, 'editorial', 'ok', 'high', 'editorial_correction')
         result['engine'] = {'id': ENGINE_ID, 'fingerprint': ENGINE_FINGERPRINT}
         trace['decision'] = {key: result[key] for key in ('status', 'reason', 'source', 'confidence')}
         result['diagnostics'] = trace
