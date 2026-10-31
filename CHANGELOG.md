@@ -1,5 +1,46 @@
 # Changelog
 
+## V1.4
+
+### ✨ Nouveautés
+
+- Module Affiliation dans l’analyse : synthèse financière, graphiques, comptes et
+  partenaires, transactions recherchables et paginées, corrections et bons de paiement.
+- Premier connecteur Domadoo avec connexion humaine depuis l’administration,
+  session chiffrée, synchronisation manuelle ou quotidienne et conservation du
+  dernier relevé complet en cas d’échec.
+- Séparation des plateformes, partenaires commerciaux et comptes. Préparation
+  des comptes Amazon, Affiliatly, GoAffPro, Awin et Impact ; leurs collecteurs ne
+  sont pas inclus dans cette version.
+
+### 🎨 Interface
+
+- Navigation interne par onglets, cartes compactes, thèmes clair et sombre et
+  adaptation mobile selon la maquette Affiliation.
+- Valeurs absentes clairement signalées ; « non approuvée » n’est assimilé ni à
+  une commission refusée ni à une commission en attente.
+
+### ⚙️ Technique
+
+- Historique SQLite additif, montants signés en centimes et sauvegarde avant migration.
+- Lecture intégrale des pages, contrôle des doublons, relecture de cohérence et
+  ingestion atomique. Sessions exclues des sauvegardes JSON.
+- Chromium intégré pour AMD64 et ARM64, sans nouveau port exposé. APIs financières
+  exclusivement administrateur ; liens existants et pont PulSe conservés.
+
+### ⚠️ Mise à jour et validation
+
+- Conserver `/data`, ajouter `init: true`, porter le tmpfs `/tmp` à **512 Mo**.
+  Aucun nouveau volume ni variable d’environnement obligatoire.
+- Ouvrir Affiliation → Domadoo → Connexion et synchronisation, effectuer la
+  connexion humaine, lancer une synchronisation et comparer au portail réel.
+  La collecte quotidienne est désactivée initialement.
+- Les tests n’utilisent aucun compte réel. Connexion depuis le VPS, protections du
+  portail et exactitude des chiffres du compte restent à valider par l’administrateur.
+- Les bons de paiement ne constituent pas un historique de virements. Fuseau des
+  ventes, attente/refus et autorisation d’automatisation restent à confirmer avec Domadoo.
+- Guide complet : [Affiliation](https://github.com/Mick7784/LinKs/blob/main/docs/affiliation.md).
+
 ## V1.331
 
 ### 🔧 Titres automatiques plus pertinents
