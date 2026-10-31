@@ -15,6 +15,11 @@ import json
 import re
 import socket
 import ssl
+import time
+import queue
+import threading
+import unicodedata
+from itertools import islice
 from dataclasses import dataclass
 from urllib.parse import unquote, urljoin, urlsplit
 
@@ -22,6 +27,7 @@ MAX_URL = 2000
 MAX_HTML = 256 * 1024
 TIMEOUT = 3
 MAX_REDIRECTS = 4
+TOTAL_TIMEOUT = 12
 USER_AGENT = 'LinKs-URL-Inspector/1.0 (+metadata and availability check)'
 
 
@@ -76,8 +82,8 @@ def _target(url):
 
 def _global_ip(ip):
     if getattr(ip, 'ipv4_mapped', None):
-        return ip.ipv4_mapped.is_global
-    return ip.is_global
+        return _global_ip(ip.ipv4_mapped)
+    return ip.is_global and not (ip.is_multicast or ip.is_reserved or ip.is_unspecified)
 
 
 def _approved_ip(target, resolver):
@@ -108,6 +114,7 @@ class _PinnedHTTPS(http.client.HTTPSConnection):
 
     def connect(self):
         sock = socket.create_connection((self._ip, self.port), self.timeout)
+        self.sock = sock
         try:
             # TLS certificate and SNI are checked against the hostname, not the IP.
             self.sock = self._context.wrap_socket(sock, server_hostname=self.host)
@@ -116,9 +123,21 @@ class _PinnedHTTPS(http.client.HTTPSConnection):
             raise
 
 
-def _request_once(target, ip, method, max_bytes):
+def _request_once(target, ip, method, max_bytes, *, deadline=None):
+    deadline = deadline or time.monotonic() + TOTAL_TIMEOUT
     connection = (_PinnedHTTPS if target.secure else _PinnedHTTP)(
-        target.host, target.port, ip, timeout=TIMEOUT)
+        target.host, target.port, ip, timeout=min(TIMEOUT, _remaining(deadline)))
+    response = None
+    def abort():
+        sock = connection.sock or getattr(getattr(getattr(response, 'fp', None), 'raw', None), '_sock', None)
+        if sock:
+            try:
+                sock.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+    watchdog = threading.Timer(_remaining(deadline), abort)
+    watchdog.daemon = True
+    watchdog.start()
     try:
         connection.request(method, target.path, headers={
             'User-Agent': USER_AGENT,
@@ -127,35 +146,97 @@ def _request_once(target, ip, method, max_bytes):
             'Connection': 'close',
         })
         response = connection.getresponse()
-        body = response.read(max_bytes) if method == 'GET' else b''
+        body = b''
+        if method == 'GET' and max_bytes and response.status not in (301, 302, 303, 307, 308):
+            if response.getheader('Content-Encoding', 'identity').lower() not in ('', 'identity'):
+                raise InspectionError('Encodage compressé non pris en charge.')
+            length = response.getheader('Content-Length', '')
+            if length.isdigit() and int(length) > max_bytes:
+                raise InspectionError('Page trop volumineuse.')
+            while len(body) <= max_bytes:
+                # read1 avoids waiting for the entire body; bound every socket read.
+                sock = connection.sock or getattr(getattr(response.fp, 'raw', None), '_sock', None)
+                if sock:
+                    sock.settimeout(min(TIMEOUT, _remaining(deadline)))
+                block = response.read1(min(16384, max_bytes + 1 - len(body)))
+                if not block:
+                    break
+                body += block
+            if len(body) > max_bytes:
+                raise InspectionError('Page trop volumineuse.')
         return Response(response.status, response.getheader('Content-Type', ''), body,
                         response.getheader('Location', ''))
     finally:
+        watchdog.cancel()
+        if response is not None:
+            response.close()
         connection.close()
+
+
+def _remaining(deadline):
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise InspectionError('Délai global de récupération dépassé.')
+    return remaining
+
+
+# DNS has no portable socket timeout. Limit outstanding resolver workers as well
+# as caller wait time, so stalled DNS cannot accumulate unbounded threads.
+_DNS_SLOTS = threading.BoundedSemaphore(8)
+
+
+def _resolve_before_deadline(target, resolver, deadline):
+    if not _DNS_SLOTS.acquire(blocking=False):
+        raise InspectionError('Résolution DNS occupée.')
+    result = queue.Queue(maxsize=1)
+    def resolve():
+        try:
+            result.put((True, _approved_ip(target, resolver)))
+        except Exception as exc:
+            result.put((False, exc))
+        finally:
+            _DNS_SLOTS.release()
+    threading.Thread(target=resolve, daemon=True).start()
+    try:
+        ok, value = result.get(timeout=min(TIMEOUT, _remaining(deadline)))
+    except queue.Empty as exc:
+        raise InspectionError('Délai DNS dépassé.') from exc
+    if not ok:
+        raise value
+    return value
 
 
 def _fetch(url, *, method, max_bytes=0, requester=None, resolver=None, url_validator=None):
     requester = requester or _request_once
     resolver = resolver or socket.getaddrinfo
     seen = set()
+    deadline = time.monotonic() + TOTAL_TIMEOUT
     for _ in range(MAX_REDIRECTS + 1):
+        _remaining(deadline)
         target = _target(url)
         if url_validator is not None and not url_validator(target.url):
             raise InspectionError('Destination exclue de la vérification.')
         if target.url in seen:
             raise InspectionError('Boucle de redirection.')
         seen.add(target.url)
-        ip = _approved_ip(target, resolver)
+        ip = _resolve_before_deadline(target, resolver, deadline)
         try:
-            result = requester(target, ip, method, max_bytes)
-        except (OSError, TimeoutError, ssl.SSLError, http.client.HTTPException) as exc:
+            result = (requester(target, ip, method, max_bytes, deadline=deadline)
+                      if requester is _request_once else requester(target, ip, method, max_bytes))
+        except (OSError, TimeoutError, ssl.SSLError, http.client.HTTPException, UnicodeError) as exc:
             raise InspectionError('La destination ne répond pas de manière fiable.') from exc
         if not isinstance(result, Response):
             raise InspectionError('Réponse de vérification invalide.')
+        _remaining(deadline)
+        if len(result.body) > max_bytes and max_bytes:
+            raise InspectionError('Page trop volumineuse.')
         if result.status in (301, 302, 303, 307, 308):
             if not result.location:
                 raise InspectionError('Redirection sans destination.')
-            url = urljoin(url, result.location)
+            try:
+                url = urljoin(url, result.location)
+            except ValueError as exc:
+                raise InspectionError('Destination de redirection invalide.') from exc
             continue
         return result, target.url
     raise InspectionError('Trop de redirections.')
@@ -166,126 +247,282 @@ class _MetadataParser(HTMLParser):
         super().__init__(convert_charrefs=True)
         self.meta = {}
         self.title = []
+        self.headings = []
+        self.product_names = []
+        self.brands = []
         self.scripts = []
-        self._in_title = False
+        self._captures = []
         self._in_json = False
         self._script = []
         self._script_size = 0
 
     def handle_starttag(self, tag, attrs):
         fields = dict(attrs)
+        for capture in self._captures:
+            if capture[0] == tag:
+                capture[2] += 1
         if tag == 'meta':
             key = (fields.get('property') or fields.get('name') or '').lower()
             if key in {'og:title', 'twitter:title', 'product:brand', 'og:site_name'}:
                 self.meta.setdefault(key, fields.get('content') or '')
-        elif tag == 'title':
-            self._in_title = True
-        elif tag == 'script' and (fields.get('type') or '').lower().split(';')[0].strip() == 'application/ld+json':
+        if tag == 'title':
+            self._captures.append([tag, self.title, 1])
+        elif tag == 'h1' or fields.get('id') == 'productTitle':
+            capture = []
+            (self.product_names if fields.get('id') == 'productTitle' else self.headings).append(capture)
+            self._captures.append([tag, capture, 1])
+        elif fields.get('itemprop') == 'brand':
+            capture = [fields['content']] if fields.get('content') else []
+            self.brands.append(capture)
+            if tag != 'meta':
+                self._captures.append([tag, capture, 1])
+        if tag == 'script' and (fields.get('type') or '').lower().split(';')[0].strip() == 'application/ld+json':
             self._in_json = True
             self._script = []
             self._script_size = 0
 
     def handle_data(self, data):
-        if self._in_title and len(''.join(self.title)) < 2000:
-            self.title.append(data[:2000])
+        for _, capture, _ in self._captures:
+            if sum(map(len, capture)) < 2000:
+                capture.append(data[:2000])
         if self._in_json and self._script_size < 128 * 1024:
             self._script.append(data[:128 * 1024 - self._script_size])
             self._script_size += len(data)
 
     def handle_endtag(self, tag):
-        if tag == 'title':
-            self._in_title = False
+        # Close only the latest matching capture (nested spans remain harmless).
+        for index in range(len(self._captures) - 1, -1, -1):
+            if self._captures[index][0] == tag:
+                self._captures[index][2] -= 1
+                if self._captures[index][2] == 0:
+                    del self._captures[index]
         if tag == 'script' and self._in_json:
             self.scripts.append(''.join(self._script))
             self._script = []
             self._in_json = False
 
 
-def _product(obj, depth=0):
+def _structured(obj, depth=0):
+    """Walk page entities, never recommendations/item lists or arbitrary objects."""
     if depth > 10:
-        return None
+        return
     if isinstance(obj, list):
-        for item in obj:
-            found = _product(item, depth + 1)
-            if found:
-                return found
-    if isinstance(obj, dict):
-        types = obj.get('@type', '')
-        is_product = lambda kind: isinstance(kind, str) and (kind == 'Product' or kind.endswith('/Product'))
-        if (is_product(types) or isinstance(types, list) and any(is_product(t) for t in types)) and isinstance(obj.get('name'), str):
-            brand = obj.get('brand')
-            if isinstance(brand, dict):
-                brand = brand.get('name', '')
-            if not isinstance(brand, str):
-                brand = ''
-            return obj['name'], brand
-        for value in (obj.get('@graph'), obj.get('mainEntity'), obj.get('itemListElement')):
-            found = _product(value, depth + 1)
-            if found:
-                return found
-    return None
+        for item in obj[:32]:
+            yield from _structured(item, depth + 1)
+    if not isinstance(obj, dict):
+        return
+    kinds = obj.get('@type', [])
+    kinds = kinds if isinstance(kinds, list) else [kinds]
+    kinds = {kind.rstrip('/').rsplit('/', 1)[-1] for kind in kinds if isinstance(kind, str)}
+    if 'Product' in kinds and isinstance(obj.get('name'), str):
+        brand = obj.get('brand', '')
+        if isinstance(brand, dict):
+            brand = brand.get('name', '')
+        model = obj.get('model', '')
+        if isinstance(model, dict):
+            model = model.get('name', '')
+        yield ('schema_product', obj['name'], brand if isinstance(brand, str) else '',
+               model if isinstance(model, str) else '')
+    elif kinds & {'Article', 'NewsArticle', 'BlogPosting', 'VideoObject'}:
+        yield ('schema_content', obj.get('headline') or obj.get('name'), '', '')
+    elif 'ProfilePage' in kinds:
+        person = obj.get('mainEntity')
+        if isinstance(person, dict) and isinstance(person.get('name'), str):
+            yield ('schema_profile', person['name'], '', '')
+    for key in ('@graph', 'mainEntity'):
+        yield from _structured(obj.get(key), depth + 1)
 
 
-_SHOP_PREFIX = re.compile(r'^(?:amazon(?:\.[a-z.]+)?|fnac|cdiscount|aliexpress|ebay(?:\.[a-z.]+)?)\s*[:|\-–]\s*', re.I)
-_NOISE = re.compile(r'\b(?:livraison gratuite|expédition gratuite|free shipping|en promotion|meilleur prix|offre limitée|acheter maintenant)\b', re.I)
+def _normal(value):
+    return ''.join(c for c in unicodedata.normalize('NFKD', value.casefold()) if not unicodedata.combining(c))
+
+
+_STOP = {'de', 'du', 'des', 'le', 'la', 'les', 'un', 'une', 'et', 'a', 'au', 'aux', 'avec', 'pour',
+         'the', 'and', 'with', 'for', 'of', 'on', 'sur'}
+
+
+def _tokens(value):
+    return set(re.findall(r'[a-z0-9]+', _normal(value))) - _STOP
+
+
+_NOISE = re.compile(r'\b(?:livraison gratuite|expédition gratuite|free shipping|en promotion|meilleur prix|offre limitée|acheter maintenant)\b.*$', re.I)
 _SEPARATOR = re.compile(r'\s+[|–—·]\s+|\s+-\s+')
+_SHOP = re.compile(r'^(?:amazon(?:\.[a-z.]+)?|domadoo(?:\.[a-z.]+)?|fnac|cdiscount|aliexpress|ebay(?:\.[a-z.]+)?|boutique officielle|official store)$', re.I)
+_GENERIC = re.compile(r'^(?:accueil|home|homepage|welcome|bienvenue|boutique|shop|store|catalogue|catalog|products?|produits?|electronics|electronique|informatique|high tech|domotique|accessoires|amazon(?:\.[a-z.]+)?|domadoo|discord|instagram|ko fi|moes|nabu casa|page introuvable|page not found|access denied|robot check|captcha|connexion|login|sign in|just a moment|promotion exceptionnelle)$')
+_BLOCKED = re.compile(r'captcha|robot check|access denied|page introuvable|page not found|just a moment|verify you are human', re.I)
+_CATALOGUE_WORDS = set('amazon fr com co uk domadoo livres books dvd musique music jeux video games maison home cuisine kitchen jardin garden bricolage vetements clothing sport loisirs informatique computers electronique electronics accessoires accessories high tech domotique boutique shop store catalogue catalog achat achats vente ligne online shopping'.split())
 
 
-def clean_title(value, brand=''):
-    """Conservative short label: preserve product model, never fabricate a brand."""
+def clean_title(value, brand='', site=''):
+    """Remove identified commercial boilerplate, never blindly split a model."""
     if not isinstance(value, str):
         return ''
     value = html.unescape(re.sub(r'\s+', ' ', value)).strip(' \t\n\r-|–—·:')
-    value = _SHOP_PREFIX.sub('', value)
-    value = _SEPARATOR.split(value, 1)[0].strip()
-    value = _NOISE.split(value, 1)[0].strip(' ,;:-')
-    if brand and isinstance(brand, str) and brand.casefold() not in value.casefold():
+    value = re.sub(r'^(?:amazon(?:\.[a-z.]+)?|domadoo)\s*:\s*', '', value, flags=re.I)
+    pieces = _SEPARATOR.split(value)
+    pieces = [piece for piece in pieces if not _SHOP.fullmatch(piece.strip())
+              and not (site and _normal(piece.strip()) == _normal(site.strip()))]
+    value = ' – '.join(pieces)
+    value = _NOISE.sub('', value).strip(' ,;:-–')
+    # Amazon often appends a colon-separated department, not product identity.
+    value = re.sub(r'\s*:\s*(?:Amazon\.[a-z.]+)(?:\s*:.*)?$', '', value, flags=re.I)
+    if brand and not _tokens(brand) <= _tokens(value):
         value = brand.strip() + ' ' + value
-    # A short summary should not end in the middle of a reference or model.
-    if len(value) > 60:
-        head = value[:61].rsplit(' ', 1)[0].strip(' ,;:-')
-        value = head if len(head) >= 8 else value[:60]
-    return value if len(value) >= 3 else ''
+    # Abstain instead of truncating a possibly essential reference at the end.
+    return value if 3 <= len(value) <= 120 else ''
+
+
+def _generic(value, brands=(), *, single_word=True):
+    normalized = ' '.join(re.findall(r'[a-z0-9]+', _normal(value)))
+    if not normalized or _GENERIC.fullmatch(normalized) or _BLOCKED.search(value):
+        return True
+    if normalized in {'article', 'lien', 'link', 'nouveau lien', 'sans titre', 'untitled'}:
+        return True
+    if _tokens(value) <= _CATALOGUE_WORDS:
+        return True
+    if re.search(r'spend less.*smile more|everything you love|des millions de produits', normalized):
+        return True
+    if any(_tokens(value) == _tokens(brand) for brand in brands if brand):
+        return True
+    if re.search(r'^(?:bienvenue|welcome|achats en ligne|achat et vente|online shopping|tous nos produits|toutes les categories)\b', normalized):
+        return True
+    if all(_GENERIC.fullmatch(' '.join(re.findall(r'[a-z0-9]+', _normal(piece)))) for piece in _SEPARATOR.split(value)):
+        return True
+    return single_word and len(_tokens(value)) < 2
 
 
 def _slug_title(url):
+    host = (urlsplit(url).hostname or '').lower()
+    if any(_host_is(host, domain) for domain in ('discord.gg', 'discord.com', 'instagram.com', 'ko-fi.com')):
+        return ''
     parts = [unquote(part) for part in urlsplit(url).path.split('/') if part]
     if not parts:
         return ''
-    slug = parts[-1].rsplit('.', 1)[0] if parts[-1].endswith(('.html', '.htm')) else parts[-1]
-    if slug.lower() in {'product', 'produit', 'item', 'p', 'dp', 'detail', 'details', 'exemple'}:
+    slug = re.sub(r'\.html?$', '', parts[-1], flags=re.I)
+    # PrestaShop/Domadoo catalogue IDs and EANs are not product models.
+    slug = re.sub(r'^\d+-', '', slug)
+    slug = re.sub(r'-\d{8,14}$', '', slug)
+    if not re.search(r'[-_]', slug) or not re.search(r'[a-zA-ZÀ-ÿ]', slug):
         return ''
-    if re.fullmatch(r'[a-z0-9]{8,}', slug, re.I) and ('-' not in slug and '_' not in slug):
-        return ''
-    if not re.search(r'[a-zA-ZÀ-ÿ]', slug) or len(slug) < 7:
-        return ''
-    words = re.sub(r'[-_]+', ' ', slug).strip()
-    if len(words.split()) < 2:
-        return ''
-    return clean_title(words)
+    title = clean_title(re.sub(r'[-_]+', ' ', slug))
+    return title if not _generic(title) else ''
 
 
-def _slug_suggestion(url):
-    title = _slug_title(url)
-    return {'title': title, 'source': 'url_slug' if title else '',
-            'status': 'ok' if title else 'unavailable'}
+def _host_is(host, domain):
+    return host == domain or host.endswith('.' + domain)
 
 
-def suggest_title(url, *, requester=None, resolver=None):
-    """Return {title, source, status}; title='' when no reliable suggestion exists.
+def _platform_candidates(url, parser):
+    """Small isolated adapters add evidence to the common ranking/comparison."""
+    parsed = urlsplit(url)
+    host = (parsed.hostname or '').lower()
+    parts = [unquote(p) for p in parsed.path.split('/') if p]
+    if _host_is(host, 'instagram.com') and len(parts) == 1 and re.fullmatch(r'[\w.]{1,30}', parts[0]) and parts[0].lower() not in {'accounts', 'explore', 'reels', 'direct', 'about', 'p', 'reel'}:
+        yield ('platform', 'Instagram @' + parts[0], 82)
+    if _host_is(host, 'ko-fi.com') and len(parts) == 1:
+        value = parser.meta.get('og:title') or ''.join(parser.title)
+        match = re.match(r'Buy (.+?) a (?:Coffee|coffee)\b', value)
+        if match:
+            yield ('platform', 'Offrir un café à ' + match[1].strip(), 85)
+    if _host_is(host, 'discord.gg') or (_host_is(host, 'discord.com') and parts[:1] == ['invite']):
+        value = clean_title(parser.meta.get('og:title', ''), site='Discord')
+        if not _generic(value):
+            yield ('platform', 'Discord – ' + value, 82)
 
-    Fetching blocked pages is not fatal for creating a tracked link: the UI should
-    leave the name editable and required. No remote data is persisted here.
+
+_SCORES = {'schema_product': 90, 'schema_content': 82, 'schema_profile': 75,
+           'product_heading': 85, 'heading': 76, 'open_graph': 74, 'twitter': 68,
+           'html_title': 62, 'url_slug': 50}
+
+
+def _choose_title(url, parser, current_title, *, fetched=True):
+    brands = [parser.meta.get('product:brand', ''), parser.meta.get('og:site_name', '')]
+    brands += [''.join(value) for value in parser.brands]
+    raw = []
+    for script in parser.scripts[:8]:
+        try:
+            entities = list(islice(_structured(json.loads(script)), 32))
+        except (ValueError, RecursionError, TypeError):
+            continue
+        for source, name, brand, model in entities:
+            brands.append(brand)
+            title = clean_title(name, brand)
+            if title and model and not _tokens(model) <= _tokens(title):
+                title = clean_title(title + ' ' + model)
+            raw.append((source, title, _SCORES[source]))
+    for source, values in (
+        ('product_heading', [''.join(p) for p in parser.product_names]),
+        ('heading', [''.join(h) for h in parser.headings]),
+        ('open_graph', [parser.meta.get('og:title')]),
+        ('twitter', [parser.meta.get('twitter:title')]),
+        ('html_title', [''.join(parser.title)]),
+        ('url_slug', [_slug_title(url)]),
+    ):
+        for value in values[:8]:
+            brand = parser.meta.get('product:brand', '') if source in ('heading', 'product_heading') else ''
+            if _generic(clean_title(value), brands):
+                continue
+            raw.append((source, clean_title(value, brand=brand, site=parser.meta.get('og:site_name', '')), _SCORES[source]))
+    platform = list(_platform_candidates(url, parser))
+    raw.extend(platform)
+    candidates = [(source, title, score) for source, title, score in raw if title and not _generic(title, brands)]
+    # Localised, verified platform labels supersede their raw English metadata.
+    if platform:
+        candidates = platform
+    if not candidates:
+        return _result(current_title, '', 'unavailable', 'low', 'identity_missing')
+    def overlap(a, b):
+        ta, tb = _tokens(a), _tokens(b)
+        return len(ta & tb) / max(1, min(len(ta), len(tb)))
+    ranked = []
+    for source, title, score in candidates:
+        evidence = {s for s, t, _ in candidates if s != source and overlap(title, t) >= .8}
+        ranked.append((score + min(10, len(evidence) * 5), source, title))
+    ranked.sort(reverse=True)
+    score, source, title = ranked[0]
+    # Equally plausible but incompatible identities mean abstention, not guessing.
+    for other_score, other_source, other_title in ranked[1:]:
+        models = lambda text: {word for word in _tokens(text) if re.search(r'\d', word)}
+        incompatible_model = bool(models(title) and models(other_title) and not models(title) <= models(other_title) and not models(other_title) <= models(title))
+        if other_source != 'url_slug' and other_score >= 70 and (overlap(title, other_title) < .5 or incompatible_model):
+            return _result(current_title, '', 'unavailable', 'low', 'conflicting_metadata')
+    confidence = 'high' if score >= 85 else 'medium' if score >= 60 else 'low'
+    if not fetched:
+        confidence = 'low'
+    if current_title:
+        before, after = _tokens(current_title), _tokens(title)
+        known_brands = set().union(*(_tokens(b) for b in brands if b))
+        if before == after or (before <= after and after - before <= known_brands):
+            return _result(current_title, source, 'unchanged', confidence, 'already_informative')
+        # Preserve all useful current words/references. Only generic labels can be
+        # replaced outright; unsupported translations are deliberately avoided.
+        if confidence == 'low' or (not _generic(current_title, brands, single_word=False) and not before < after):
+            return _result(current_title, source, 'retained', confidence, 'no_proven_gain')
+    return _result(title, source, 'ok', confidence, 'more_informative')
+
+
+def _result(title, source, status, confidence, reason):
+    return {'title': title, 'source': source, 'status': status, 'confidence': confidence, 'reason': reason}
+
+
+def suggest_title(url, *, current_title='', requester=None, resolver=None, url_validator=None):
+    """One engine for creation and bulk review; never persists or rewrites URLs.
+
+    Existing titles are preserved unless a candidate demonstrably adds information.
+    Confidence is an evidence grade, not a statistical probability.
     """
+    current_title = current_title.strip() if isinstance(current_title, str) else ''
     try:
         _target(url)
-    except InspectionError:
-        return {'title': '', 'source': '', 'status': 'unavailable'}
-    try:
         response, final_url = _fetch(url, method='GET', max_bytes=MAX_HTML,
-                                      requester=requester, resolver=resolver)
-        if not 200 <= response.status < 300 or not any(x in response.content_type.lower() for x in ('text/html', 'application/xhtml+xml')):
-            return _slug_suggestion(final_url)
+                                    requester=requester, resolver=resolver, url_validator=url_validator)
+    except InspectionError:
+        return _result(current_title, '', 'unavailable', 'low', 'fetch_failed')
+    parser = _MetadataParser()
+    fetched = 200 <= response.status < 300
+    if fetched and not any(x in response.content_type.lower() for x in ('text/html', 'application/xhtml+xml')):
+        return _result(current_title, '', 'unavailable', 'low', 'unsupported_content')
+    if fetched and any(x in response.content_type.lower() for x in ('text/html', 'application/xhtml+xml')):
         encoding = 'utf-8'
         charset = re.search(r'charset\s*=\s*["\']?([\w-]+)', response.content_type, re.I)
         if charset:
@@ -294,29 +531,15 @@ def suggest_title(url, *, requester=None, resolver=None):
             page = response.body.decode(encoding, errors='replace')
         except LookupError:
             page = response.body.decode('utf-8', errors='replace')
-        parser = _MetadataParser()
-        parser.feed(page)
-        for raw in parser.scripts[:8]:
-            try:
-                product = _product(json.loads(raw))
-            except (ValueError, RecursionError, TypeError):
-                continue
-            if product:
-                title = clean_title(*product)
-                if title:
-                    return {'title': title, 'source': 'schema_product', 'status': 'ok'}
-        for source, candidate in (
-            ('open_graph', parser.meta.get('og:title')),
-            ('twitter', parser.meta.get('twitter:title')),
-            ('html_title', ''.join(parser.title)),
-            ('url_slug', _slug_title(final_url)),
-        ):
-            title = clean_title(candidate)
-            if title:
-                return {'title': title, 'source': source, 'status': 'ok'}
-        return _slug_suggestion(final_url)
-    except InspectionError:
-        return _slug_suggestion(url)
+        try:
+            parser.feed(page)
+        except (ValueError, AssertionError):
+            return _result(current_title, '', 'unavailable', 'low', 'invalid_html')
+        # A challenge/error page may still be returned with HTTP 200.
+        if _BLOCKED.search(''.join(parser.title)):
+            return _result(current_title, '', 'unavailable', 'low', 'blocked_page')
+    return _choose_title(final_url, parser, current_title, fetched=fetched)
+
 
 
 def check_destination(url, *, requester=None, resolver=None, url_validator=None):

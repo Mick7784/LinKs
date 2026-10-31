@@ -1720,7 +1720,9 @@ class Handler(BaseHTTPRequestHandler):
                 if not isinstance(data,dict):raise ValueError('Requête invalide.')
                 original=tracked_links.text_field(data,'url',2000,True)
                 if not story_url_valid(original):raise ValueError('URL d’origine HTTP(S) valide, extérieure à LinKs, requise.')
-                return self.json(200,url_inspection.suggest_title(original))
+                current_title=tracked_links.text_field(data,'current_title',160)
+                return self.json(200,url_inspection.suggest_title(original,current_title=current_title,
+                                                                 url_validator=story_url_valid))
             if path=="/api/tracked-links":
                 with connection() as db:
                     db.execute('BEGIN IMMEDIATE')

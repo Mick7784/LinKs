@@ -22,7 +22,7 @@ class TrackedTitlePreviewTests(unittest.TestCase):
             status, body = self.request(admin+'/api/tracked-links/title-preview', {'url': url})
             self.assertEqual(status, 200, body)
             self.assertEqual(json.loads(body), expected)
-            mocked.assert_called_once_with(url)
+            mocked.assert_called_once_with(url, current_title='', url_validator=self.a.story_url_valid)
         with self.a.connection() as db:
             after = db.execute("SELECT COUNT(*) AS c FROM tracked_links").fetchone()['c']
             token_count = db.execute("SELECT COUNT(*) AS c FROM tracked_tokens").fetchone()['c']
@@ -52,6 +52,31 @@ class TrackedTitlePreviewTests(unittest.TestCase):
         public = self.server(False)
         status, _ = self.request(public+'/api/tracked-links/title-preview', {'url': 'https://example.com'})
         self.assertEqual(status, 404)
+
+    def test_current_title_is_compared_by_engine_without_any_database_write(self):
+        admin = self.server(True)
+        with self.a.connection() as db:
+            before = list(db.iterdump())
+        page = self.a.url_inspection.Response(200, 'text/html', b'<h1>Capteur CO MOES</h1>')
+        with patch.object(self.a.url_inspection, '_fetch', return_value=(page, 'https://shop.example/item')):
+            status, body = self.request(admin+'/api/tracked-links/title-preview', {
+                'url': 'https://shop.example/item', 'current_title': 'Capteur CO MOES Zigbee'})
+        self.assertEqual(status, 200)
+        result = json.loads(body)
+        self.assertEqual(result['title'], 'Capteur CO MOES Zigbee')
+        self.assertEqual(result['status'], 'retained')
+        self.assertEqual(result['confidence'], 'medium')
+        with self.a.connection() as db:
+            self.assertEqual(list(db.iterdump()), before)
+
+    def test_invalid_current_titles_rejected_before_fetch(self):
+        admin = self.server(True)
+        with patch.object(self.a.url_inspection, 'suggest_title') as mocked:
+            for title in [None, {}, 'x'*161]:
+                status, _ = self.request(admin+'/api/tracked-links/title-preview', {
+                    'url': 'https://shop.example/item', 'current_title': title})
+                self.assertEqual(status, 400)
+            mocked.assert_not_called()
 
 
 if __name__ == '__main__':

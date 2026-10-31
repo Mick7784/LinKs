@@ -28,9 +28,11 @@ function updateControls(){
  if(!rows.length)progress.textContent="Aucun lien non archivé à analyser.";
  else if(done<rows.length)progress.textContent="Analyse des destinations : "+done+" / "+rows.length;
  else {
-  const proposed=rows.filter(row=>row.status==="generated").length;
+  const proposed=rows.filter(row=>row.status==="generated"&&row.proposed.trim()!==row.original).length;
+  const retained=rows.filter(row=>row.status==="unchanged"||row.status==="retained").length;
   const unavailable=rows.filter(row=>row.status==="unavailable").length;
-  progress.textContent="Analyse terminée · "+proposed+" proposition"+(proposed>1?"s":"")+
+  progress.textContent="Analyse terminée · "+proposed+" amélioration"+(proposed>1?"s":"")+
+    (retained?" · "+retained+" titre"+(retained>1?"s":"")+" conservé"+(retained>1?"s":""):"")+
     (unavailable?" · "+unavailable+" destination"+(unavailable>1?"s":"")+" sans titre fiable":"")+".";
  }
 }
@@ -64,6 +66,8 @@ function renderRows(){
   });
   input.addEventListener("input",()=>{
    row.proposed=input.value;
+   row.status=input.value.trim()===row.original?"unchanged":"manual";
+   status.textContent=row.status==="manual"?"Modification manuelle. Sélectionnez ce titre pour le valider.":"Titre actuel conservé.";
    if(!input.value.trim()||input.value.trim()===row.original)row.selected=false;
    check.disabled=!input.value.trim()||input.value.trim()===row.original;
    check.checked=row.selected;
@@ -79,8 +83,13 @@ function showResult(row){
  node.input.disabled=false;
  node.check.disabled=!row.proposed.trim()||row.proposed.trim()===row.original;
  node.check.checked=false;
- node.status.textContent=row.status==="generated"?"Titre proposé automatiquement. Modifiable avant validation.":
-  row.status==="unchanged"?"Titre identique, conservé.":"Titre non détecté : nom actuel conservé.";
+ const reliability={high:"élevée",medium:"moyenne",low:"faible"}[row.confidence];
+ node.status.textContent=(row.status==="generated"?"Amélioration proposée. Modifiable avant validation.":
+  row.status==="unchanged"?"Titre déjà pertinent, conservé.":
+  row.status==="retained"?"Aucun gain certain : titre actuel conservé.":
+  row.reason==="conflicting_metadata"?"Informations contradictoires : titre actuel conservé.":
+  "Destination non identifiée : titre actuel conservé.")+
+  (reliability?" Fiabilité "+reliability+".":"");
 }
 async function inspectAll(mySession){
  let position=0;
@@ -90,12 +99,14 @@ async function inspectAll(mySession){
    const row=rows[index];
    try{
     const result=await api("/api/tracked-links/title-preview",{
-     method:"POST",body:JSON.stringify({url:row.url}),signal:controller.signal
+     method:"POST",body:JSON.stringify({url:row.url,current_title:row.original}),signal:controller.signal
     });
     if(mySession!==session||controller.signal.aborted)return;
     const title=result.status==="ok"&&typeof result.title==="string"?result.title.trim():"";
     row.proposed=title||row.original;
-    row.status=!title?"unavailable":title===row.original?"unchanged":"generated";
+    row.status=["unchanged","retained","unavailable"].includes(result.status)?result.status:
+      !title?"unavailable":title===row.original?"unchanged":"generated";
+    row.confidence=result.confidence;row.reason=result.reason;
    }catch(error){
     if(mySession!==session||controller.signal.aborted)return;
     row.proposed=row.original;row.status="unavailable";

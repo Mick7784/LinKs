@@ -28,7 +28,7 @@ class InspectorTests(unittest.TestCase):
             calls.append((target.url, ip, method, limit))
             return reply(html=page)
         result = ui.suggest_title('https://shop.reolink.com/camera', requester=get, resolver=public_resolver)
-        self.assertEqual(result, {'title': 'Reolink OMVI X16 PoE', 'source': 'schema_product', 'status': 'ok'})
+        self.assertEqual(result, {'title': 'Reolink OMVI X16 PoE', 'source': 'schema_product', 'status': 'ok', 'confidence': 'high', 'reason': 'more_informative'})
         self.assertEqual(calls[0][1:], (PUBLIC_IP, 'GET', ui.MAX_HTML))
 
     def test_meta_fallback_and_html_entities(self):
@@ -45,11 +45,11 @@ class InspectorTests(unittest.TestCase):
 
     def test_blocked_shop_falls_back_to_descriptive_url_slug(self):
         result = ui.suggest_title('https://example.com/products/ugreen-dxp4800-pro', requester=lambda *args: reply(403), resolver=public_resolver)
-        self.assertEqual(result, {'title': 'ugreen dxp4800 pro', 'source': 'url_slug', 'status': 'ok'})
+        self.assertEqual(result, {'title': 'ugreen dxp4800 pro', 'source': 'url_slug', 'status': 'ok', 'confidence': 'low', 'reason': 'more_informative'})
 
     def test_title_fallback_when_metadata_is_empty(self):
         result = ui.suggest_title('https://example.com/products/reolink-omvi-x16', requester=lambda *args: reply(html='<html></html>'), resolver=public_resolver)
-        self.assertEqual(result, {'title': 'reolink omvi x16', 'source': 'url_slug', 'status': 'ok'})
+        self.assertEqual(result, {'title': 'reolink omvi x16', 'source': 'url_slug', 'status': 'ok', 'confidence': 'low', 'reason': 'more_informative'})
         result = ui.suggest_title('https://example.com/dp/B0CWV1234', requester=lambda *args: reply(html='<html></html>'), resolver=public_resolver)
         self.assertEqual(result['title'], '')
 
