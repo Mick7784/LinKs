@@ -18,7 +18,10 @@ un compte Domadoo réutilise le même moteur, sans changer le code ni les URLs.
   collecte ; une seule instance Chromium travaille à la fois.
 - Le navigateur Chromium système est intégré à l’image Debian pour AMD64 et
   ARM64. Playwright Core est verrouillé dans `package-lock.json`. Chaque CI lance
-  un contrôle hors réseau du navigateur livré, sur les deux architectures.
+  un contrôle hors réseau du navigateur livré, sur les deux architectures natives.
+  Le contrôle ARM64 est un job préalable obligatoire, car l’émulation QEMU ne
+  permet pas de qualifier le sous-processus graphique de Chromium. Le contrôle
+  de l’application sous émulation reste également exécuté avant publication.
 - L’administration doit être protégée par HTTPS et son authentification LinKs
   ou le contrôle d’accès externe déjà prévu. Ne pas publier directement 8081 sur
   Internet. Les commandes de connexion utilisent les mêmes contrôles d’origine

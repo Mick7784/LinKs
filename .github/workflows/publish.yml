@@ -24,7 +24,18 @@ concurrency:
   group: docker-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
+  arm-runtime:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-buildx-action@v4
+      - name: Validate application and Chromium on native ARM64
+        env:
+          LINKS_CHECK_ARCHITECTURES: arm64
+        run: bash scripts/check-images.sh "$(cat VERSION)" "$GITHUB_SHA"
   docker:
+    needs: arm-runtime
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
