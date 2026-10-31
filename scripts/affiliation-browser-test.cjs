@@ -16,6 +16,21 @@ const {spawn,execFileSync}=require('node:child_process'),{mkdtempSync,rmSync}=re
    assert.equal(await page.locator('.aff-card strong').first().textContent(),'—');
    await page.getByRole('button',{name:'Configurer Domadoo',exact:true}).click();await page.getByRole('heading',{name:'Synchronisation quotidienne'}).waitFor();
    assert.equal(await page.locator('#aff-enabled').isChecked(),false);
+   let challenge=true,verified=0,closed=0;
+   await page.route('**/api/affiliation/login/**',route=>{
+     const action=new URL(route.request().url()).pathname.split('/').pop();
+     if(action==='verify')verified++;
+     if(action==='close')closed++;
+     return route.fulfill({contentType:'application/json',body:JSON.stringify(action==='close'?{active:false}:{active:true,challenge,image:'',location:'https://www.domadoo.fr/fr/affiliation'})});
+   });
+   await page.getByRole('button',{name:'Ouvrir la connexion Domadoo',exact:true}).click();
+   await page.locator('#aff-login-challenge').waitFor();assert.equal(await page.locator('#aff-login-verify').isDisabled(),true);
+   assert.match(await page.locator('#aff-login-challenge').textContent(),/Une connexion réussie sur votre ordinateur ne connecte pas LinKs/);
+   challenge=false;await page.clock.runFor(2600);await page.locator('#aff-login-challenge').waitFor({state:'hidden'});
+   assert.equal(await page.locator('#aff-login-verify').isDisabled(),false);assert.equal(verified,0);
+   await page.getByRole('button',{name:'Fermer',exact:true}).click();await page.locator('#aff-dialog').waitFor({state:'hidden'});
+   assert.equal(closed,1);assert.equal(await page.getByRole('button',{name:'Ouvrir la connexion Domadoo',exact:true}).isDisabled(),false);
+   await page.unroute('**/api/affiliation/login/**');
    await page.getByRole('button',{name:'Tous les partenaires',exact:true}).click();await page.getByRole('button',{name:'Gérer les partenaires',exact:true}).click();
    await page.getByRole('button',{name:'Ajouter un partenaire',exact:true}).click();await page.locator('[name="partner"]').fill('Reolink');await page.locator('#aff-add-form [name="label"]').fill('Compte Reolink');await page.locator('[name="platform"]').selectOption('affiliatly');await page.locator('#aff-add-form button').click();await page.locator('.aff-partner').filter({hasText:'Reolink'}).waitFor();
    const seed=`import sys,sqlite3;sys.path.insert(0,${JSON.stringify(__dirname)});import affiliation;from affiliation_test import observation;db=sqlite3.connect(${JSON.stringify(db)});db.row_factory=sqlite3.Row;affiliation.ingest(db,'domadoo',observation());db.commit();db.close()`;

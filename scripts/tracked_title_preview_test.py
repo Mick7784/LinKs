@@ -108,7 +108,7 @@ class TrackedTitlePreviewTests(unittest.TestCase):
             status, body = self.request(admin+'/api/tracked-links/title-preview', {'url':MOES, 'current_title':'Capteur CO MOES'})
         result = json.loads(body)
         self.assertEqual(status, 200)
-        self.assertEqual(result['title'], 'Capteur CO Zigbee MOES')
+        self.assertEqual(result['title'], 'Capteur CO Zigbee MOES Tuya ZC-HM')
         self.assertEqual(result['engine'], {'id':'bounded-metadata-v2',
             'fingerprint':hashlib.sha256(Path(engine.__file__).read_bytes()).hexdigest()[:12]})
         self.assertEqual(result['diagnostics']['fetch']['http_status'], 200)

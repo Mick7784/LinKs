@@ -19,6 +19,15 @@ function selectable(){
  return rows.filter(row=>row.status!=="pending"&&row.proposed.trim()&&row.proposed.trim()!==row.original);
 }
 function updateControls(){
+ for(const row of rows){
+  const node=nodes.get(row.id);if(!node)continue;
+  const changed=row.status!=="pending"&&!!row.proposed.trim()&&row.proposed.trim()!==row.original;
+  node.outer.classList.toggle("has-proposal",changed);
+  node.outer.classList.toggle("is-selected",changed&&row.selected);
+  node.marker.hidden=!changed;
+  node.marker.textContent=row.selected?"Sélectionnée":"Proposition disponible";
+  node.heading.textContent=changed?"Titre proposé":"Titre actuel";
+ }
  const eligible=selectable(),selected=currentChanges();
  count.textContent=selected.length+" titre"+(selected.length>1?"s":"")+" sélectionné"+(selected.length>1?"s":"")+" sur "+rows.length;
  chooseAll.disabled=working||!eligible.length||done<rows.length;
@@ -28,12 +37,12 @@ function updateControls(){
  if(!rows.length)progress.textContent="Aucun lien non archivé à analyser.";
  else if(done<rows.length)progress.textContent="Analyse des destinations : "+done+" / "+rows.length;
  else {
-  const proposed=rows.filter(row=>row.status==="generated"&&row.proposed.trim()!==row.original).length;
+  const proposed=eligible.length;
   const retained=rows.filter(row=>row.status==="unchanged"||row.status==="retained").length;
   const unavailable=rows.filter(row=>row.status==="unavailable").length;
   progress.textContent="Analyse terminée · "+proposed+" amélioration"+(proposed>1?"s":"")+
     (retained?" · "+retained+" titre"+(retained>1?"s":"")+" conservé"+(retained>1?"s":""):"")+
-    (unavailable?" · "+unavailable+" analyse"+(unavailable>1?"s":"")+" incomplète"+(unavailable>1?"s":""):"")+".";
+    (unavailable?" · "+unavailable+" analyse"+(unavailable>1?"s":"")+" sans résultat fiable":"")+".";
  }
 }
 function renderRows(){
@@ -51,7 +60,9 @@ function renderRows(){
   label.append(check,element("strong","",row.original));
   left.append(label,element("small","tracked-bulk-title-url",row.url));
   const right=element("div","tracked-bulk-title-result");
-  const heading=element("label","tracked-bulk-title-new-label","Titre proposé");
+  const heading=element("label","tracked-bulk-title-new-label"),headingText=element("span","","Titre actuel");
+  const marker=element("span","tracked-bulk-title-marker");marker.hidden=true;
+  heading.append(headingText);
   const input=document.createElement("input");
   input.type="text";input.maxLength=160;input.value=row.original;input.disabled=true;
   input.setAttribute("aria-label","Nouveau titre pour "+row.original);
@@ -60,9 +71,9 @@ function renderRows(){
   const diagnostic=element("details","tracked-bulk-title-diagnostic");diagnostic.hidden=true;
   const diagnosticText=element("small","tracked-bulk-title-status");
   diagnostic.append(element("summary","","Diagnostic"),diagnosticText);
-  right.append(heading,status,diagnostic);
+  right.append(marker,heading,status,diagnostic);
   outer.append(left,right);fragment.append(outer);
-  nodes.set(row.id,{input,check,status,diagnostic,diagnosticText});
+  nodes.set(row.id,{outer,marker,heading:headingText,input,check,status,diagnostic,diagnosticText});
   check.addEventListener("change",()=>{
    row.selected=check.checked&&!!row.proposed.trim()&&row.proposed.trim()!==row.original;
    check.checked=row.selected;updateControls();
@@ -91,6 +102,10 @@ function reasonLabel(reason){
   http_protocol_error:"Réponse HTTP invalide.",unsupported_content:"La réponse n’est pas une page HTML.",
   invalid_html:"HTML inexploitable.",invalid_jsonld:"Données structurées invalides.",
   metadata_missing:"Aucune métadonnée exploitable dans la portion lue.",generic_metadata:"Métadonnées trop génériques.",
+  truncated_metadata:"Les titres distants sont tronqués : ils ne sont pas utilisés.",
+  editorial_truncated:"Le titre initial était tronqué ; une éventuelle caractéristique manquante n’a pas été reconstituée. Vérifiez le titre.",
+  current_title_truncated:"Le titre semble tronqué. Complétez-le manuellement à partir d’une source fiable.",
+  platform_label_relevant:"L’accès au profil n’est pas confirmé.",
   conflicting_metadata:"Informations contradictoires.",blocked_page:"Page de vérification ou de blocage.",
   score_too_low:"Indices insuffisants pour proposer un changement.",url_fallback:"Proposition issue de l’URL descriptive.",
   url_matches_current:"URL cohérente avec le titre ; métadonnées non confirmées.",platform_title_preserved:"Nom de la destination conservé.",
@@ -103,11 +118,11 @@ function showResult(row){
  node.check.disabled=!row.proposed.trim()||row.proposed.trim()===row.original;
  node.check.checked=false;
  const reliability={high:"élevée",medium:"moyenne",low:"faible"}[row.confidence];
- node.status.textContent=(row.status==="generated"?(row.source==="editorial"?"Correction rédactionnelle du titre existant. Modifiable avant validation.":"Amélioration proposée depuis la destination. Modifiable avant validation."):
-  row.status==="unchanged"?"Titre déjà pertinent, conservé.":
+ node.status.textContent=(row.status==="generated"?(row.source==="editorial"?"Correction rédactionnelle du titre existant. Modifiable avant validation.":row.source==="url_slug"?"Proposition issue de l’URL descriptive, sans confirmation du contenu distant.":"Amélioration proposée depuis la destination. Modifiable avant validation."):
+  row.status==="unchanged"?(row.reason==="platform_label_relevant"?"Titre déjà pertinent pour cette plateforme, conservé.":"Titre déjà pertinent, conservé."):
   row.status==="retained"?"Aucun gain certain : titre actuel conservé.":
-  "Analyse incomplète : titre actuel conservé.")+
-  (reasonLabel(row.reason)?" "+reasonLabel(row.reason):"")+
+  "Analyse sans résultat fiable : titre actuel conservé.")+
+  (reasonLabel(row.reason)&&!(row.source==="url_slug"&&row.reason==="url_fallback")?" "+reasonLabel(row.reason):"")+
   (reliability&&row.status!=="unavailable"?" Fiabilité "+reliability+".":"");
  if(row.diagnostics){
   const fetch=row.diagnostics.fetch||{},extraction=row.diagnostics.extraction||{};

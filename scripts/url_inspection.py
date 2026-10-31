@@ -463,15 +463,22 @@ def _host_is(host, domain):
     return host == domain or host.endswith('.' + domain)
 
 
+def _truncated_title(value):
+    # An incomplete connector/ellipsis is a warning, never permission to guess
+    # missing specifications. A symbol inside a model (C++, A&B) is not truncated.
+    return bool(re.search(r'(?:\s&|\s(?:et|avec|pour)|\.{3}|…)$', value.strip(), re.I))
+
+
 def _compact_product(value, url):
-    """Short French labels for attested Domadoo names, never inferred attributes."""
-    if not _host_is((urlsplit(url).hostname or '').lower(), 'domadoo.fr'):
+    """Keep the existing attested labels, including every optional specification."""
+    if _truncated_title(value) or not _host_is((urlsplit(url).hostname or '').lower(), 'domadoo.fr'):
         return value
     words = ' '.join(re.findall(r'[a-z0-9]+', _normal(value)))
-    if re.fullmatch(r'(?:nabu casa )?(?:box domotique )?home assistant green(?: box domotique open source et cloudless)?', words):
+    if re.fullmatch(r'(?:nabu casa )?(?:box domotique )?home assistant green', words):
         return 'Home Assistant Green'
-    if re.fullmatch(r'moes capteur (?:de )?co (?:monoxyde de carbone )?zigbee(?: tuya)?(?: zc hm)?', words):
-        return 'Capteur CO Zigbee MOES'
+    match = re.fullmatch(r'moes capteur (?:de )?co (?:monoxyde de carbone )?zigbee(?P<tuya> tuya)?(?P<model> zc hm)?', words)
+    if match:
+        return 'Capteur CO Zigbee MOES' + (' Tuya' if match['tuya'] else '') + (' ZC-HM' if match['model'] else '')
     return value
 
 
@@ -534,15 +541,16 @@ def _choose_title(url, parser, current_title, *, fetched=True, diagnostics=None)
             raw.append((source, _compact_product(cleaned, url), score))
     platform = list(_platform_candidates(url, parser)) if fetched else []
     raw.extend(platform)
-    candidates = [(source, title, score) for source, title, score in raw if title and not _generic(title, brands)]
+    candidates = [(source, title, score) for source, title, score in raw if title and not _generic(title, brands) and not _truncated_title(title)]
+    trace['rejected_truncated'] = sum(bool(title) and _truncated_title(title) for _, title, _ in raw)
     trace.update(metadata=len(parser.meta), headings=sum(bool(''.join(h)) for h in parser.headings),
                  jsonld=len(parser.scripts), candidates=len(candidates),
                  rejected_generic=trace.get('rejected_generic', 0) + sum(bool(title) and _generic(title, brands) for _, title, _ in raw))
     # Localised, verified platform labels supersede their raw English metadata.
     if platform:
-        candidates = platform
+        candidates = [candidate for candidate in candidates if candidate[0]=='platform']
     if not candidates:
-        reason = 'generic_metadata' if trace['rejected_generic'] else 'invalid_jsonld' if trace.get('invalid_jsonld') else 'metadata_missing'
+        reason = 'truncated_metadata' if trace['rejected_truncated'] else 'generic_metadata' if trace['rejected_generic'] else 'invalid_jsonld' if trace.get('invalid_jsonld') else 'metadata_missing'
         return _result(current_title, '', 'unavailable', 'low', reason)
     def overlap(a, b):
         ta, tb = _tokens(a), _tokens(b)
@@ -600,6 +608,24 @@ def _editorial_title(current):
     """Only attested local corrections; never truncate or infer technical facts."""
     value, rules = current, []
 
+    # Reformat a model followed by a descriptive comma list without cutting any
+    # specification. A complete model token is required; names/quoted text stay intact.
+    model = r'\b(?=\w*[A-Za-z])(?=\w*\d)\w[\w.+-]*\b'
+    if not re.search(r'["«»`]|\b(?:réf(?:érence)?|ref(?:erence)?|modèle|model)\b', value, re.I):
+        identity, comma, description = value.partition(', ')
+        if comma and re.search(model, identity) and re.match(r'^[a-zà-ÿ]{3,}\b', description):
+            # FRA is the redundant catalogue label in the requested French
+            # AZERTY presentation. Other national/layout variants are preserved.
+            if re.match(r'^clavier\b', description, re.I):
+                simplified = re.sub(r',\s*FRA\s+AZERTY\b', ' AZERTY', description)
+                if simplified != description:rules.append('keyboard_layout_label')
+                description = simplified
+            value = identity + ' – ' + description[0].upper() + description[1:]
+            rules.append('product_list_punctuation')
+        if re.search(model, value) and re.search(r'\s&$', value):
+            value = re.sub(r'\s+&$', '', value)
+            rules.append('dangling_ampersand')
+
     def apply(pattern, replacement, rule):
         nonlocal value
         protected = [match.span() for match in _EDITORIAL_PROTECTED.finditer(value)
@@ -633,6 +659,16 @@ def _editorial_title(current):
     return (value, rules) if len(value) <= 160 else (current, [])
 
 
+def _relevant_platform_label(url, current):
+    parsed = urlsplit(url)
+    parts = [unquote(p) for p in parsed.path.split('/') if p]
+    if not _host_is((parsed.hostname or '').lower(), 'instagram.com') or len(parts) != 1:
+        return False
+    if not re.fullmatch(r'[\w.]{1,30}', parts[0]) or parts[0].lower() in {'accounts','explore','reels','direct','about','p','reel'}:
+        return False
+    return bool(re.fullmatch(r'Instagram(?:\s+[–—-]?\s*@' + re.escape(parts[0]) + r')?', current, re.I))
+
+
 def suggest_title(url, *, current_title='', requester=None, resolver=None, url_validator=None):
     """One engine for creation and bulk review; never persists or rewrites URLs.
 
@@ -649,7 +685,24 @@ def suggest_title(url, *, current_title='', requester=None, resolver=None, url_v
             if corrected != current_title:
                 trace['destination_decision'] = {key: result[key] for key in ('status', 'reason', 'source', 'confidence')}
                 trace['editorial'] = {'rules': rules}
-                result = _result(corrected, 'editorial', 'ok', 'high', 'editorial_correction')
+                partial = _truncated_title(current_title)
+                result = _result(corrected, 'editorial', 'ok', 'medium' if partial else 'high', 'editorial_truncated' if partial else 'editorial_correction')
+            elif _truncated_title(current_title) and result['reason'] not in {'blocked_destination','invalid_url'} and not result['reason'].startswith('redirect_'):
+                trace['destination_decision'] = {key: result[key] for key in ('status', 'reason', 'source', 'confidence')}
+                result = _result(current_title, 'current_title', 'retained', 'low', 'current_title_truncated')
+            elif result['reason'] not in {'blocked_destination','invalid_url','conflicting_metadata'} and not result['reason'].startswith('redirect_'):
+                if _relevant_platform_label(url, current_title):
+                    trace['destination_decision'] = {key: result[key] for key in ('status', 'reason', 'source', 'confidence')}
+                    result = _result(current_title, 'current_title', 'unchanged', 'medium', 'platform_label_relevant')
+                elif result['status']=='unavailable' and result['reason']=='generic_metadata' and not _generic(current_title):
+                    result.update(status='retained', source='current_title')
+        elif current_title and result['status']=='ok':
+            # The evidence/source remains the destination (or its descriptive URL),
+            # even when presentation is improved by the same local rules.
+            corrected, rules = _editorial_title(result['title'])
+            if corrected != result['title']:
+                result['title'] = corrected
+                trace['editorial'] = {'rules': rules}
         result['engine'] = {'id': ENGINE_ID, 'fingerprint': ENGINE_FINGERPRINT}
         trace['decision'] = {key: result[key] for key in ('status', 'reason', 'source', 'confidence')}
         result['diagnostics'] = trace

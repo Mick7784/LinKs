@@ -2,6 +2,25 @@
 // internal API, credential replay or inferred refused/pending commission status.
 export const PORTAL = 'https://www.domadoo.fr/fr/affiliation';
 export class PortalError extends Error {}
+export function allowedPortalRequest(address,{human=false,method='GET',mainNavigation=false}={}) {
+  let url;try{url=new URL(address)}catch{return false}
+  const portal=['www.domadoo.fr','domadoo.fr'].includes(url.hostname);
+  const verification=['www.google.com','www.gstatic.com','www.recaptcha.net','challenges.cloudflare.com'].includes(url.hostname);
+  if(url.protocol!=='https:'||(url.port&&url.port!=='443')||url.username||url.password||!(portal||verification))return false;
+  if(mainNavigation&&(!portal||!/^\/fr\/(affiliation|authentification)(\/|$)/.test(url.pathname)))return false;
+  if(['GET','HEAD'].includes(method))return true;
+  // Only the person at the login window may submit authentication or the site's
+  // own verification requests. Collection remains GET/HEAD only, even here.
+  return human&&method==='POST'&&(verification||(portal&&(
+    /^\/fr\/authentification(\/|$)/.test(url.pathname)||url.pathname.startsWith('/cdn-cgi/challenge-platform/'))));
+}
+export async function securityChallenge(page) {
+  return page.locator('body').evaluate(body=>{
+    const visible=node=>node.getBoundingClientRect().width>0&&node.getBoundingClientRect().height>0;
+    return [...body.querySelectorAll('#challenge-running,#challenge-stage,#challenge-form,iframe[src*="challenges.cloudflare.com"]')].some(visible)||
+      [...body.querySelectorAll('h1,h2')].some(node=>visible(node)&&/performing security verification|verifying you are human|checking your browser|vérification de sécurité/i.test(node.textContent));
+  });
+}
 export function cents(text) {
   const value = String(text).replace(/[\s\u00a0\u202f]/g,'').replace('−','-');
   if (!/^-?\d+(?:,\d{2})?€$/.test(value)) throw new PortalError('Montant Domadoo non reconnu.');
@@ -37,6 +56,7 @@ export function summaryValues(entries) {
   return result;
 }
 export async function isConnected(page) {
+  if(await securityChallenge(page))return false;
   const challenge=await page.locator('iframe[src*="captcha"],iframe[src*="challenge"],input[autocomplete="one-time-code"]').evaluateAll(nodes=>nodes.some(n=>n.getBoundingClientRect().width>0));
   return !challenge && new URL(page.url()).origin===new URL(PORTAL).origin && new URL(page.url()).pathname==='/fr/affiliation' &&
     await page.locator('#myaffiliateaccount-summary .list-group-hover').count()>0;

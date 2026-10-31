@@ -113,6 +113,39 @@ discrètement « Correction rédactionnelle du titre existant », conserve la
 comparaison, l'édition et la sélection explicite. Aucune donnée n'est enregistrée
 avant validation ; une correction compte seulement si le texte change.
 
+## Révision locale et présentation des propositions
+
+Les titres sous forme « modèle, description » peuvent être présentés avec un
+tiret et une capitale initiale, sans couper les références, unités ou fréquences.
+La présentation « clavier …, FRA AZERTY » devient « Clavier … AZERTY » conformément
+au libellé demandé ; les autres variantes nationales et dispositions sont conservées.
+Les noms cités, références explicites et formulations incertaines restent intacts.
+Les raccourcis Domadoo préexistants conservent désormais leurs mentions techniques
+optionnelles, notamment la référence et l'écosystème fournis par la source.
+
+Un titre distant finissant par une conjonction incomplète, « & » ou des points de
+suspension est écarté. Un « & » final isolé dans un titre de produit avec modèle
+peut être retiré localement, mais la proposition porte `editorial_truncated` et une
+fiabilité moyenne : aucune suite manquante n'est reconstituée. Une autre troncature
+sans correction sûre reste à compléter manuellement. Les informations complètes
+et concordantes de la destination restent prioritaires.
+
+Un libellé Instagram cohérent avec une URL de profil peut être reconnu localement
+comme pertinent (`unchanged`, `platform_label_relevant`), même si la page distante
+refuse l'accès. Cela ne confirme ni l'accessibilité ni l'identité du profil ; le
+diagnostic HTTP reste disponible. Un compte nommé dans le titre et différent de
+l'URL, une contradiction ou un refus de sécurité ne bénéficient pas de cet état.
+Des métadonnées génériques conservent un titre actuel informatif (`retained`).
+Les échecs de transport, refus réseau et extractions insuffisantes restent distincts.
+
+La fenêtre différencie correction rédactionnelle, proposition provenant de l'URL,
+proposition de la destination, titre conservé et analyse sans résultat fiable.
+Une modification réelle colore la ligne en cyan discret ; une sélection explicite
+ajoute une bordure bleue et le libellé « Sélectionnée ». Aucun titre n'est coché
+automatiquement. Revenir au texte original retire la surbrillance et la sélection.
+Les compteurs suivent aussi les modifications manuelles. Les thèmes clair/sombre
+et les largeurs 320/390/1440 px utilisent les composants existants.
+
 ## Récupération distante
 
 Les contrôles SSRF et le verrouillage de la connexion sur l'IP validée sont conservés.

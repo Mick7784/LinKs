@@ -60,6 +60,23 @@ nécessite un hôte/une navigation non autorisés, la V1 ne la contourne pas : l
 connexion reste à qualifier avec Domadoo. Le bouton Déconnecter efface la session
 et désactive le passage quotidien, sans effacer l’historique financier.
 
+### Vérification Cloudflare persistante
+
+Un accès réussi depuis votre ordinateur ne valide pas le navigateur utilisé par
+LinKs depuis le serveur. Cloudflare indique que les navigateurs automatisés ne
+sont pas pris en charge pour résoudre ses défis en production. Si la vérification
+persiste, fermer la fenêtre et demander à Domadoo un accès automatisé autorisé,
+un export ou un flux officiel. Aucun changement Compose ne garantit cet accès.
+
+La fenêtre signale les pages de vérification reconnues et ne les recharge pas
+avec « Vérifier mon accès affilié ». Les échanges POST du chemin de vérification
+`/cdn-cgi/challenge-platform/` sont autorisés uniquement pendant la connexion
+humaine ; ils restent bloqués pendant la collecte. Corriger ce filtrage ne garantit
+pas l'acceptation du navigateur serveur. Aucun mécanisme de furtivité, rejeu de
+jeton de validation ou résolution automatique de défi n'est ajouté.
+
+Référence : [Navigateurs pris en charge par Cloudflare](https://developers.cloudflare.com/cloudflare-challenges/reference/supported-browsers/).
+
 ## Données et interprétation
 
 - Les valeurs sont des entiers signés en centimes EUR, avec parsing strict des

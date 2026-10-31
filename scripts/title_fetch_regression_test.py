@@ -59,7 +59,7 @@ class TransportFixture:
 class TitleFetchRegressionTests(unittest.TestCase):
     def test_actual_metadata_survives_oversize_identity_chunked_gzip_and_deflate(self):
         cases = [('domadoo-green.html', GREEN, 'Home Assistant Green', 'Home Assistant Green', 'unchanged'),
-                 ('domadoo-moes.html', MOES, 'Capteur CO MOES', 'Capteur CO Zigbee MOES', 'ok'),
+                 ('domadoo-moes.html', MOES, 'Capteur CO MOES', 'Capteur CO Zigbee MOES Tuya ZC-HM', 'ok'),
                  ('kofi.html', 'https://ko-fi.com/domotik_studio', 'Paye-moi un café', 'Paye-moi un café', 'retained')]
         for name, url, current, expected, status in cases:
             # Only the relevant, public metadata is stored; padding reproduces page size.
@@ -102,7 +102,7 @@ class TitleFetchRegressionTests(unittest.TestCase):
     def test_network_failure_can_use_verified_url_words_without_fabricating_features(self):
         def offline(*args):
             raise OSError('secret internal exception')
-        for url, expected in [(GREEN, 'Home Assistant Green'), (MOES, 'Capteur CO Zigbee MOES')]:
+        for url, expected in [(GREEN, 'Home Assistant Green'), (MOES, 'Capteur CO Zigbee MOES Tuya ZC-HM')]:
             result = ui.suggest_title(url, current_title='NABU CASA' if url == GREEN else 'Capteur CO MOES',
                                       requester=offline, resolver=public_resolver)
             self.assertEqual((result['title'], result['status'], result['confidence']), (expected, 'ok', 'medium'))
@@ -125,7 +125,7 @@ class TitleFetchRegressionTests(unittest.TestCase):
                 return reply(302, location=MOES)
             raise TimeoutError()
         result = ui.suggest_title('https://short.example/a', current_title='MOES', requester=request, resolver=public_resolver)
-        self.assertEqual(result['title'], 'Capteur CO Zigbee MOES')
+        self.assertEqual(result['title'], 'Capteur CO Zigbee MOES Tuya ZC-HM')
         self.assertEqual(result['diagnostics']['fetch']['redirects'], 1)
         self.assertEqual(result['diagnostics']['fetch']['hops'], [{'http_status':302}])
         self.assertEqual(result['diagnostics']['fetch']['code'], 'network_timeout')
@@ -159,13 +159,17 @@ class TitleFetchRegressionTests(unittest.TestCase):
             requester=lambda *args: reply(302, location='http://169.254.169.254/private'), resolver=public_resolver)
         self.assertEqual((result['title'], result['status'], result['reason']), ('NABU CASA', 'unavailable', 'blocked_destination'))
 
-    def test_social_titles_preserved_and_failure_not_called_already_correct(self):
+    def test_platform_label_is_distinct_from_unverified_profile_identity(self):
         for url, title in [('https://instagram.com/domotik_studio', 'Instagram'), ('https://discord.gg/abcdef', 'Ma communauté')]:
             result = ui.suggest_title(url, current_title=title, requester=lambda *args: reply(html='<meta property="og:title" content="Domotik Studio">'), resolver=public_resolver)
             self.assertEqual(result['title'], title)
-            self.assertEqual(result['status'], 'retained')
+            self.assertEqual(result['status'], 'unchanged' if title=='Instagram' else 'retained')
             result = ui.suggest_title(url, current_title=title, requester=lambda *args: reply(429), resolver=public_resolver)
-            self.assertEqual((result['title'], result['status'], result['reason']), (title, 'unavailable', 'http_429'))
+            if title=='Instagram':
+                self.assertEqual((result['title'], result['status'], result['reason']), (title, 'unchanged', 'platform_label_relevant'))
+                self.assertEqual(result['diagnostics']['fetch']['code'], 'http_429')
+                self.assertEqual(result['diagnostics']['destination_decision']['status'], 'unavailable')
+            else:self.assertEqual((result['title'], result['status'], result['reason']), (title, 'unavailable', 'http_429'))
 
     def test_diagnostics_do_not_expose_url_parameters_page_data_ip_or_exception(self):
         def request(*args):
