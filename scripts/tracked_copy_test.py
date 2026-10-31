@@ -1,6 +1,7 @@
 """Private, read-only destination checks and preservation of published links."""
 import json
 import socket
+import time
 import unittest
 from unittest.mock import patch
 
@@ -44,7 +45,8 @@ class TrackedCopyTests(unittest.TestCase):
                                (410,410,'broken'),(403,403,'unknown'),(429,429,'unknown'),
                                (500,500,'unknown'),(503,503,'unknown')]:
             calls=[]
-            def request(target,ip,method,limit):
+            def request(target,ip,method,limit,*,deadline):
+                self.assertGreater(deadline,time.monotonic())
                 calls.append((target.url,method))
                 return inspection.reply(head if method=='HEAD' else get)
             with patch.object(self.a.url_inspection.socket,'getaddrinfo',side_effect=resolver), \
