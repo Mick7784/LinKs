@@ -6,5 +6,6 @@ try{
  const page=await browser.newPage();await page.route('**/*',route=>route.abort());
  await page.setContent('<h1>LinKs browser ready</h1>');
  if(await page.locator('h1').textContent()!=='LinKs browser ready')throw new Error('Browser smoke failed');
+ if((await page.screenshot({type:'jpeg'})).length<100)throw new Error('Browser rendering failed');
  console.log('Affiliation Chromium runtime OK: '+process.arch);
 }finally{await browser.close()}
