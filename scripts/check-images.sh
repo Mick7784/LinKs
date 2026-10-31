@@ -13,7 +13,7 @@ for architecture in ${LINKS_CHECK_ARCHITECTURES:-amd64 arm64}; do
   docker buildx build --platform "linux/$architecture" --load --tag "links-check-$architecture" \
     --build-arg "APP_RELEASE_VERSION=$version" --build-arg "APP_RELEASE_ID=$version:$revision" \
     --label "org.opencontainers.image.version=$version" --label "org.opencontainers.image.revision=$revision" .
-  docker run -d --platform "linux/$architecture" --name "$container" --read-only \
+  docker run -d --init --platform "linux/$architecture" --name "$container" --read-only \
     --tmpfs /data:rw,nosuid,size=64m,mode=1777 --tmpfs /tmp:rw,noexec,nosuid,size=512m,mode=1777 \
     --cap-drop ALL --security-opt no-new-privileges:true \
     -p 127.0.0.1:28080:8080 -p 127.0.0.1:28081:8081 "links-check-$architecture"
@@ -30,7 +30,7 @@ for architecture in ${LINKS_CHECK_ARCHITECTURES:-amd64 arm64}; do
   if [ "$architecture" = "$native_architecture" ]; then
     docker exec -i "$container" node --input-type=module < scripts/affiliation-runtime-smoke.mjs
   else
-    echo "Chromium $architecture is gated by its native runner; application smoke passed under emulation."
+    echo "Browsers $architecture are gated by their native runner; application smoke passed under emulation."
   fi
   docker logs "$container"
   cleanup

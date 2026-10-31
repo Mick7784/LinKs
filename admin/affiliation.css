@@ -1,4 +1,5 @@
 #affiliation{--aff-cyan:#079fbb;--aff-blue:#3178ed;--aff-purple:#9661e9;--aff-green:#159b69}
+.aff-connection-diagnostic{border:1px solid var(--line);border-radius:8px;padding:.7rem;margin:.8rem 0;font-size:.8rem}.aff-connection-diagnostic summary{cursor:pointer}.aff-connection-diagnostic pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:240px;overflow:auto;font-size:.72rem;color:var(--muted)}
 #affiliation h1 .aff-badge{vertical-align:middle;font-size:.72rem;font-weight:600}
 .aff-eyebrow{font-size:.7rem;letter-spacing:.09em;color:var(--muted);margin-bottom:.35rem}
 .aff-actions,.aff-tabs,.aff-filters,.aff-pagination{display:flex;align-items:center;gap:.65rem;flex-wrap:wrap}

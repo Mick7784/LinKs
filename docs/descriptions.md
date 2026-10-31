@@ -1,7 +1,8 @@
 # Descriptions — phases 1 à 3
 
-Base d'intégration : V1.4.1, commit `0c26ee2`. Les PR #60 (affiliation) et
-#61 (titres) sont fusionnées. Ces phases ajoutent modèles, stockage, éditeur et analyse locale ;
+Base d'intégration : V1.4.3, commit `55c64e8`. Les PR #60 (affiliation) et
+#61 (titres), ainsi que les correctifs ultérieurs de main, sont intégrés.
+Ces phases ajoutent modèles, stockage, éditeur et analyse locale ;
 elle ne duplique aucun service de titres, partenaires, liens ou sources.
 
 ## Périmètre livré

@@ -281,6 +281,67 @@ class TitleEditorialTests(unittest.TestCase):
         self.assertEqual(len(title), 160)
         self.assertEqual(ui._editorial_title(title), (title, []))
 
+    def test_product_list_simplification_preserves_specs_and_is_idempotent(self):
+        cases = [
+            ('Logitech G PRO X2 RAPID, clavier gaming filaire, FRA AZERTY', 'Logitech G PRO X2 RAPID – Clavier gaming filaire AZERTY'),
+            ('Acme K42, clavier filaire USB-C, FRA AZERTY, 1000 Hz', 'Acme K42 – Clavier filaire USB-C AZERTY, 1000 Hz'),
+            ('Acme K42, clavier filaire, BE AZERTY', 'Acme K42 – Clavier filaire, BE AZERTY'),
+            ('Acme AX42, souris sans fil, 2,4 GHz, USB-C, 8000 Hz', 'Acme AX42 – Souris sans fil, 2,4 GHz, USB-C, 8000 Hz'),
+            ('Futura R2, adaptateur M.2 2280, PCIe 4.0, 5V/3A', 'Futura R2 – Adaptateur M.2 2280, PCIe 4.0, 5V/3A'),
+        ]
+        for current, expected in cases:
+            with self.subTest(title=current):
+                result = self.suggest(current, status=403)
+                self.assertEqual((result['title'], result['status'], result['source']), (expected, 'ok', 'editorial'))
+                self.assertEqual(ui._tokens(current) - ui._tokens(expected), {'fra'} if 'FRA AZERTY' in current else set())
+                self.assertEqual(result['diagnostics']['fetch']['code'], 'http_403')
+                again = self.suggest(expected, status=403)
+                self.assertEqual(again['title'], expected);self.assertNotEqual(again['status'], 'ok')
+
+    def test_truncated_title_cleanup_never_invents_a_missing_specification(self):
+        current = 'CORSAIR RM750e, alimentation ATX 3.1, 750 W, PCIe 5.1 &'
+        result = self.suggest(current, status=403)
+        self.assertEqual(result['title'], 'CORSAIR RM750e – Alimentation ATX 3.1, 750 W, PCIe 5.1')
+        self.assertEqual((result['source'], result['confidence'], result['reason']), ('editorial','medium','editorial_truncated'))
+        self.assertEqual(ui._tokens(current), ui._tokens(result['title']))
+        for incomplete in ['CORSAIR RM750e…','Acme AX42 avec','Capteur de température pour']:
+            result = self.suggest(incomplete, status=403)
+            self.assertEqual((result['title'],result['status'],result['reason']), (incomplete,'retained','current_title_truncated'))
+        result = self.suggest('Produit', '<h1>Acme AX42 &amp;</h1>')
+        self.assertEqual((result['status'],result['reason']), ('unavailable','truncated_metadata'))
+        for url,page in [('https://www.domadoo.fr/fr/item','<h1>MOES capteur CO Zigbee &amp;</h1>'),
+                         ('https://discord.gg/abcdef','<meta property="og:title" content="Communauté domotique &amp;">')]:
+            result=self.suggest('',page,url=url)
+            self.assertEqual((result['status'],result['reason']),('unavailable','truncated_metadata'))
+        # Reliable complete metadata can enrich an incomplete current title.
+        result = self.suggest('CORSAIR RM750e &', '<h1>CORSAIR RM750e ATX 3.1 750 W</h1>')
+        self.assertEqual((result['title'], result['source']), ('CORSAIR RM750e ATX 3.1 750 W','heading'))
+
+    def test_platform_assessment_does_not_confirm_an_unavailable_profile(self):
+        for title in ['Instagram','Instagram @domotik_studio']:
+            result = self.suggest(title,status=403,url='https://instagram.com/domotik_studio')
+            self.assertEqual((result['title'],result['status'],result['source']), (title,'unchanged','current_title'))
+            self.assertEqual(result['reason'],'platform_label_relevant')
+            self.assertEqual(result['diagnostics']['fetch']['code'],'http_403')
+        result = self.suggest('Instagram @different',status=403,url='https://instagram.com/domotik_studio')
+        self.assertEqual(result['status'],'unavailable')
+        with patch.object(ui,'_fetch',side_effect=ui.InspectionError('hidden','blocked_destination','security')):
+            result = self.suggest('Instagram',url='https://instagram.com/domotik_studio')
+        self.assertEqual((result['status'],result['reason']),('unavailable','blocked_destination'))
+
+    def test_public_url_fallback_after_403_does_not_retry_or_drop_features(self):
+        calls=[]
+        def request(target,*args):
+            calls.append(target.url);return reply(403)
+        url='https://www.domadoo.fr/fr/1234-acme-capteur-co2-zigbee-x42-ip65.html'
+        result=ui.suggest_title(url,current_title='Acme',requester=request,resolver=public_resolver)
+        self.assertEqual(calls,[url]);self.assertEqual(result['source'],'url_slug')
+        self.assertEqual(result['reason'],'url_fallback');self.assertEqual(result['confidence'],'medium')
+        self.assertEqual(ui._tokens(result['title']),{'acme','capteur','co2','zigbee','x42','ip65'})
+        for current,expected in [('CORSAIR RM750e','retained'),('Amazon','unavailable')]:
+            result=self.suggest(current,'<title>Amazon.fr : Informatique</title>',url='https://amazon.fr/dp/B012345678')
+            self.assertEqual((result['title'],result['status'],result['reason']),(current,expected,'generic_metadata'))
+
 
 if __name__ == '__main__':
     unittest.main()

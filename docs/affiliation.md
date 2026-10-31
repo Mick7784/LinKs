@@ -15,9 +15,12 @@ un compte Domadoo réutilise le même moteur, sans changer le code ni les URLs.
 - Ajouter `init: true` et porter le tmpfs `/tmp` de 32 à **512 Mo** :
   `/tmp:rw,noexec,nosuid,size=512m,mode=1777`. C’est une limite, pas une réservation
   permanente de mémoire. Prévoir environ 1 Go de mémoire disponible pendant une
-  collecte ; une seule instance Chromium travaille à la fois.
-- Le navigateur Chromium système est intégré à l’image Debian pour AMD64 et
-  ARM64. Playwright Core est verrouillé dans `package-lock.json`. Chaque CI lance
+  collecte ; une seule instance de navigateur travaille à la fois.
+- Firefox est désormais le navigateur par défaut, sans module de furtivité.
+  Son binaire officiel correspond exactement à Playwright Core, verrouillé dans
+  `package-lock.json`. Chromium système reste disponible pour diagnostic avec
+  `AFFILIATION_BROWSER=chromium` ; aucune variable n’est nécessaire pour Firefox.
+  Les deux navigateurs sont intégrés à l’image Debian pour AMD64 et ARM64. Chaque CI lance
   un contrôle hors réseau du navigateur livré, sur les deux architectures natives.
   Le contrôle ARM64 est un job préalable obligatoire, car l’émulation QEMU ne
   permet pas de qualifier le sous-processus graphique de Chromium. Le contrôle
@@ -30,7 +33,7 @@ un compte Domadoo réutilise le même moteur, sans changer le code ni les URLs.
 Le processus interne écoute exclusivement `127.0.0.1:3004`, avec un jeton aléatoire
 renouvelé à chaque démarrage et absent des fichiers de configuration. Il n’est
 pas accessible par le serveur public ni par le pont PulSe. Aucun port de débogage
-Chromium n’est publié. Le conteneur reste non privilégié, en lecture seule et sans
+de navigateur n’est publié. Le conteneur reste non privilégié, en lecture seule et sans
 capabilities. Chromium utilise le mode sans sandbox interne de Playwright ; la
 restriction aux hôtes autorisés et l’isolation Docker sont donc importantes.
 Ne pas utiliser ce service comme navigateur généraliste.
@@ -41,6 +44,9 @@ Ne pas utiliser ce service comme navigateur généraliste.
 2. Choisir **Ouvrir la connexion Domadoo**. La fenêtre montre le navigateur du
    serveur ; cliquer le champ souhaité, saisir dans le champ masqué sous l’image,
    puis choisir **Transmettre la saisie**. Tab, Entrée et défilement sont disponibles.
+   L’ancienne session est reprise si elle est compatible. Après passage de Chromium
+   à Firefox, une nouvelle authentification humaine est nécessaire ; les cookies
+   d’un autre navigateur ne sont pas transférés automatiquement.
 3. Effectuer personnellement l’authentification et toute double vérification.
    La fenêtre se ferme lorsque l’espace affilié est reconnu. Si elle reste ouverte
    après votre authentification, choisir **Vérifier mon accès affilié**. Aucun identifiant
@@ -59,6 +65,41 @@ automatique de CAPTCHA n’est utilisée. Si la protection refuse ce navigateur 
 nécessite un hôte/une navigation non autorisés, la V1 ne la contourne pas : la
 connexion reste à qualifier avec Domadoo. Le bouton Déconnecter efface la session
 et désactive le passage quotidien, sans effacer l’historique financier.
+
+La persistance porte sur les cookies, localStorage, IndexedDB et le sessionStorage
+de Domadoo, chiffrés avec la même clé locale que précédemment. Aucun profil complet,
+historique, cache disque ou mot de passe du navigateur n’est sauvegardé. Un état
+intermédiaire chiffré permet de reprendre la connexion pendant 24 heures après sa
+fermeture ; il n’est jamais utilisé pour une collecte avant reconnaissance de
+l’espace affilié, et ne remplace pas la dernière session validée. Déconnecter
+supprime les deux états. Les sauvegardes portables restent sans session.
+
+### Vérification Cloudflare persistante
+
+Un accès réussi depuis votre ordinateur ne valide pas le navigateur utilisé par
+LinKs depuis le serveur. Cloudflare indique que les navigateurs automatisés ne
+sont pas pris en charge pour résoudre ses défis en production. Si la vérification
+persiste, fermer la fenêtre et demander à Domadoo un accès automatisé autorisé,
+un export ou un flux officiel. Aucun changement Compose ne garantit cet accès.
+
+La fenêtre signale les pages de vérification reconnues et ne les recharge pas
+avec « Vérifier mon accès affilié ». Les échanges POST du chemin de vérification
+`/cdn-cgi/challenge-platform/` sont autorisés uniquement pendant la connexion
+humaine ; ils restent bloqués pendant la collecte. Corriger ce filtrage ne garantit
+pas l'acceptation du navigateur serveur. Aucun mécanisme de furtivité, rejeu de
+jeton de validation ou résolution automatique de défi n'est ajouté.
+
+Référence : [Navigateurs pris en charge par Cloudflare](https://developers.cloudflare.com/cloudflare-challenges/reference/supported-browsers/).
+
+La fenêtre fournit désormais **Diagnostic de connexion → Copier le diagnostic** :
+étape, navigateur/version, état de reprise, code HTTP, redirections classées,
+blocages réseau classés, heure UTC et éventuel Ray ID. Aucun corps, saisie,
+URL complète, paramètre, cookie ni jeton ne figure dans ce diagnostic. Les états
+« formulaire », « erreur du formulaire », « vérification de sécurité », « HTTP
+refusé » et « navigation interrompue » sont distincts. Une erreur de formulaire
+ne prouve pas à elle seule que le mot de passe est incorrect.
+
+Voir [la comparaison ciblée et les limites de validation](domadoo-connexion.md).
 
 ## Données et interprétation
 

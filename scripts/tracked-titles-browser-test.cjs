@@ -37,7 +37,8 @@ const {join,resolve}=require('node:path');
    ['Nom manuel conservé','https://example.com/no-title'],
    ['Home Assistant Green','https://example.com/already-correct'],
    ['Paye-moi un café','https://ko-fi.com/mickael'],
-   ['Paye moi un cafe','https://ko-fi.com/editorial']
+   ['Paye moi un cafe','https://ko-fi.com/editorial'],
+   ['Instagram','https://instagram.com/domotik_studio']
   ];
   for(const [name,url] of initial)await api('/api/tracked-links',{name,url});
   const before=(await api('/api/tracked-links')).items;
@@ -49,12 +50,13 @@ const {join,resolve}=require('node:path');
    const {url,current_title}=route.request().postDataJSON();
    assert.equal(current_title,initial.find(row=>row[1]===url)[0],'Existing title sent for comparison');
    const editorial=url.endsWith('/editorial');
+   const platform=url.includes('instagram.com'),slug=url.endsWith('product-two');
    const title=editorial?'Paye-moi un café':url.endsWith('product-one')?'UGREEN DXP4800 Pro':
     url.endsWith('product-two')?'Reolink OMVI X16 PoE':'';
-   const status=editorial?'ok':url.endsWith('already-correct')?'unchanged':url.includes('ko-fi.com')?'retained':title?'ok':'unavailable';
+   const status=editorial?'ok':platform||url.endsWith('already-correct')?'unchanged':url.includes('ko-fi.com')?'retained':title?'ok':'unavailable';
    await route.fulfill({status:200,contentType:'application/json',
-    body:JSON.stringify({status,title:title||current_title,source:editorial?'editorial':title?'open_graph':'',confidence:title?'high':'low',
-     reason:editorial?'editorial_correction':status==='unavailable'?'http_403':status==='retained'?'no_proven_gain':'already_informative',
+    body:JSON.stringify({status,title:title||current_title,source:platform?'current_title':editorial?'editorial':slug?'url_slug':title?'open_graph':'',confidence:platform||slug?'medium':title?'high':'low',
+     reason:platform?'platform_label_relevant':slug?'url_fallback':editorial?'editorial_correction':status==='unavailable'?'http_403':status==='retained'?'no_proven_gain':'already_informative',
      engine:{id:'bounded-metadata-v2',fingerprint:'123456abcdef'},
      diagnostics:{destination_decision:editorial?{reason:'http_403',status:'unavailable'}:undefined,fetch:{http_status:editorial||status==='unavailable'?403:200,code:editorial||status==='unavailable'?'http_403':'body_limit',redirects:0,truncated:!editorial&&status!=='unavailable'},extraction:{candidates:title&&!editorial?3:0}}})});
   });
@@ -69,15 +71,21 @@ const {join,resolve}=require('node:path');
   const dialog=page.locator('#tracked-titles-dialog');
   await dialog.waitFor({state:'visible'});
   await page.waitForFunction(()=>document.querySelector('#tracked-titles-progress').textContent.includes('Analyse terminée'));
-  assert.equal(inspections,6);
-  assert.equal(await page.locator('.tracked-bulk-title-row').count(),6);
+  assert.equal(inspections,7);
+  assert.equal(await page.locator('.tracked-bulk-title-row').count(),7);
   const options=page.locator('.tracked-bulk-title-row input[type="checkbox"]');
-  assert.equal(await options.count(),6);
+  assert.equal(await options.count(),7);
   assert.equal(await page.locator('.tracked-bulk-title-row input[type="checkbox"]:checked').count(),0);
-  assert.match(await page.locator('#tracked-titles-progress').textContent(),/3 améliorations.*2 titres conservés.*1 analyse incomplète/);
+  assert.match(await page.locator('#tracked-titles-progress').textContent(),/3 améliorations.*3 titres conservés.*1 analyse sans résultat fiable/);
+  assert.equal(await page.locator('.tracked-bulk-title-row.has-proposal').count(),3);
+  assert.equal(await page.locator('.tracked-bulk-title-row.is-selected').count(),0);
   assert.match(await dialog.textContent(),/Titre déjà pertinent, conservé/);
   assert.match(await dialog.textContent(),/Aucun gain certain/);
-  assert.match(await dialog.textContent(),/Analyse incomplète/);
+  assert.match(await dialog.textContent(),/Analyse sans résultat fiable/);
+  assert.match(await dialog.textContent(),/Proposition issue de l’URL descriptive/);
+  const neutral=page.locator('.tracked-bulk-title-row').filter({hasText:'https://instagram.com/'});
+  assert.match(await neutral.textContent(),/Titre déjà pertinent pour cette plateforme/);
+  assert.doesNotMatch(await neutral.getAttribute('class'),/has-proposal|is-selected/);
   assert.match(await dialog.textContent(),/Réponse HTTP 403/);
   assert.match(await dialog.textContent(),/Fiabilité élevée/);
   assert.equal(await page.locator('#tracked-titles-save').isDisabled(),true);
@@ -93,19 +101,23 @@ const {join,resolve}=require('node:path');
   const all=page.locator('#tracked-titles-select-all');
   await all.click();
   assert.equal(await page.locator('.tracked-bulk-title-row input[type="checkbox"]:checked').count(),3,'Select all only selects modifiable titles');
-  assert.match(await page.locator('#tracked-titles-count').textContent(),/3 titres sélectionnés sur 6/);
+  assert.match(await page.locator('#tracked-titles-count').textContent(),/3 titres sélectionnés sur 7/);
+  assert.equal(await page.locator('.tracked-bulk-title-row.is-selected').count(),3);
   await all.click();
   assert.equal(await page.locator('.tracked-bulk-title-row input[type="checkbox"]:checked').count(),0);
+  assert.equal(await page.locator('.tracked-bulk-title-row.is-selected').count(),0);
   const manual=page.locator('.tracked-bulk-title-row').filter({hasText:'Nom manuel conservé'});
   assert.doesNotMatch(await manual.textContent(),/Titre déjà pertinent/);
   await manual.locator('summary').click();
   assert.match(await manual.locator('.tracked-bulk-title-diagnostic').textContent(),/HTTP 403.*Moteur bounded-metadata-v2.*123456abcdef/);
   await manual.locator('input[type="text"]').fill('Nom choisi manuellement');
+  assert.match(await manual.getAttribute('class'),/has-proposal/);
   assert.equal(await manual.locator('input[type="checkbox"]').isChecked(),false);
   await manual.locator('input[type="checkbox"]').check();
   await manual.locator('input[type="text"]').fill('');
   assert.equal(await manual.locator('input[type="checkbox"]').isChecked(),false);
   assert.equal(await manual.locator('input[type="checkbox"]').isDisabled(),true);
+  assert.doesNotMatch(await manual.getAttribute('class'),/has-proposal|is-selected/);
   await manual.locator('input[type="text"]').fill('Nom manuel conservé');
   const row=page.locator('.tracked-bulk-title-row').filter({hasText:'Nom très long ancien 1'});
   await row.locator('input[type="checkbox"]').check();
@@ -114,6 +126,7 @@ const {join,resolve}=require('node:path');
 
   await editorialRow.locator('input[type="text"]').fill('Paye moi un cafe');
   assert.equal(await editorialRow.locator('input[type="checkbox"]').isDisabled(),true);
+  assert.doesNotMatch(await editorialRow.getAttribute('class'),/has-proposal|is-selected/);
   await editorialRow.locator('input[type="text"]').fill('Paye-moi un café');
   assert.equal(await editorialRow.locator('input[type="checkbox"]').isChecked(),false);
   await editorialRow.locator('input[type="checkbox"]').check();
@@ -124,8 +137,17 @@ const {join,resolve}=require('node:path');
     await page.selectOption('#theme-select',theme);
     assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Horizontal overflow at '+width+' '+theme);
     assert(await dialog.evaluate(node=>node.scrollWidth<=node.clientWidth),'Dialog overflow at '+width+' '+theme);
+    const proposal=page.locator('.tracked-bulk-title-row.has-proposal:not(.is-selected)').first();
+    const selectedStyle=await row.evaluate(node=>({background:getComputedStyle(node).backgroundColor,border:getComputedStyle(node).borderColor}));
+    const proposalStyle=await proposal.evaluate(node=>({background:getComputedStyle(node).backgroundColor,border:getComputedStyle(node).borderColor}));
+    const neutralStyle=await neutral.evaluate(node=>({background:getComputedStyle(node).backgroundColor,border:getComputedStyle(node).borderColor}));
+    assert.notEqual(proposalStyle.background,neutralStyle.background);assert.notEqual(proposalStyle.border,neutralStyle.border);
+    assert.notEqual(selectedStyle.background,proposalStyle.background);assert.notEqual(selectedStyle.border,proposalStyle.border);
+    assert.equal(await row.locator('.tracked-bulk-title-marker').textContent(),'Sélectionnée');
+    assert.equal(await proposal.locator('.tracked-bulk-title-marker').textContent(),'Proposition disponible');
     if(process.env.TITLE_REVIEW_SCREENSHOTS){
      mkdirSync(process.env.TITLE_REVIEW_SCREENSHOTS,{recursive:true});
+     await proposal.scrollIntoViewIfNeeded();
      await page.screenshot({path:join(process.env.TITLE_REVIEW_SCREENSHOTS,`titles-${width}-${theme}.png`),fullPage:true});
     }
    }

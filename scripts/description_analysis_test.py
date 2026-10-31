@@ -154,7 +154,7 @@ class AnalysisTests(unittest.TestCase):
     def test_local_title_engine_reused_and_written_label_unchanged(self):
         known='MOES - Capteur CO monoxyde de carbone Zigbee Tuya'
         result=url_inspection.suggest_local_title('https://www.domadoo.fr/fr/moes-capteur.html',known_title=known)
-        self.assertEqual(result['title'],'Capteur CO Zigbee MOES');self.assertIn('fingerprint',result['engine'])
+        self.assertEqual(result['title'],'Capteur CO Zigbee MOES Tuya');self.assertIn('fingerprint',result['engine'])
         self.assertEqual(url_inspection.suggest_local_title('https://amzn.to/example',known_title=known,written_title='Mon choix 😀 EXACT')['title'],'Mon choix 😀 EXACT')
 
     def test_manual_choices_save_backup_and_read_only_analyze_endpoint(self):

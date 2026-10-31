@@ -16,6 +16,31 @@ const {spawn,execFileSync}=require('node:child_process'),{mkdtempSync,rmSync}=re
    assert.equal(await page.locator('.aff-card strong').first().textContent(),'—');
    await page.getByRole('button',{name:'Configurer Domadoo',exact:true}).click();await page.getByRole('heading',{name:'Synchronisation quotidienne'}).waitFor();
    assert.equal(await page.locator('#aff-enabled').isChecked(),false);
+   let challenge=true,verified=0,closed=0,inflight=0,maxInflight=0,inputs=0,finishInputs;
+   const allInputs=new Promise(resolve=>{finishInputs=resolve});
+   await page.route('**/api/affiliation/login/**',async route=>{
+     inflight++;maxInflight=Math.max(maxInflight,inflight);
+     const action=new URL(route.request().url()).pathname.split('/').pop();
+     if(action==='verify')verified++;
+     if(action==='close')closed++;
+     await new Promise(resolve=>setTimeout(resolve,50));
+     await route.fulfill({contentType:'application/json',body:JSON.stringify(action==='close'?{active:false}:{active:true,challenge,image:'',location:'https://www.domadoo.fr/fr/affiliation',diagnostic:{browser:'firefox',version:'fixture',session:'restored',stage:challenge?'security_check':'login_form',status:challenge?403:200,ray_id:'0123456789abcdef-CDG'}})});
+     inflight--;if(action==='input'&&++inputs===3)finishInputs();
+   });
+   await page.getByRole('button',{name:'Ouvrir la connexion Domadoo',exact:true}).click();
+   await page.locator('#aff-login-challenge').waitFor();assert.equal(await page.locator('#aff-login-verify').isDisabled(),true);
+   assert.match(await page.locator('#aff-login-challenge').textContent(),/Une connexion réussie sur votre ordinateur ne connecte pas LinKs/);
+   assert.match(await page.locator('#aff-login-status').textContent(),/Session précédente reprise/);
+   await page.locator('.aff-connection-diagnostic summary').click();assert.match(await page.locator('#aff-login-diagnostic').textContent(),/firefox/);
+   for(const theme of ['light','dark']){await page.locator('#theme-select').selectOption(theme,{force:true});for(const width of [1440,390]){await page.setViewportSize({width,height:900});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Login diagnostic overflow');}}
+   await page.setViewportSize({width:1440,height:1000});
+   await page.locator('#aff-dialog').evaluate(d=>[...d.querySelectorAll('[data-login-key]')].slice(0,3).forEach(b=>b.click()));
+   await allInputs;assert.equal(maxInflight,1,'Screenshot polling and human inputs must be serialized');
+   challenge=false;await page.clock.runFor(2600);await page.locator('#aff-login-challenge').waitFor({state:'hidden'});
+   assert.equal(await page.locator('#aff-login-verify').isDisabled(),false);assert.equal(verified,0);
+   await page.getByRole('button',{name:'Fermer',exact:true}).click();await page.locator('#aff-dialog').waitFor({state:'hidden'});
+   assert.equal(closed,1);assert.equal(await page.getByRole('button',{name:'Ouvrir la connexion Domadoo',exact:true}).isDisabled(),false);
+   await page.unroute('**/api/affiliation/login/**');
    await page.getByRole('button',{name:'Tous les partenaires',exact:true}).click();await page.getByRole('button',{name:'Gérer les partenaires',exact:true}).click();
    await page.getByRole('button',{name:'Ajouter un partenaire',exact:true}).click();await page.locator('[name="partner"]').fill('Reolink');await page.locator('#aff-add-form [name="label"]').fill('Compte Reolink');await page.locator('[name="platform"]').selectOption('affiliatly');await page.locator('#aff-add-form button').click();await page.locator('.aff-partner').filter({hasText:'Reolink'}).waitFor();
    const seed=`import sys,sqlite3;sys.path.insert(0,${JSON.stringify(__dirname)});import affiliation;from affiliation_test import observation;db=sqlite3.connect(${JSON.stringify(db)});db.row_factory=sqlite3.Row;affiliation.ingest(db,'domadoo',observation());db.commit();db.close()`;

@@ -340,7 +340,7 @@ def post(connect, action, data):
         a=account(db,identity)
     if a['platform_id']!='domadoo': raise ValueError('Connecteur à venir.')
     if action in {'login/start','login/state','login/input','login/close','login/verify','disconnect'}:
-        result=worker(action,{**data,'account':identity})
+        result=worker(action,{**data,'account':identity},timeout=60 if action=='login/start' else 40)
         if result.get('connected') or action=='disconnect':
             with connect() as db:
                 db.execute('UPDATE aff_accounts SET session_state=? WHERE id=?',('connected' if result.get('connected') else 'disconnected',identity))
