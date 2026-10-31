@@ -1,5 +1,32 @@
 # Changelog
 
+## V1.4.6
+
+# V1.4.6 — Écran Affiliation stable pendant la synchronisation
+
+### Corrections
+
+- Corrige la reconstruction complète de l'écran Affiliation toutes les trois
+  secondes lorsqu'une collecte est en cours. Le suivi actualise les statuts et
+  les résultats sans effacer les paramètres en cours de saisie, déplacer le focus,
+  perdre les filtres ou fermer une fenêtre ouverte.
+- Le bouton Synchroniser est désactivé pendant une collecte déjà active.
+- Les réponses de chargement devenues obsolètes sont ignorées. Un échec temporaire
+  du suivi n'arrête plus définitivement le rafraîchissement de l'état.
+- Le libellé d'attente précise « Connexion ou lecture du portail… » : cet état ne
+  prouve pas à lui seul que l'authentification Domadoo est terminée.
+
+### Compatibilité
+
+Aucun changement Compose, de volume ou de variable d'environnement. La connexion
+automatique introduite en V1.4.4 et les contrôles financiers sont conservés.
+
+### Validation et limites
+
+Défaut reproduit et corrigé avec une collecte synthétique dans le navigateur.
+Ce correctif porte sur l'affichage ; il ne démontre pas que Cloudflare accepte le
+compte réel, ni que la synchronisation signalée sur le VPS a réussi.
+
 ## V1.4.5
 
 # V1.4.5 — Assistant de description YouTube
