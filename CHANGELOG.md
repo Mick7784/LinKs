@@ -1,5 +1,16 @@
 # Changelog
 
+## V1.4.2
+
+### 🔧 Améliorations
+
+- Release V1.4.2 — titres améliorés et connexion Domadoo à valider
+- preserve title specifications and highlight review proposals
+
+### 🐛 Corrections
+
+- allow human verification exchange and explain Domadoo challenge blocks
+
 ## V1.4.1
 
 ### 🐛 Corrections
