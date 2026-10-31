@@ -659,6 +659,22 @@ def _editorial_title(current):
     return (value, rules) if len(value) <= 160 else (current, [])
 
 
+def suggest_local_title(url, *, known_title='', written_title=''):
+    """Description labels from existing evidence only; never DNS, HTTP or persistence."""
+    if written_title:
+        result = _result(written_title, 'written', 'unchanged', 'high', 'written_title_preserved')
+    else:
+        parser = _MetadataParser()
+        if known_title:parser.headings = [[known_title]]
+        result = _choose_title(url, parser, '', fetched=False)
+        value = result['title'] or known_title
+        if value:
+            value, rules = _editorial_title(value)
+            result['title'] = value
+    result['engine'] = {'id': ENGINE_ID, 'fingerprint': ENGINE_FINGERPRINT}
+    return result
+
+
 def _relevant_platform_label(url, current):
     parsed = urlsplit(url)
     parts = [unquote(p) for p in parsed.path.split('/') if p]
