@@ -51,7 +51,10 @@ const {join,resolve}=require('node:path');
     url.endsWith('product-two')?'Reolink OMVI X16 PoE':'';
    const status=url.endsWith('already-correct')?'unchanged':url.includes('ko-fi.com')?'retained':title?'ok':'unavailable';
    await route.fulfill({status:200,contentType:'application/json',
-    body:JSON.stringify({status,title:title||current_title,source:title?'open_graph':'',confidence:title?'high':'low'})});
+    body:JSON.stringify({status,title:title||current_title,source:title?'open_graph':'',confidence:title?'high':'low',
+     reason:status==='unavailable'?'http_403':status==='retained'?'no_proven_gain':'already_informative',
+     engine:{id:'bounded-metadata-v2',fingerprint:'123456abcdef'},
+     diagnostics:{fetch:{http_status:status==='unavailable'?403:200,code:status==='unavailable'?'http_403':'body_limit',redirects:0,truncated:status!=='unavailable'},extraction:{candidates:title?3:0}}})});
   });
   const page=await context.newPage(),errors=[];
   page.on('pageerror',error=>errors.push(error.message));
@@ -69,10 +72,11 @@ const {join,resolve}=require('node:path');
   const options=page.locator('.tracked-bulk-title-row input[type="checkbox"]');
   assert.equal(await options.count(),5);
   assert.equal(await page.locator('.tracked-bulk-title-row input[type="checkbox"]:checked').count(),0);
-  assert.match(await page.locator('#tracked-titles-progress').textContent(),/2 améliorations.*2 titres conservés.*1 destination/);
+  assert.match(await page.locator('#tracked-titles-progress').textContent(),/2 améliorations.*2 titres conservés.*1 analyse incomplète/);
   assert.match(await dialog.textContent(),/Titre déjà pertinent, conservé/);
   assert.match(await dialog.textContent(),/Aucun gain certain/);
-  assert.match(await dialog.textContent(),/Destination non identifiée/);
+  assert.match(await dialog.textContent(),/Analyse incomplète/);
+  assert.match(await dialog.textContent(),/Réponse HTTP 403/);
   assert.match(await dialog.textContent(),/Fiabilité élevée/);
   assert.equal(await page.locator('#tracked-titles-save').isDisabled(),true);
   assert.deepEqual((await api('/api/tracked-links')).items,before,'Analysis never writes to database');
@@ -84,6 +88,9 @@ const {join,resolve}=require('node:path');
   await all.click();
   assert.equal(await page.locator('.tracked-bulk-title-row input[type="checkbox"]:checked').count(),0);
   const manual=page.locator('.tracked-bulk-title-row').filter({hasText:'Nom manuel conservé'});
+  assert.doesNotMatch(await manual.textContent(),/Titre déjà pertinent/);
+  await manual.locator('summary').click();
+  assert.match(await manual.locator('.tracked-bulk-title-diagnostic').textContent(),/HTTP 403.*Moteur bounded-metadata-v2.*123456abcdef/);
   await manual.locator('input[type="text"]').fill('Nom choisi manuellement');
   assert.equal(await manual.locator('input[type="checkbox"]').isChecked(),false);
   await manual.locator('input[type="checkbox"]').check();

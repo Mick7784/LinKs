@@ -33,7 +33,7 @@ function updateControls(){
   const unavailable=rows.filter(row=>row.status==="unavailable").length;
   progress.textContent="Analyse terminée · "+proposed+" amélioration"+(proposed>1?"s":"")+
     (retained?" · "+retained+" titre"+(retained>1?"s":"")+" conservé"+(retained>1?"s":""):"")+
-    (unavailable?" · "+unavailable+" destination"+(unavailable>1?"s":"")+" sans titre fiable":"")+".";
+    (unavailable?" · "+unavailable+" analyse"+(unavailable>1?"s":"")+" incomplète"+(unavailable>1?"s":""):"")+".";
  }
 }
 function renderRows(){
@@ -57,9 +57,12 @@ function renderRows(){
   input.setAttribute("aria-label","Nouveau titre pour "+row.original);
   heading.append(input);
   const status=element("small","tracked-bulk-title-status","Analyse en cours…");
-  right.append(heading,status);
+  const diagnostic=element("details","tracked-bulk-title-diagnostic");diagnostic.hidden=true;
+  const diagnosticText=element("small","tracked-bulk-title-status");
+  diagnostic.append(element("summary","","Diagnostic"),diagnosticText);
+  right.append(heading,status,diagnostic);
   outer.append(left,right);fragment.append(outer);
-  nodes.set(row.id,{input,check,status});
+  nodes.set(row.id,{input,check,status,diagnostic,diagnosticText});
   check.addEventListener("change",()=>{
    row.selected=check.checked&&!!row.proposed.trim()&&row.proposed.trim()!==row.original;
    check.checked=row.selected;updateControls();
@@ -77,6 +80,22 @@ function renderRows(){
  list.append(fragment);
  updateControls();
 }
+function reasonLabel(reason){
+ if(/^http_\d{3}$/.test(reason||""))return "Réponse HTTP "+reason.slice(5)+".";
+ return ({dns_error:"Résolution DNS impossible.",dns_timeout:"Délai DNS dépassé.",dns_busy:"Résolution DNS occupée.",
+  network_timeout:"La destination a dépassé le délai réseau.",network_error:"Connexion à la destination impossible.",
+  deadline_exceeded:"Délai global de récupération dépassé.",tls_error:"Connexion sécurisée impossible.",
+  blocked_destination:"Destination refusée par les protections réseau.",invalid_url:"URL invalide.",
+  redirect_loop:"Boucle de redirection.",redirect_limit:"Trop de redirections.",redirect_missing:"Redirection sans destination.",redirect_invalid:"Redirection invalide.",
+  unsupported_encoding:"Compression non prise en charge.",invalid_compression:"Réponse compressée invalide.",
+  http_protocol_error:"Réponse HTTP invalide.",unsupported_content:"La réponse n’est pas une page HTML.",
+  invalid_html:"HTML inexploitable.",invalid_jsonld:"Données structurées invalides.",
+  metadata_missing:"Aucune métadonnée exploitable dans la portion lue.",generic_metadata:"Métadonnées trop génériques.",
+  conflicting_metadata:"Informations contradictoires.",blocked_page:"Page de vérification ou de blocage.",
+  score_too_low:"Indices insuffisants pour proposer un changement.",url_fallback:"Proposition issue de l’URL descriptive.",
+  url_matches_current:"URL cohérente avec le titre ; métadonnées non confirmées.",platform_title_preserved:"Nom de la destination conservé.",
+  preview_failed:"La prévisualisation n’a pas abouti."})[reason]||"";
+}
 function showResult(row){
  const node=nodes.get(row.id);if(!node)return;
  node.input.value=row.proposed;
@@ -87,9 +106,19 @@ function showResult(row){
  node.status.textContent=(row.status==="generated"?"Amélioration proposée. Modifiable avant validation.":
   row.status==="unchanged"?"Titre déjà pertinent, conservé.":
   row.status==="retained"?"Aucun gain certain : titre actuel conservé.":
-  row.reason==="conflicting_metadata"?"Informations contradictoires : titre actuel conservé.":
-  "Destination non identifiée : titre actuel conservé.")+
-  (reliability?" Fiabilité "+reliability+".":"");
+  "Analyse incomplète : titre actuel conservé.")+
+  (reasonLabel(row.reason)?" "+reasonLabel(row.reason):"")+
+  (reliability&&row.status!=="unavailable"?" Fiabilité "+reliability+".":"");
+ if(row.diagnostics){
+  const fetch=row.diagnostics.fetch||{},extraction=row.diagnostics.extraction||{};
+  const parts=[/^http_/.test(fetch.code||"")?"":reasonLabel(fetch.code),Number.isInteger(fetch.http_status)?"HTTP "+fetch.http_status:"",
+   Number.isInteger(fetch.redirects)?fetch.redirects+" redirection(s)":"",
+   fetch.truncated?"Lecture limitée à 256 Ko":"",
+   Number.isInteger(extraction.candidates)?extraction.candidates+" candidat(s)":"Extraction non effectuée",
+   row.engine?.id&&/^[a-z0-9-]+$/.test(row.engine.id)?"Moteur "+row.engine.id:"",
+   /^[a-f0-9]{12}$/.test(row.engine?.fingerprint||"")?row.engine.fingerprint:""].filter(Boolean);
+  node.diagnosticText.textContent=parts.join(" · ");node.diagnostic.hidden=false;
+ }
 }
 async function inspectAll(mySession){
  let position=0;
@@ -106,10 +135,10 @@ async function inspectAll(mySession){
     row.proposed=title||row.original;
     row.status=["unchanged","retained","unavailable"].includes(result.status)?result.status:
       !title?"unavailable":title===row.original?"unchanged":"generated";
-    row.confidence=result.confidence;row.reason=result.reason;
+    row.confidence=result.confidence;row.reason=result.reason;row.diagnostics=result.diagnostics;row.engine=result.engine;
    }catch(error){
     if(mySession!==session||controller.signal.aborted)return;
-    row.proposed=row.original;row.status="unavailable";
+    row.proposed=row.original;row.status="unavailable";row.reason="preview_failed";
    }
    done++;showResult(row);updateControls();
   }

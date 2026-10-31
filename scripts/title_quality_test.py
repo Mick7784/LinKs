@@ -106,10 +106,12 @@ class TitleQualityTests(unittest.TestCase):
                 self.assertEqual(result['status'], 'unavailable')
                 self.assertEqual(calls, [])
 
-    def test_oversize_body_is_rejected_not_parsed_as_partial_product(self):
+    def test_oversize_body_keeps_complete_metadata_in_bounded_prefix(self):
         body = '<h1>Capteur CO MOES</h1>' + 'x' * ui.MAX_HTML
         result = ui.suggest_title('https://shop.example/item', requester=lambda *args: reply(html=body), resolver=public_resolver)
-        self.assertEqual(result['reason'], 'fetch_failed')
+        self.assertEqual(result['title'], 'Capteur CO MOES')
+        self.assertTrue(result['diagnostics']['fetch']['truncated'])
+        self.assertEqual(result['diagnostics']['fetch']['bytes_read'], ui.MAX_HTML)
 
     def test_dns_wait_is_bounded(self):
         def resolver(*args, **kwargs):
@@ -155,8 +157,14 @@ class TitleQualityTests(unittest.TestCase):
         for headers in [{'Content-Length': '1000'}, {}, {'Content-Encoding': 'gzip'}]:
             response = FakeResponse(headers)
             with self.subTest(headers=headers), patch.object(ui, '_PinnedHTTPS', FakeConnection):
-                with self.assertRaises(ui.InspectionError):
-                    ui._request_once(ui._target('https://shop.example/item'), '93.184.216.34', 'GET', 100)
+                if headers.get('Content-Encoding') == 'gzip':
+                    with self.assertRaises(ui.InspectionError):
+                        ui._request_once(ui._target('https://shop.example/item'), '93.184.216.34', 'GET', 100)
+                else:
+                    result = ui._request_once(ui._target('https://shop.example/item'), '93.184.216.34', 'GET', 100)
+                    self.assertEqual(len(result.body), 100)
+                    self.assertEqual(result.wire_bytes, 101)
+                    self.assertTrue(result.truncated)
 
     def test_deadline_interrupts_a_stalled_detached_response_socket(self):
         stopped = threading.Event()

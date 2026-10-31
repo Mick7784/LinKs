@@ -19,9 +19,12 @@ import time
 import queue
 import threading
 import unicodedata
+import zlib
+import hashlib
+from pathlib import Path
 from itertools import islice
 from dataclasses import dataclass
-from urllib.parse import unquote, urljoin, urlsplit
+from urllib.parse import quote, unquote, urljoin, urlsplit
 
 MAX_URL = 2000
 MAX_HTML = 256 * 1024
@@ -29,10 +32,15 @@ TIMEOUT = 3
 MAX_REDIRECTS = 4
 TOTAL_TIMEOUT = 12
 USER_AGENT = 'LinKs-URL-Inspector/1.0 (+metadata and availability check)'
+ENGINE_ID = 'bounded-metadata-v2'
+ENGINE_FINGERPRINT = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()[:12]
 
 
 class InspectionError(Exception):
     """An external URL could not safely or conclusively be inspected."""
+    def __init__(self, message, code='invalid_url', stage='url'):
+        super().__init__(message)
+        self.code, self.stage = code, stage
 
 
 @dataclass(frozen=True)
@@ -41,6 +49,9 @@ class Response:
     content_type: str = ''
     body: bytes = b''
     location: str = ''
+    truncated: bool = False
+    wire_bytes: int = 0
+    content_encoding: str = 'identity'
 
 
 @dataclass(frozen=True)
@@ -68,15 +79,17 @@ def _target(url):
     except (ValueError, UnicodeError) as exc:
         raise InspectionError('Adresse de destination invalide.') from exc
     if not host or len(host) > 253 or host in ('localhost',) or host.endswith(('.localhost', '.local', '.internal', '.invalid', '.test')):
-        raise InspectionError('Destination locale ou réservée interdite.')
+        raise InspectionError('Destination locale ou réservée interdite.', 'blocked_destination', 'security')
     try:
         literal = ipaddress.ip_address(host.strip('[]'))
         if not _global_ip(literal):
-            raise InspectionError('Adresse IP non publique interdite.')
+            raise InspectionError('Adresse IP non publique interdite.', 'blocked_destination', 'security')
     except ValueError:
         if '.' not in host or any(not part for part in host.split('.')):
             raise InspectionError('Nom de domaine public requis.')
-    path = (parsed.path or '/') + (('?' + parsed.query) if parsed.query else '')
+    path = quote(parsed.path or '/', safe="/%:@!$&'()*+,;=-._~")
+    if parsed.query:
+        path += '?' + quote(parsed.query, safe="%/?@:!$&'()*+,;=-._~")
     return Target(url, host, port, path, parsed.scheme == 'https')
 
 
@@ -92,10 +105,10 @@ def _approved_ip(target, resolver):
         answers = resolver(target.host, target.port, type=socket.SOCK_STREAM)
         addresses = [entry[4][0] for entry in answers]
         if not addresses or any(not _global_ip(ipaddress.ip_address(addr)) for addr in addresses):
-            raise InspectionError('Résolution DNS non publique ou ambiguë.')
+            raise InspectionError('Résolution DNS non publique ou ambiguë.', 'blocked_destination', 'security')
         return addresses[0]
     except (OSError, ValueError) as exc:
-        raise InspectionError('Résolution DNS impossible ou non fiable.') from exc
+        raise InspectionError('Résolution DNS impossible ou non fiable.', 'dns_error', 'dns') from exc
 
 
 class _PinnedHTTP(http.client.HTTPConnection):
@@ -142,30 +155,44 @@ def _request_once(target, ip, method, max_bytes, *, deadline=None):
         connection.request(method, target.path, headers={
             'User-Agent': USER_AGENT,
             'Accept': 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.1' if method == 'GET' else '*/*',
-            'Accept-Encoding': 'identity',
+            'Accept-Encoding': 'gzip, deflate',
             'Connection': 'close',
         })
         response = connection.getresponse()
         body = b''
+        truncated, wire_bytes = False, 0
+        encoding = response.getheader('Content-Encoding', 'identity').strip().lower() or 'identity'
         if method == 'GET' and max_bytes and response.status not in (301, 302, 303, 307, 308):
-            if response.getheader('Content-Encoding', 'identity').lower() not in ('', 'identity'):
-                raise InspectionError('Encodage compressé non pris en charge.')
-            length = response.getheader('Content-Length', '')
-            if length.isdigit() and int(length) > max_bytes:
-                raise InspectionError('Page trop volumineuse.')
-            while len(body) <= max_bytes:
+            if encoding not in ('identity', 'gzip', 'deflate'):
+                raise InspectionError('Encodage non pris en charge.', 'unsupported_encoding', 'http')
+            decoder = zlib.decompressobj(16 + zlib.MAX_WBITS if encoding == 'gzip' else zlib.MAX_WBITS) if encoding != 'identity' else None
+            # Bound both transferred and decompressed bytes. The page may be larger;
+            # complete metadata in this prefix is still useful. Never fetch its tail.
+            while len(body) <= max_bytes and wire_bytes <= max_bytes:
                 # read1 avoids waiting for the entire body; bound every socket read.
                 sock = connection.sock or getattr(getattr(response.fp, 'raw', None), '_sock', None)
                 if sock:
                     sock.settimeout(min(TIMEOUT, _remaining(deadline)))
-                block = response.read1(min(16384, max_bytes + 1 - len(body)))
+                _remaining(deadline)
+                block = response.read1(min(16384, max_bytes + 1 - wire_bytes))
                 if not block:
+                    if decoder and not decoder.eof:
+                        raise InspectionError('Réponse compressée incomplète.', 'invalid_compression', 'http')
                     break
-                body += block
-            if len(body) > max_bytes:
-                raise InspectionError('Page trop volumineuse.')
+                wire_bytes += len(block)
+                try:
+                    body += decoder.decompress(block, max_bytes + 1 - len(body)) if decoder else block
+                except zlib.error as exc:
+                    raise InspectionError('Réponse compressée invalide.', 'invalid_compression', 'http') from exc
+                if len(body) > max_bytes or wire_bytes > max_bytes:
+                    truncated = True
+                    body = body[:max_bytes]
+                    break
         return Response(response.status, response.getheader('Content-Type', ''), body,
-                        response.getheader('Location', ''))
+                        response.getheader('Location', ''), truncated, wire_bytes, encoding)
+    except InspectionError as exc:
+        exc.http_status = response.status if response else None
+        raise
     finally:
         watchdog.cancel()
         if response is not None:
@@ -176,7 +203,7 @@ def _request_once(target, ip, method, max_bytes, *, deadline=None):
 def _remaining(deadline):
     remaining = deadline - time.monotonic()
     if remaining <= 0:
-        raise InspectionError('Délai global de récupération dépassé.')
+        raise InspectionError('Délai global de récupération dépassé.', 'deadline_exceeded', 'network')
     return remaining
 
 
@@ -187,7 +214,7 @@ _DNS_SLOTS = threading.BoundedSemaphore(8)
 
 def _resolve_before_deadline(target, resolver, deadline):
     if not _DNS_SLOTS.acquire(blocking=False):
-        raise InspectionError('Résolution DNS occupée.')
+        raise InspectionError('Résolution DNS occupée.', 'dns_busy', 'dns')
     result = queue.Queue(maxsize=1)
     def resolve():
         try:
@@ -200,46 +227,63 @@ def _resolve_before_deadline(target, resolver, deadline):
     try:
         ok, value = result.get(timeout=min(TIMEOUT, _remaining(deadline)))
     except queue.Empty as exc:
-        raise InspectionError('Délai DNS dépassé.') from exc
+        raise InspectionError('Délai DNS dépassé.', 'dns_timeout', 'dns') from exc
     if not ok:
         raise value
     return value
 
 
-def _fetch(url, *, method, max_bytes=0, requester=None, resolver=None, url_validator=None):
+def _fetch(url, *, method, max_bytes=0, requester=None, resolver=None, url_validator=None, diagnostics=None):
     requester = requester or _request_once
     resolver = resolver or socket.getaddrinfo
     seen = set()
     deadline = time.monotonic() + TOTAL_TIMEOUT
-    for _ in range(MAX_REDIRECTS + 1):
+    trace = diagnostics if diagnostics is not None else {}
+    for redirect_count in range(MAX_REDIRECTS + 1):
+        trace['redirects'] = redirect_count
         _remaining(deadline)
-        target = _target(url)
-        if url_validator is not None and not url_validator(target.url):
-            raise InspectionError('Destination exclue de la vérification.')
-        if target.url in seen:
-            raise InspectionError('Boucle de redirection.')
-        seen.add(target.url)
-        ip = _resolve_before_deadline(target, resolver, deadline)
         try:
+            target = _target(url)
+        except InspectionError as exc:
+            if redirect_count and exc.stage == 'url':
+                exc.code, exc.stage = 'redirect_invalid', 'redirect'
+            raise
+        if url_validator is not None and not url_validator(target.url):
+            raise InspectionError('Destination exclue de la vérification.', 'blocked_destination', 'security')
+        if target.url in seen:
+            raise InspectionError('Boucle de redirection.', 'redirect_loop', 'redirect')
+        seen.add(target.url)
+        try:
+            ip = _resolve_before_deadline(target, resolver, deadline)
+            trace['dns'] = 'public'
             result = (requester(target, ip, method, max_bytes, deadline=deadline)
                       if requester is _request_once else requester(target, ip, method, max_bytes))
+        except InspectionError as exc:
+            exc.fallback_url = target.url
+            raise
         except (OSError, TimeoutError, ssl.SSLError, http.client.HTTPException, UnicodeError) as exc:
-            raise InspectionError('La destination ne répond pas de manière fiable.') from exc
+            code = 'tls_error' if isinstance(exc, ssl.SSLError) else 'network_timeout' if isinstance(exc, TimeoutError) else 'http_protocol_error' if isinstance(exc, http.client.HTTPException) else 'url_encoding_error' if isinstance(exc, UnicodeError) else 'network_error'
+            error = InspectionError('La destination ne répond pas de manière fiable.', code, 'network')
+            error.fallback_url = target.url
+            raise error from exc
         if not isinstance(result, Response):
-            raise InspectionError('Réponse de vérification invalide.')
+            raise InspectionError('Réponse de vérification invalide.', 'http_protocol_error', 'http')
         _remaining(deadline)
         if len(result.body) > max_bytes and max_bytes:
-            raise InspectionError('Page trop volumineuse.')
+            result = Response(result.status, result.content_type, result.body[:max_bytes], result.location, True, min(result.wire_bytes or len(result.body), max_bytes + 1), result.content_encoding)
+        trace.update(http_status=result.status, bytes_read=len(result.body), wire_bytes=result.wire_bytes,
+                     truncated=result.truncated, content_encoding=result.content_encoding)
+        trace.setdefault('hops', []).append({'http_status': result.status})
         if result.status in (301, 302, 303, 307, 308):
             if not result.location:
-                raise InspectionError('Redirection sans destination.')
+                raise InspectionError('Redirection sans destination.', 'redirect_missing', 'redirect')
             try:
                 url = urljoin(url, result.location)
             except ValueError as exc:
-                raise InspectionError('Destination de redirection invalide.') from exc
+                raise InspectionError('Destination de redirection invalide.', 'redirect_invalid', 'redirect') from exc
             continue
         return result, target.url
-    raise InspectionError('Trop de redirections.')
+    raise InspectionError('Trop de redirections.', 'redirect_limit', 'redirect')
 
 
 class _MetadataParser(HTMLParser):
@@ -255,6 +299,13 @@ class _MetadataParser(HTMLParser):
         self._in_json = False
         self._script = []
         self._script_size = 0
+
+    def finish(self):
+        # A bounded prefix may end inside a heading, title or JSON-LD script.
+        # Only closed elements may identify a destination.
+        for _, capture, _ in self._captures:
+            capture.clear()
+        self._captures.clear()
 
     def handle_starttag(self, tag, attrs):
         fields = dict(attrs)
@@ -412,6 +463,18 @@ def _host_is(host, domain):
     return host == domain or host.endswith('.' + domain)
 
 
+def _compact_product(value, url):
+    """Short French labels for attested Domadoo names, never inferred attributes."""
+    if not _host_is((urlsplit(url).hostname or '').lower(), 'domadoo.fr'):
+        return value
+    words = ' '.join(re.findall(r'[a-z0-9]+', _normal(value)))
+    if re.fullmatch(r'(?:nabu casa )?(?:box domotique )?home assistant green(?: box domotique open source et cloudless)?', words):
+        return 'Home Assistant Green'
+    if re.fullmatch(r'moes capteur (?:de )?co (?:monoxyde de carbone )?zigbee(?: tuya)?(?: zc hm)?', words):
+        return 'Capteur CO Zigbee MOES'
+    return value
+
+
 def _platform_candidates(url, parser):
     """Small isolated adapters add evidence to the common ranking/comparison."""
     parsed = urlsplit(url)
@@ -435,7 +498,8 @@ _SCORES = {'schema_product': 90, 'schema_content': 82, 'schema_profile': 75,
            'html_title': 62, 'url_slug': 50}
 
 
-def _choose_title(url, parser, current_title, *, fetched=True):
+def _choose_title(url, parser, current_title, *, fetched=True, diagnostics=None):
+    trace = diagnostics if diagnostics is not None else {}
     brands = [parser.meta.get('product:brand', ''), parser.meta.get('og:site_name', '')]
     brands += [''.join(value) for value in parser.brands]
     raw = []
@@ -443,13 +507,14 @@ def _choose_title(url, parser, current_title, *, fetched=True):
         try:
             entities = list(islice(_structured(json.loads(script)), 32))
         except (ValueError, RecursionError, TypeError):
+            trace['invalid_jsonld'] = trace.get('invalid_jsonld', 0) + 1
             continue
         for source, name, brand, model in entities:
             brands.append(brand)
             title = clean_title(name, brand)
             if title and model and not _tokens(model) <= _tokens(title):
                 title = clean_title(title + ' ' + model)
-            raw.append((source, title, _SCORES[source]))
+            raw.append((source, _compact_product(title, url), _SCORES[source]))
     for source, values in (
         ('product_heading', [''.join(p) for p in parser.product_names]),
         ('heading', [''.join(h) for h in parser.headings]),
@@ -460,17 +525,25 @@ def _choose_title(url, parser, current_title, *, fetched=True):
     ):
         for value in values[:8]:
             brand = parser.meta.get('product:brand', '') if source in ('heading', 'product_heading') else ''
-            if _generic(clean_title(value), brands):
-                continue
-            raw.append((source, clean_title(value, brand=brand, site=parser.meta.get('og:site_name', '')), _SCORES[source]))
-    platform = list(_platform_candidates(url, parser))
+            cleaned = clean_title(value, site=parser.meta.get('og:site_name', ''))
+            if isinstance(value, str) and value.strip() and not cleaned:
+                trace['rejected_generic'] = trace.get('rejected_generic', 0) + 1
+            if cleaned and not _generic(cleaned, brands):
+                cleaned = clean_title(cleaned, brand=brand)
+            score = 65 if source == 'url_slug' and len(_tokens(cleaned)) >= 3 else _SCORES[source]
+            raw.append((source, _compact_product(cleaned, url), score))
+    platform = list(_platform_candidates(url, parser)) if fetched else []
     raw.extend(platform)
     candidates = [(source, title, score) for source, title, score in raw if title and not _generic(title, brands)]
+    trace.update(metadata=len(parser.meta), headings=sum(bool(''.join(h)) for h in parser.headings),
+                 jsonld=len(parser.scripts), candidates=len(candidates),
+                 rejected_generic=trace.get('rejected_generic', 0) + sum(bool(title) and _generic(title, brands) for _, title, _ in raw))
     # Localised, verified platform labels supersede their raw English metadata.
     if platform:
         candidates = platform
     if not candidates:
-        return _result(current_title, '', 'unavailable', 'low', 'identity_missing')
+        reason = 'generic_metadata' if trace['rejected_generic'] else 'invalid_jsonld' if trace.get('invalid_jsonld') else 'metadata_missing'
+        return _result(current_title, '', 'unavailable', 'low', reason)
     def overlap(a, b):
         ta, tb = _tokens(a), _tokens(b)
         return len(ta & tb) / max(1, min(len(ta), len(tb)))
@@ -480,6 +553,7 @@ def _choose_title(url, parser, current_title, *, fetched=True):
         ranked.append((score + min(10, len(evidence) * 5), source, title))
     ranked.sort(reverse=True)
     score, source, title = ranked[0]
+    trace.update(selected_source=source, score=score)
     # Equally plausible but incompatible identities mean abstention, not guessing.
     for other_score, other_source, other_title in ranked[1:]:
         models = lambda text: {word for word in _tokens(text) if re.search(r'\d', word)}
@@ -487,9 +561,12 @@ def _choose_title(url, parser, current_title, *, fetched=True):
         if other_source != 'url_slug' and other_score >= 70 and (overlap(title, other_title) < .5 or incompatible_model):
             return _result(current_title, '', 'unavailable', 'low', 'conflicting_metadata')
     confidence = 'high' if score >= 85 else 'medium' if score >= 60 else 'low'
-    if not fetched:
+    if not fetched and source != 'url_slug':
         confidence = 'low'
     if current_title:
+        host = (urlsplit(url).hostname or '').lower()
+        if any(_host_is(host, domain) for domain in ('discord.gg', 'discord.com', 'instagram.com')):
+            return _result(current_title, source, 'retained', confidence, 'platform_title_preserved')
         before, after = _tokens(current_title), _tokens(title)
         known_brands = set().union(*(_tokens(b) for b in brands if b))
         if before == after or (before <= after and after - before <= known_brands):
@@ -497,7 +574,7 @@ def _choose_title(url, parser, current_title, *, fetched=True):
         # Preserve all useful current words/references. Only generic labels can be
         # replaced outright; unsupported translations are deliberately avoided.
         if confidence == 'low' or (not _generic(current_title, brands, single_word=False) and not before < after):
-            return _result(current_title, source, 'retained', confidence, 'no_proven_gain')
+            return _result(current_title, source, 'retained', confidence, 'score_too_low' if confidence == 'low' else 'no_proven_gain')
     return _result(title, source, 'ok', confidence, 'more_informative')
 
 
@@ -512,16 +589,50 @@ def suggest_title(url, *, current_title='', requester=None, resolver=None, url_v
     Confidence is an evidence grade, not a statistical probability.
     """
     current_title = current_title.strip() if isinstance(current_title, str) else ''
+    trace = {'fetch': {'outcome': 'not_started'}, 'extraction': {'outcome': 'not_attempted'}}
+    def finish(result):
+        result['engine'] = {'id': ENGINE_ID, 'fingerprint': ENGINE_FINGERPRINT}
+        trace['decision'] = {key: result[key] for key in ('status', 'reason', 'source', 'confidence')}
+        result['diagnostics'] = trace
+        return result
+    def fallback(target_url, reason):
+        result = _choose_title(target_url, _MetadataParser(), current_title, fetched=False,
+                               diagnostics=trace['extraction'])
+        trace['extraction']['outcome'] = 'url_only'
+        if result['source'] == 'url_slug':
+            if result['status'] == 'unchanged':
+                result.update(status='retained', reason='url_matches_current')
+            elif result['status'] == 'ok':
+                result['reason'] = 'url_fallback'
+        else:
+            result['reason'] = reason
+        return finish(result)
     try:
         _target(url)
         response, final_url = _fetch(url, method='GET', max_bytes=MAX_HTML,
-                                    requester=requester, resolver=resolver, url_validator=url_validator)
-    except InspectionError:
-        return _result(current_title, '', 'unavailable', 'low', 'fetch_failed')
+                                    requester=requester, resolver=resolver, url_validator=url_validator,
+                                    diagnostics=trace['fetch'])
+    except InspectionError as exc:
+        trace['fetch'].update(outcome='error', stage=exc.stage, code=exc.code)
+        if getattr(exc, 'http_status', None) is not None:
+            trace['fetch']['http_status'] = exc.http_status
+        # Network/HTTP failure does not erase information present in a public URL.
+        # Security or redirect failures never turn into apparent successful analysis.
+        if exc.code in {'dns_error', 'dns_timeout', 'dns_busy', 'network_timeout', 'network_error',
+                        'tls_error', 'deadline_exceeded', 'unsupported_encoding', 'invalid_compression'}:
+            return fallback(getattr(exc, 'fallback_url', url), exc.code)
+        return finish(_result(current_title, '', 'unavailable', 'low', exc.code))
     parser = _MetadataParser()
     fetched = 200 <= response.status < 300
+    trace['fetch'].update(outcome='partial' if response.truncated else 'ok',
+                          code='body_limit' if response.truncated else 'ok')
+    if not fetched:
+        reason = 'http_' + str(response.status)
+        trace['fetch'].update(outcome='http_error', code=reason)
+        return fallback(final_url, reason)
     if fetched and not any(x in response.content_type.lower() for x in ('text/html', 'application/xhtml+xml')):
-        return _result(current_title, '', 'unavailable', 'low', 'unsupported_content')
+        trace['extraction'].update(outcome='skipped', code='unsupported_content')
+        return finish(_result(current_title, '', 'unavailable', 'low', 'unsupported_content'))
     if fetched and any(x in response.content_type.lower() for x in ('text/html', 'application/xhtml+xml')):
         encoding = 'utf-8'
         charset = re.search(r'charset\s*=\s*["\']?([\w-]+)', response.content_type, re.I)
@@ -533,12 +644,22 @@ def suggest_title(url, *, current_title='', requester=None, resolver=None, url_v
             page = response.body.decode('utf-8', errors='replace')
         try:
             parser.feed(page)
+            parser.finish()
         except (ValueError, AssertionError):
-            return _result(current_title, '', 'unavailable', 'low', 'invalid_html')
+            trace['extraction']['code'] = 'invalid_html'
+            return fallback(final_url, 'invalid_html')
         # A challenge/error page may still be returned with HTTP 200.
         if _BLOCKED.search(''.join(parser.title)):
-            return _result(current_title, '', 'unavailable', 'low', 'blocked_page')
-    return _choose_title(final_url, parser, current_title, fetched=fetched)
+            trace['extraction']['code'] = 'blocked_page'
+            return fallback(final_url, 'blocked_page')
+    trace['extraction']['outcome'] = 'parsed'
+    result = _choose_title(final_url, parser, current_title, fetched=fetched, diagnostics=trace['extraction'])
+    if result['source'] == 'url_slug':
+        if result['status'] == 'ok':
+            result['reason'] = 'url_fallback'
+        elif result['status'] == 'unchanged':
+            result.update(status='retained', reason='url_matches_current')
+    return finish(result)
 
 
 
