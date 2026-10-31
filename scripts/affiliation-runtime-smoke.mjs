@@ -1,11 +1,22 @@
-// Exercises the shipped system Chromium on each image architecture, offline.
-import {createRequire} from 'node:module';
-const require=createRequire(import.meta.url),{chromium}=require('playwright-core');
-const browser=await chromium.launch({headless:true,executablePath:'/usr/bin/chromium',args:['--disable-dev-shm-usage']});
-try{
- const page=await browser.newPage();await page.route('**/*',route=>route.abort());
- await page.setContent('<h1>LinKs browser ready</h1>');
- if(await page.locator('h1').textContent()!=='LinKs browser ready')throw new Error('Browser smoke failed');
- if((await page.screenshot({type:'jpeg'})).length<100)throw new Error('Browser rendering failed');
- console.log('Affiliation Chromium runtime OK: '+process.arch);
-}finally{await browser.close()}
+// Exercise both shipped browsers and encrypted restart persistence, offline,
+// with the same non-root, read-only filesystem and tmpfs as production.
+import {browserContext,captureSession} from './affiliation-browser.mjs';
+import {saveSession,loadSession,createActions} from './affiliation-worker.mjs';
+import {PORTAL} from './domadoo.mjs';
+const transport=route=>route.fulfill({contentType:'text/html',body:'<h1>LinKs browser ready</h1>'});
+for(const engine of ['firefox','chromium']){
+ let runtime;
+ try{
+  runtime=await browserContext(undefined,true,{engine,transport});await runtime.page.goto(PORTAL);
+  await runtime.context.addCookies([{name:'synthetic',value:'test-only',url:PORTAL,httpOnly:true,secure:true}]);
+  await runtime.page.evaluate(()=>{localStorage.setItem('local','retained');sessionStorage.setItem('session','retained')});
+  if((await runtime.page.screenshot({type:'jpeg'})).length<100)throw new Error('Browser rendering failed');
+  await saveSession('domadoo',await captureSession(runtime));await runtime.browser.close();
+  runtime=await browserContext(await loadSession('domadoo'),false,{engine,transport});await runtime.page.goto(PORTAL);
+  if(await runtime.page.locator('h1').textContent()!=='LinKs browser ready')throw new Error('Browser smoke failed');
+  if(!((await runtime.context.cookies()).some(c=>c.name==='synthetic'&&c.value==='test-only')))throw new Error('Cookie restart failed');
+  if(!await runtime.page.evaluate(()=>localStorage.getItem('local')==='retained'&&sessionStorage.getItem('session')==='retained'))throw new Error('Storage restart failed');
+  console.log(`Affiliation ${engine} runtime and encrypted session restart OK: ${process.arch}`);
+ }finally{await runtime?.browser.close()}
+}
+await createActions().action('disconnect',{account:'domadoo'});
