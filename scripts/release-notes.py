@@ -19,7 +19,7 @@ def prepare(root,version,source):
     if not notes.exists():
         def git(*args):return subprocess.check_output(['git',*args],cwd=root,text=True).strip()
         tags=git('tag','--merged',source,'--sort=-creatordate').splitlines()
-        previous=next((tag for tag in tags if re.fullmatch(r'[Vv]\d+\.\d+',tag)),None)
+        previous=next((tag for tag in tags if re.fullmatch(r'[Vv]\d+\.\d+(?:\.\d+)?',tag)),None)
         subjects=git('log','--format=%s',(previous+'..'+source) if previous else source).splitlines()
         text=render(subjects)
         if not text.strip():raise ValueError('Release notes manquantes')

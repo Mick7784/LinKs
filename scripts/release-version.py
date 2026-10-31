@@ -3,18 +3,22 @@ import json, os, re, subprocess
 from pathlib import Path
 
 def validate(value):
-    if not isinstance(value,str) or not re.fullmatch(r"V[0-9]+\.[0-9]+",value) or len(value)>40:raise ValueError("Invalid application version")
+    if not isinstance(value,str) or not re.fullmatch(r"V[0-9]+\.[0-9]+(?:\.[0-9]+)?",value) or len(value)>40:raise ValueError("Invalid application version")
     return value
 
 def next_version(value,minor=False):
-    major,number=validate(value)[1:].split('.')
+    parts=validate(value)[1:].split('.')
+    if len(parts)==3:
+        major,feature,patch=map(int,parts)
+        return f'V{major}.{feature+1}.0' if minor else f'V{major}.{feature}.{patch+1}'
+    major,number=parts
     feature,patch=(int(number[:-2]),int(number[-2:])) if len(number)>=3 else (int(number),0)
     if minor:return f'V{major}.{feature+1}'
     if patch==99:raise ValueError('99 corrections reached; select an explicit milestone')
     return f'V{major}.{feature}{patch+1:02d}'
 
 def choose(message,official=False,override='',current=None):
-    pinned=re.match(r'^Release (V[0-9]+\.[0-9]+)(?:\s|$)',message)
+    pinned=re.match(r'^Release (V[0-9]+\.[0-9]+(?:\.[0-9]+)?)(?:\s|$)',message)
     if override:return validate(override)
     if pinned:return validate(pinned.group(1))
     current=current or (Path(__file__).resolve().parent.parent/'VERSION').read_text().strip()
@@ -33,13 +37,13 @@ def reserve(root,source,override=''):
     (root/'VERSION').write_text(version+'\n')
     path.write_text(json.dumps({'source_sha':source,'version':version},indent=2)+'\n')
     readme=root/'README.md'
-    if readme.exists():readme.write_text(re.sub(r'Version du code : \*\*V[0-9]+\.[0-9]+\*\*',f'Version du code : **{version}**',readme.read_text()))
+    if readme.exists():readme.write_text(re.sub(r'Version du code : \*\*V[0-9]+\.[0-9]+(?:\.[0-9]+)?\*\*',f'Version du code : **{version}**',readme.read_text(encoding='utf-8')),encoding='utf-8')
     return version
 
 if __name__=='__main__':
     root=Path(__file__).resolve().parent.parent
     source=os.environ['GITHUB_SHA'];override=os.environ.get('RELEASE_OVERRIDE','')
-    pinned=re.match(r'^Release (V[0-9]+\.[0-9]+)(?:\s|$)',os.environ.get('RELEASE_MESSAGE',''))
+    pinned=re.match(r'^Release (V[0-9]+\.[0-9]+(?:\.[0-9]+)?)(?:\s|$)',os.environ.get('RELEASE_MESSAGE',''))
     if os.environ.get('RELEASE_MESSAGE','').startswith('Release V') and not pinned:raise ValueError('Explicit release title must contain a valid version')
     if not override and pinned:override=validate(pinned.group(1))
     def git(*args):return subprocess.check_output(['git',*args],cwd=root,text=True,stderr=subprocess.DEVNULL).strip()
