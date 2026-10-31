@@ -296,12 +296,17 @@ def save_draft(db, key, data, fork=False):
     if type(expected) is not int or expected < 1:raise ValueError('Révision attendue requise.')
     base_fields = {'title','text','sections','expected_revision','mutation_id'}
     analysis_fields = {'analysis_version','products','selections','manual_order'}
-    if set(data) not in (base_fields, base_fields | analysis_fields):
+    if set(data) not in (base_fields, base_fields | analysis_fields, base_fields | {'youtube_url'},base_fields | analysis_fields | {'youtube_url'}):
         raise ValueError('Champs de brouillon invalides.')
     content = text(data, 'text', MAX_TEXT)
     fields = {'title': text(data,'title',160,True), 'text': content,
               'sections': validate_anchors(data.get('sections'), content, current['template_snapshot']['sections'])}
     if 'analysis_version' in data:fields.update(validate_choices(data))
+    if 'youtube_url' in data:
+        from description_analysis import kind
+        url=text(data,'youtube_url',2000)
+        if url and (not affiliate_partners.http_url(url) or kind(url)!='youtube'):raise ValueError('URL YouTube HTTP(S) valide requise.')
+        fields['youtube_url']=url
     digest = hashlib.sha256(packed(fields).encode('utf-8')).hexdigest()
     receipt = {'id': mutation, 'base_revision': expected, 'digest': digest}
     if fork:
@@ -335,6 +340,9 @@ def validate_choices(data):
     if 'merchant_search' in selections:
         from description_search import validate_state
         validate_state(selections['merchant_search'])
+    if 'operations' in selections:
+        from description_workflow import validate_options
+        validate_options(selections['operations'])
     choices=selections.get('description_analysis',{})
     if not isinstance(choices,dict) or len(choices)>1000:raise ValueError('Trop de sélections.')
     for key,value in choices.items():
@@ -448,6 +456,10 @@ def restore_backup(db, data):
 
 
 def read(db, path, origin):
+    match = re.fullmatch(r'drafts/([\w-]+)/versions', path)
+    if match:return {'items':[v for v in rows(db,TABLES[2]) if v['description_id']==match[1]]}
+    match = re.fullmatch(r'versions/([\w-]+)', path)
+    if match:return {'version':get(db,TABLES[2],match[1])}
     if path == 'templates':return {'items': rows(db, TABLES[0])}
     if path == 'catalogue':return catalogue(db)
     if path == 'drafts':return {'items': rows(db, TABLES[1])}
@@ -462,6 +474,14 @@ def read(db, path, origin):
 
 def write(db, path, data, origin):
     if not isinstance(data, dict):raise ValueError('Requête invalide.')
+    match = re.fullmatch(r'drafts/([\w-]+)/(apply|finalize)',path)
+    if match:
+        import description_workflow as workflow
+        return (workflow.apply if match[2]=='apply' else workflow.finalize)(db,match[1],data,origin)
+    match = re.fullmatch(r'versions/([\w-]+)/restore',path)
+    if match:
+        from description_workflow import restore
+        return restore(db,match[1],data)
     if path == 'templates':return insert(db, TABLES[0], validate_template(data))
     if path == 'preview':return render(db, validate_template(data), origin)
     if path == 'drafts':return create_draft(db, data, origin)
