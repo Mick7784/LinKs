@@ -116,5 +116,5 @@ window.LinksDescriptions=(()=>{
  }
  async function load(){if(loaded)return;try{await refresh();model=clone(templates[0]||null);loaded=true;render();await preview()}catch(error){root.replaceChildren(node('p',error.message),button('Réessayer',load))}}
  window.addEventListener('beforeunload',event=>{if(dirty){event.preventDefault();event.returnValue=''}});
- return {load};
+ return {load,openDraft:showDraft};
 })();

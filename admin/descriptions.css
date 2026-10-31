@@ -73,6 +73,22 @@ main:has(#descriptions.active [data-editor-host]){max-width:none}
 #descriptions .description-merchant-search input:not([type=checkbox]),#descriptions .description-merchant-search select{width:100%;max-width:100%}
 #descriptions .description-merchant-search button,#descriptions .description-merchant-open{margin:5px 6px 5px 0}
 #descriptions .description-merchant-open{display:inline-block;font-size:.85rem}
+.description-review-dialog{width:min(1700px,95vw);max-width:95vw;max-height:92vh;overflow:auto;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:14px;padding:24px}
+.description-review-dialog::backdrop{background:#0009}
+.description-review-dialog button{margin:6px 8px 6px 0}
+.description-review-dialog label{display:block;margin:12px 0}
+.description-review-dialog textarea{display:block;width:100%;height:40vh;resize:vertical;font:inherit;line-height:1.5;margin:14px 0;background:var(--bg);color:var(--text)}
+.description-review-dialog code{display:block;white-space:pre-wrap;overflow-wrap:anywhere;font-size:.85rem}
+.description-comparison{display:grid;grid-template-columns:1fr 1fr;column-gap:16px;margin:18px 0;padding:14px;background:var(--bg);border:1px solid var(--border);border-radius:8px}
+.description-comparison>div{min-width:0;white-space:pre-wrap;overflow-wrap:anywhere;min-height:1.6em;font:14px/1.6 ui-monospace,monospace;padding:0 4px}
+.description-diff-remove{background:color-mix(in srgb,#e65d65 22%,var(--bg));border-left:3px solid #e65d65}
+.description-diff-add{background:color-mix(in srgb,#39b783 22%,var(--bg));border-left:3px solid #39b783}
+.description-operation{padding:10px;border-bottom:1px solid var(--border)}
+.description-operation-list{max-height:32vh;overflow:auto;border:1px solid var(--border);border-radius:8px}
+.description-operation-options{display:flex;flex-wrap:wrap;gap:10px;align-items:end}
+.description-operation-options select{max-width:400px}
+.description-workflow-toolbar .description-toolbar{margin:8px 0}
+.description-review-dialog .description-check{display:flex;gap:8px;align-items:center}
 #descriptions .description-assistant-content p{font-size:.88rem;line-height:1.5;margin:10px 0}
 #descriptions .description-assistant-content details>summary::before{content:'›';margin-right:6px}
 #descriptions .description-assistant-content details[open]>summary::before{transform:rotate(90deg)}

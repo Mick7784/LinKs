@@ -3,7 +3,7 @@ window.LinksDescriptionEditor=(()=>{'use strict';
  const S=window.DescriptionSections,states=new Map(),clone=value=>structuredClone(value);
  const node=(tag,text,className)=>{const el=document.createElement(tag);if(text!==undefined)el.textContent=text;if(className)el.className=className;return el};
  const request=(path,data,signal)=>api('/api/descriptions/'+path,data===undefined?{signal}:{method:'POST',signal,body:JSON.stringify(data)});
- const fields=doc=>({title:doc.title,text:doc.text,sections:clone(doc.sections),...(doc.analysis_version===1?{analysis_version:1,products:clone(doc.products),selections:clone(doc.selections),manual_order:clone(doc.manual_order)}:{})});
+ const fields=doc=>({title:doc.title,text:doc.text,youtube_url:doc.youtube_url||'',sections:clone(doc.sections),...(doc.analysis_version===1?{analysis_version:1,products:clone(doc.products),selections:clone(doc.selections),manual_order:clone(doc.manual_order)}:{})});
  function action(label,fn){const b=node('button',label);b.type='button';b.addEventListener('click',fn);return b}
  function dialog(title,text,editable=false){
   const modal=node('dialog',undefined,'description-text-dialog'),form=node('form'),area=node('textarea');form.method='dialog';area.value=text;area.readOnly=!editable;area.setAttribute('aria-label',editable?'Description à importer':title);area.rows=18;
@@ -15,6 +15,7 @@ window.LinksDescriptionEditor=(()=>{'use strict';
   constructor(document,instance){
    this.doc=clone(document);this.instance=instance;this.writer=crypto.randomUUID();this.generation=0;this.ack=0;this.pending=null;this.pendingGeneration=0;this.saving=false;this.blocked=false;this.history=[];this.future=[];this.selection={start:0,end:0};this.recoveryOrigin=null;this.mode='analysis';this.ratio=65;this.message='Enregistré';this.warning='';this.composing=false;
    this.analysis=new window.LinksDescriptionAnalysis.Panel(this,request);
+   this.workflow=new window.LinksDescriptionWorkflow.Controller(this,request);
   }
   prefix(){return `links:description-editor:v1:${this.instance}:${this.doc.id}:`}
   key(){return this.prefix()+this.writer}
@@ -122,6 +123,7 @@ window.LinksDescriptionEditor=(()=>{'use strict';
   }
   paint(){
    this.analysis.schedule();
+   this.workflow.schedule();this.workflow.paint();
    if(!this.host?.isConnected||this.host.editorOwner!==this)return;
    this.status.textContent=this.saving?'Enregistrement…':this.message;this.status.dataset.state=this.blocked?'conflict':this.dirty()?'pending':'saved';this.localWarning.textContent=this.warning;
    this.count.textContent=S.points(this.doc.text).length.toLocaleString('fr-FR')+' caractères';this.undoButton.disabled=!this.history.length;this.redoButton.disabled=!this.future.length;
@@ -131,7 +133,7 @@ window.LinksDescriptionEditor=(()=>{'use strict';
    }
    if(this.mode==='analysis'){this.analysis.render(this.assistant);return}
    this.assistant.replaceChildren();
-   if(this.mode==='preview'){this.assistant.append(node('pre',this.doc.text,'description-text'));return}
+   if(this.mode==='preview'){this.workflow.preview(this.assistant);return}
    const order=[...this.doc.sections].sort((a,b)=>(a.start??Infinity)-(b.start??Infinity));
    for(const anchor of order){
     const row=node('article',undefined,'description-anchor');row.dataset.anchorId=anchor.id;
@@ -169,7 +171,8 @@ window.LinksDescriptionEditor=(()=>{'use strict';
    separator.addEventListener('keydown',event=>{if(['ArrowLeft','ArrowRight'].includes(event.key)){event.preventDefault();resize(this.ratio+(event.key==='ArrowLeft'?-2:2))}});
    separator.addEventListener('pointerdown',event=>{event.preventDefault();separator.setPointerCapture(event.pointerId);const move=e=>{const rect=layout.getBoundingClientRect();resize(100*(e.clientX-rect.left)/rect.width)};const done=()=>{separator.removeEventListener('pointermove',move);separator.removeEventListener('pointerup',done);separator.removeEventListener('pointercancel',done)};separator.addEventListener('pointermove',move);separator.addEventListener('pointerup',done);separator.addEventListener('pointercancel',done)});
    const tabs=node('div',undefined,'description-anchor-actions');tabs.append(action('Analyse et catalogue',()=>{this.mode='analysis';this.paint()}),action('Sections',()=>{this.mode='sections';this.paint()}),action('Aperçu du texte',()=>{this.mode='preview';this.paint()}));this.assistant=node('div',undefined,'description-assistant-content');right.append(node('h2','Assistant de rédaction'),node('p','Les URL collées restent intactes. Un lien marchand inséré directement ne fournit pas de statistiques de clics LinKs.','muted'),tabs,this.assistant);
-   layout.append(left,separator,right);host.append(toolbar,this.status,this.count,this.localWarning,this.conflict,this.recoveryBox,layout);this.paint();
+   const workflow=node('div',undefined,'description-workflow-toolbar');
+   layout.append(left,separator,right);host.append(toolbar,workflow,this.status,this.count,this.localWarning,this.conflict,this.recoveryBox,layout);this.workflow.mount(workflow);this.paint();
   }
  }
  async function mount(host,id,onFork){

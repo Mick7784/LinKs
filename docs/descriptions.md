@@ -1,9 +1,10 @@
-# Descriptions — phases 1 à 4
+# Descriptions — phases 1 à 5
 
 Base d'intégration : V1.4.3, commit `55c64e8`. Les PR #60 (affiliation) et
 #61 (titres), ainsi que les correctifs ultérieurs de main, sont intégrés.
-Ces phases ajoutent modèles, stockage, éditeur, analyse locale et préparation
-marchande ; elles ne dupliquent aucun service de titres, partenaires, liens ou sources.
+Ces phases couvrent les modèles, la rédaction, l'analyse locale, la préparation
+marchande, la comparaison, l'application confirmée et l'historique. Elles ne
+dupliquent aucun service de titres, partenaires, liens ou sources.
 
 ## Périmètre livré
 
@@ -19,8 +20,8 @@ marchande ; elles ne dupliquent aucun service de titres, partenaires, liens ou s
   référence et une association explicite `link_id` / `source_id`. La référence
   n'est jamais publiée en remplacement d'une association manquante.
 - Sélection des liens déjà publiés, y compris **YouTube Description** historique
-  et sources renommées, par identifiants stables. Aucun nouveau jeton, alias,
-  fiche ou source ; aucun regroupement de statistiques.
+  et sources renommées, par identifiants stables. Modèles et analyses ne créent
+  aucun jeton, alias, fiche ou source ; aucun regroupement de statistiques.
 - Aperçu textuel et signalement des références manquantes ou indisponibles.
 - Création d'un brouillon avec texte initial, copie du modèle et associations
   de sections, puis ouverture dans l'espace de rédaction.
@@ -62,9 +63,8 @@ associations, produits, sélections et ordre manuel. Les positions initiales son
 exprimées en points de code Unicode ; `description-sections.js` convertit
 explicitement les indices UTF-16 du navigateur, sans normaliser les accents,
 emojis ou URL. Les séquences de substitution Unicode isolées sont refusées.
-Aucune analyse ne régénère le
-texte. Les versions finalisées sont réservées pour la phase 5 : aucun endpoint
-de finalisation n'est exposé, et le service refuse leur mise à jour.
+Aucune analyse ne régénère le texte. La finalisation explicite de la phase 5
+enregistre une version séparée, dont le service refuse la mise à jour.
 
 L'éditeur enregistre après 700 ms d'inactivité et sérialise ses requêtes. Un
 accusé de réception met à jour uniquement la révision et les métadonnées :
@@ -116,7 +116,7 @@ fichier de sauvegarde complet et la copie du volume avant tout retour de version
 Pas de suppression de table historique, de nouveau service ou de variable
 d'environnement. `Dockerfile` embarque le module et son modèle initial.
 
-## Frontières des phases suivantes
+## Frontières de responsabilités
 
 4. Fournisseurs de recherche séparés par marchand, avec capacités déclarées :
    recherche intégrée Domadoo si un accès fiable et autorisé est disponible,
@@ -191,9 +191,9 @@ inactives et peuvent retrouver leur proposition après une annulation. Les
 anciens clients qui n'envoient pas ces champs ne les effacent pas. Les révisions,
 la récupération après interruption et les sauvegardes couvrent aussi ces choix.
 
-Aucune opération n'est appliquée au texte. La préparation marchande est décrite
-ci-dessous ; comparaison et application finale restent en phase 5. L'aperçu
-rapide continue d'afficher le texte réellement saisi.
+L'analyse seule n'applique aucune opération au texte. La préparation marchande est
+décrite ci-dessous ; l'application confirmée et l'aperçu des propositions sont
+décrits dans la phase 5.
 
 ## Phase 4 — recherche marchande et préparation
 
@@ -276,12 +276,142 @@ après annulation. Une recherche interrompue demande une relance manuelle. Les
 liens marchands s'ouvrent avec `noopener noreferrer` sans navigation de l'éditeur.
 
 La préparation ne crée aucun lien suivi, source, jeton, alias ou version finalisée.
-Elle ne modifie jamais le texte. La phase 5 devra revalider la disponibilité des
+Elle ne modifie jamais le texte. La phase 5 revalide la disponibilité des
 fiches/sources et la règle du partenaire avant toute application : les instantanés
-du brouillon ne sont pas une autorisation de créer. Comparaison, application,
-copie et historique finalisé restent hors du périmètre livré.
+du brouillon ne sont pas, seuls, une autorisation de créer.
+
+## Phase 5 — comparaison, application et historique
+
+**Comparer les modifications** ouvre une vue desktop avant/après avec les
+opérations identifiées et l'option **Afficher uniquement les modifications**.
+Les lignes sont alignées, y compris en présence d'emojis et d'URL longues. Le
+panneau d'aperçu rapide affiche les propositions après enregistrement, sans jamais
+modifier la saisie. Aucun de ces aperçus n'écrit dans le catalogue.
+
+Un lien suivi à créer est signalé dans la liste ; l'aperçu affiche sa destination
+réelle, jamais une URL courte fictive. La comparaison permet d'ignorer une
+opération, choisir une fiche/source, confirmer un emplacement, choisir une URL à
+remplacer ou retirer uniquement une URL du texte. Une correction impose une
+nouvelle comparaison. Les ajouts et déplacements restent décochés par défaut.
+Les opérations antérieures disparues sont signalées comme obsolètes.
+
+**Appliquer les modifications**, dans la comparaison, revalide côté serveur la
+révision et le texte exact, les décisions, les sources actives, les fiches, les
+doublons, les destinations, la règle d'affiliation et les emplacements. Un hash du
+plan empêche d'appliquer silencieusement une comparaison devenue ancienne. Les
+créations utilisent exclusivement `affiliate_partners.save_tracked` et
+`tracked_links.token_link`. Une destination présente mais inconnue (par exemple
+une vidéo complémentaire) exige une autorisation explicite de création et une
+source YouTube existante. Aucune source n'est créée implicitement.
+
+Une publication existante est réutilisée exactement, y compris les anciens
+jetons `/go/…` et sources YouTube renommées/associées au modèle. Un alias révoqué
+reste indisponible. Les opérations n'enregistrent aucun clic et ne regroupent
+aucune statistique. Amazon reste direct, avec sa chaîne exacte ; aucun jeton ou
+redirection LinKs n'est créé vers Amazon. Le panneau avertit qu'un lien sans
+schéma HTTP(S) peut ne pas être cliquable sur YouTube, sans le corriger. La forme
+d'une URL ne prouve ni une affiliation officielle ni son fonctionnement.
+
+### Transactions et conservation
+
+L'application utilise la transaction SQLite existante (`BEGIN IMMEDIATE`) et un
+savepoint par opération. Une erreur récupérable annule uniquement l'opération
+concernée, y compris sa création éventuelle de lien. Les réussites sont conservées
+avec leur texte réel. Les états sont **prête, appliquée, ignorée, obsolète,
+échouée** ; seules les opérations restantes sont reprises.
+
+Chaque validation porte un identifiant et un reçu dans le brouillon. Une réponse
+perdue se rejoue avec la même requête ; elle ne crée pas de deuxième lien, jeton ou
+version. Les 20 derniers reçus d'application sont conservés ; les requêtes plus
+anciennes restent rejetées par leur révision. Deux validations concurrentes sont
+sérialisées : la seconde réutilise son reçu ou rencontre un conflit de révision.
+Le navigateur garde les validations interrompues localement et propose leur
+reprise. Une saisie effectuée pendant la réponse n'est jamais écrasée : le texte
+local reste disponible, avec comparaison à la version serveur ou copie séparée.
+
+Les succès désélectionnent les opérations consommées, sans effacer les titres,
+associations, recherches ou classements. L'annulation/rétablissement porte sur le
+texte et ses sections ; elle ne supprime jamais une fiche déjà créée. Une reprise
+réutilise cette fiche. Les brouillons et versions utilisent les tables déjà
+intégrées aux sauvegardes ; aucune nouvelle base ou catalogue produit.
+
+### Emplacements et texte libre
+
+Les insertions utilisent les sections confirmées de la copie du modèle. Les
+nouveaux produits suivent l'ordre manuel ou leur ordre d'apparition, avant les
+liens permanents de boutique. Un produit déjà présent chez le même marchand
+demande un remplacement explicite, au lieu d'un second ajout.
+
+Un titre marchand répété ou renommé demande une association explicite à la
+sélection. Une section disparue n'est recréée qu'après accord et choix du curseur,
+hors d'une autre section. Une sous-section absente demande également un accord.
+Les sections facultatives réellement vides peuvent être masquées dans le plan ;
+les textes personnalisés ne sont pas supprimés comme s'ils étaient vides.
+
+Les remplacements et retraits ciblent les URL exactes, en points de code Unicode,
+sans modifier la phrase, ses espaces ou sa ponctuation autour. Un déplacement
+déplace une ligne autonome (URL seule ou intitulé suivi de `:`) après sélection
+explicite. Un lien intégré dans une phrase ou répété exige une correction manuelle
+dans l'éditeur ; l'assistant ne déduit pas le paragraphe à déplacer.
+
+### Finaliser, copier et restaurer
+
+**Finaliser et copier** est distinct de l'application : il ne crée pas de lien et
+ne modifie pas le texte. Le serveur refuse une description vide ou de plus de
+5 000 caractères Unicode. Les propositions non appliquées doivent être
+explicitement ignorées pour cette version. Le texte brut exact est enregistré
+dans `description_versions` avec sa date, les URL présentes, fiches/sources et
+destinations constatées dans le catalogue. Ces instantanés ne constituent pas un
+test réseau des destinations. Pour Amazon direct, l'instantané conserve l'URL
+fournie même si une fiche équivalente est associée.
+
+Une version est immuable et une répétition de la même finalisation renvoie la même
+version. Le brouillon reste éditable pour une prochaine version. La copie utilise
+le presse-papiers du navigateur ; en cas de refus, le texte intégral est affiché
+et sélectionné pour Ctrl+C. Il n'y a aucune publication YouTube.
+
+**Historique** affiche le texte exact et les destinations de chaque version,
+permet une comparaison entre deux versions ou avec le brouillon, et restaure une
+version dans un nouveau brouillon. La restauration est rejouable sans doublon et
+ne réactive pas les anciennes suggestions. L'URL YouTube facultative se renseigne
+dans cet écran et utilise la sauvegarde avec révision du brouillon ; elle peut
+être ajoutée après publication sans réécrire les versions existantes.
+
+### Recette PC avant production
+
+1. Importer SMLIGHT, confirmer les sections proposées, choisir les sources
+   historiques et vérifier l'aperçu en thèmes clair et sombre à 1920 × 1080.
+2. Préparer Domadoo et Amazon indépendamment, corriger un titre, réordonner les
+   produits et vérifier destinations, sous-sections et absence de `domid` répété.
+3. Comparer puis appliquer ; vérifier qu'un lien existant est réutilisé et qu'un
+   nouveau lien est créé une seule fois. Tester une URL dans une phrase, un
+   déplacement explicite et une section supprimée.
+4. Tester deux onglets et une coupure réseau pendant la validation ; reprendre la
+   validation, vérifier le texte récent et l'absence de doublon dans le catalogue.
+5. Finaliser, contrôler la copie intégrale et le blocage au-delà de 5 000 caractères,
+   comparer deux versions puis restaurer l'ancienne dans un nouveau brouillon.
+
+Limites à vérifier en recette : Domadoo demeure assisté ; les liens affiliés et
+leur validité réelle restent à vérifier sur les sites marchands. Les passages
+ambigus demandent une confirmation, les phrases complexes un déplacement manuel.
+Les droits du presse-papiers dépendent du navigateur, avec repli manuel prévu.
+La création de fiches lors d'une application confirmée est persistante : annuler
+le texte ne les efface pas. Aucune release, publication d'image, fusion de PR ou
+intervention sur le VPS n'est réalisée par cette phase.
 
 ## Validation
+
+- `python3 scripts/description_workflow_test.py` : aperçu sans écriture, création
+  autorisée, destinations exactes, concurrence/idempotence, échecs partiels,
+  règles/sources obsolètes, ordre, doublons, sections supprimées, historique
+  immuable, limites, restauration et routes privées.
+- `node --test scripts/description-workflow.test.cjs` : comparaison Unicode,
+  conservation d'une saisie récente, reprise exacte d'une validation interrompue
+  et conflit sans mutation rejouée.
+- `node scripts/descriptions-workflow-browser-test.cjs` : SMLIGHT complet, liens
+  historiques, application partielle et reprise après réponse perdue, destinations
+  Amazon, annulation/rétablissement, copie réussie et refusée, deux versions,
+  comparaison et restauration non destructive. Aucun accès marchand réel.
 
 - `python3 scripts/description_search_test.py` : fournisseurs simulés, catalogue
   prioritaire, destinations exactes, doublons, sources historiques, aucune écriture
