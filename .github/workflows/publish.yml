@@ -26,7 +26,7 @@ concurrency:
 jobs:
   docker:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 90
     permissions:
       contents: write
       packages: write
@@ -46,6 +46,10 @@ jobs:
           python3 scripts/storage_test.py
           python3 scripts/images_test.py
           python3 scripts/analytics_test.py
+          python3 scripts/affiliation_test.py
+          npm ci --ignore-scripts
+          CHROMIUM_PATH=$(NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node -e 'console.log(require("playwright").chromium.executablePath())') node --test scripts/domadoo.test.mjs
+          CHROMIUM_PATH=$(NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node -e 'console.log(require("playwright").chromium.executablePath())') node scripts/affiliation-browser-test.cjs
           python3 scripts/page_layout_test.py
           python3 scripts/campaign_selection_test.py
           python3 scripts/campaign_lifecycle_test.py
@@ -107,7 +111,7 @@ jobs:
         run: |
           set -euo pipefail
           docker build -t links-test .
-          docker run -d --name links-test --read-only --tmpfs /data:rw,nosuid,size=32m,mode=1777 --tmpfs /tmp:rw,noexec,nosuid,size=32m,mode=1777 --cap-drop ALL --security-opt no-new-privileges:true -p 127.0.0.1:18080:8080 -p 127.0.0.1:18081:8081 links-test
+          docker run -d --name links-test --read-only --tmpfs /data:rw,nosuid,size=32m,mode=1777 --tmpfs /tmp:rw,noexec,nosuid,size=512m,mode=1777 --cap-drop ALL --security-opt no-new-privileges:true -p 127.0.0.1:18080:8080 -p 127.0.0.1:18081:8081 links-test
           trap 'docker logs links-test; docker rm -f links-test' EXIT
           for attempt in $(seq 1 20); do
             if curl -fsS http://127.0.0.1:18080/healthz; then break; fi

@@ -1,6 +1,8 @@
 *
 !Dockerfile
 !VERSION
+!package.json
+!package-lock.json
 !nginx.conf
 !links.json
 !links.schema.json
