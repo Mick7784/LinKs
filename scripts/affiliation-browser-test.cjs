@@ -16,6 +16,35 @@ const {spawn,execFileSync}=require('node:child_process'),{mkdtempSync,rmSync}=re
    assert.equal(await page.locator('.aff-card strong').first().textContent(),'—');
    await page.getByRole('button',{name:'Configurer Domadoo',exact:true}).click();await page.getByRole('heading',{name:'Synchronisation quotidienne'}).waitFor();
    assert.equal(await page.locator('#aff-enabled').isChecked(),false);
+   // A running collection must refresh its status without rebuilding the page,
+   // erasing a draft setting, stealing focus or closing an open dialog.
+   let syncing=false,polls=0,syncRequests=0,failNextPoll=false;
+   await page.route('**/api/affiliation/sync',async route=>{syncRequests++;syncing=true;await route.fulfill({json:{ok:true}})});
+   await page.route('**/api/affiliation/overview?*',async route=>{
+     if(failNextPoll){failNextPoll=false;await route.fulfill({status:503,json:{error:'SYNTHETIC transport unavailable'}});return}
+     const response=await route.fetch(),data=await response.json();polls++;
+     const a=data.accounts.find(a=>a.id==='domadoo');a.running=syncing;a.last_error='SYNTHETIC POLL '+polls;
+     await route.fulfill({response,json:data});
+   });
+   await page.getByRole('button',{name:'Synchroniser',exact:true}).click();
+   await page.locator('.aff-alert').filter({hasText:'SYNTHETIC POLL 1'}).waitFor();
+   await page.locator('#aff-hour').selectOption('7');await page.locator('#aff-zone').fill('Europe/Draft');await page.locator('#aff-zone').focus();
+   await page.evaluate(()=>{window.affStable={form:document.querySelector('#aff-settings-form'),tabs:document.querySelector('.aff-tabs'),dialog:document.querySelector('#aff-dialog')}});
+   await page.clock.runFor(3100);await page.locator('.aff-alert').filter({hasText:'SYNTHETIC POLL 2'}).waitFor();
+   assert.equal(await page.locator('#aff-hour').inputValue(),'7','poll must retain the unsaved schedule');
+   assert.equal(await page.locator('#aff-zone').inputValue(),'Europe/Draft');
+   assert(await page.evaluate(()=>document.activeElement.id==='aff-zone'&&affStable.form===document.querySelector('#aff-settings-form')&&affStable.tabs===document.querySelector('.aff-tabs')),'poll must retain DOM identity and focus');
+   assert.equal(await page.locator('[data-aff="sync"]').isDisabled(),true);assert.equal(syncRequests,1);
+   await page.evaluate(()=>{affStable.dialog.innerHTML='<input id="synthetic-dialog-draft" value="Keep me"><button data-aff="close">Fermer</button>';affStable.dialog.showModal()});
+   failNextPoll=true;await page.clock.runFor(3100);await page.locator('#notice').filter({hasText:'SYNTHETIC transport unavailable'}).waitFor();
+   syncing=false;await page.clock.runFor(3100);await page.locator('.aff-alert').filter({hasText:'SYNTHETIC POLL 3'}).waitFor();
+   assert(await page.evaluate(()=>affStable.dialog===document.querySelector('#aff-dialog')&&affStable.dialog.open));
+   assert.equal(await page.locator('#synthetic-dialog-draft').inputValue(),'Keep me');
+   assert.equal(await page.locator('[data-aff="sync"]').isDisabled(),false);
+   await page.getByRole('button',{name:'Fermer',exact:true}).click();
+   assert.equal(await page.locator('#aff-hour').inputValue(),'7');
+   await page.unroute('**/api/affiliation/sync');await page.unroute('**/api/affiliation/overview?*');
+   await page.evaluate(()=>window.LinksAffiliation.load());
    let challenge=true,verified=0,closed=0,inflight=0,maxInflight=0,inputs=0,finishInputs;
    const allInputs=new Promise(resolve=>{finishInputs=resolve});
    await page.route('**/api/affiliation/login/**',async route=>{

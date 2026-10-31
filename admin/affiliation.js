@@ -5,11 +5,12 @@
  const number=v=>v===null||v===undefined?'—':fmt.format(v);
  const at=v=>v?new Intl.DateTimeFormat('fr-FR',{dateStyle:'short',timeStyle:'short',timeZone:adminTimezone}).format(new Date(v)):'Jamais';
  const request=(action,data)=>api('/api/affiliation/'+action,data?{method:'POST',body:JSON.stringify(data)}:{});
- let loginQueue=Promise.resolve(),loginGeneration=0;
+ let loginQueue=Promise.resolve(),loginGeneration=0,loadVersion=0,runsVersion=0,salesVersion=0,paymentsVersion=0,syncStarting=false,pollError=false;
  const queueLogin=(action,data)=>{loginQueue=loginQueue.catch(()=>{}).then(()=>request(action,data));return loginQueue};
  const selected=()=>model?.accounts.find(a=>a.id===account);
  const sum=(rows,kind)=>rows.filter(r=>!kind||r.status===kind).reduce((n,r)=>n+r.cents,0);
- const badge=a=>a.available?`<span class="aff-badge ${a.session_state==='connected'?'aff-good':''}">${a.running?'Synchronisation…':({connected:'Session enregistrée',reconnect:'À reconnecter',disconnected:'À connecter'}[a.session_state]||'À connecter')}</span>`:'<span class="aff-badge">Connecteur à venir</span>';
+ const badgeText=a=>!a.available?'Connecteur à venir':a.running?'Synchronisation…':({connected:'Session enregistrée',reconnect:'À reconnecter',disconnected:'À connecter'}[a.session_state]||'À connecter');
+ const badge=a=>`<span data-aff-account="${esc(a.id)}" class="aff-badge ${a.available&&a.session_state==='connected'?'aff-good':''}">${badgeText(a)}</span>`;
  const kpi=(label,value,help,tone='cyan')=>`<article class="aff-card aff-${tone}"><span>${esc(label)}</span><strong>${esc(value)}</strong><small>${esc(help)}</small></article>`;
  function range(){return new URLSearchParams({account,start,end})}
  function month(){const d=new Intl.DateTimeFormat('sv-SE',{timeZone:adminTimezone}).format(new Date());start=d.slice(0,7)+'-01';end=d}
@@ -20,25 +21,56 @@
    const items=[...groups],values=items.flatMap(([,v])=>[v.approved,v.not_approved]),max=Math.max(1,...values),min=Math.min(0,...values),y=v=>160-(v-min)/(max-min)*140,zero=y(0),width=600/Math.max(1,items.length);
    return `<svg viewBox="0 0 700 205" role="img" aria-label="Commissions ${monthly?'mensuelles':'quotidiennes'}, par date de vente"><line x1="65" x2="680" y1="${zero}" y2="${zero}" stroke="currentColor" opacity=".3"/><text x="0" y="20">${esc(euro(max))}</text><text x="0" y="160">${esc(euro(min))}</text>${items.map(([day,v],i)=>['approved','not_approved'].map((key,j)=>`<rect class="aff-bar-${key}" x="${70+i*width+j*width*.4}" y="${Math.min(zero,y(v[key]))}" width="${Math.max(1,width*.36)}" height="${Math.max(0,Math.abs(y(v[key])-zero))}"><title>${esc(day)} · ${key==='approved'?'Approuvées':'Non approuvées'} : ${esc(euro(v[key]))}</title></rect>`).join('')+(i===0||i===items.length-1||i%Math.max(1,Math.ceil(items.length/6))===0?`<text x="${70+i*width}" y="188" text-anchor="start">${esc(day.slice(monthly?0:5))}</text>`:'')).join('')}</svg><p class="aff-legend"><span>● Approuvées</span><span>● Non approuvées</span></p>`;
  }
- async function load(){
+ async function load({poll=false}={}){
+   const version=++loadVersion;clearTimeout(timer);
    if(initialRange){month();initialRange=false;}
    try{
-     model=await request('overview?'+range());render();
-     clearTimeout(timer);if(model.accounts.some(a=>a.running))timer=setTimeout(()=>{if(host.classList.contains('active'))load()},3000);
-   }catch(e){say(e.message,true);if(!model)host.innerHTML='<h1>Affiliation</h1><p role="alert">Chargement indisponible.</p><button data-aff="reload">Réessayer</button>'}
+     const next=await request('overview?'+range());if(version!==loadVersion)return;
+     const snapshots=m=>JSON.stringify(m?.accounts.map(a=>[a.id,a.snapshot?.id]));
+     const changed=snapshots(model)!==snapshots(next);model=next;pollError=false;
+     if(!poll)render();
+     else{
+       refreshSyncState();
+       if(tab==='settings')loadRuns();
+       else if(changed&&tab==='sales')loadSales();
+       else if(changed)renderContent();
+     }
+   }catch(e){
+     if(version!==loadVersion)return;
+     if(!poll||!pollError)say(e.message,true);pollError=true;
+     if(!model)host.innerHTML='<h1>Affiliation</h1><p role="alert">Chargement indisponible.</p><button data-aff="reload">Réessayer</button>';
+   }finally{
+     if(version===loadVersion&&model?.accounts.some(a=>a.running))timer=setTimeout(()=>{if(host.classList.contains('active'))load({poll:true})},3000);
+   }
+ }
+ function syncNotice(){
+   const current=selected(),snap=current?.snapshot;
+   return current?`<p class="aff-freshness">Dernier relevé complet : <strong>${esc(at(current.last_success))}</strong>${snap?' · '+number(snap.row_count)+' ventes · '+number(snap.pages)+' pages · '+(snap.source==='portal'?'Portail Domadoo':'Import manuel'):''}</p>${current.last_error?`<p class="aff-alert" role="status">${esc(current.last_error)} Le dernier relevé valide reste affiché.</p>`:''}`:`<p class="aff-freshness">${model.coverage.ready} / ${model.coverage.total} comptes disposent d’un relevé. Les totaux portent uniquement sur ces comptes.</p>`;
+ }
+ function refreshSyncState(){
+   if(!model)return;
+   const current=selected(),running=syncStarting||model.accounts.some(a=>a.running);
+   host.querySelectorAll('[data-aff-account]').forEach(node=>{const a=model.accounts.find(a=>a.id===node.dataset.affAccount);if(a){const label=badgeText(a);if(node.textContent!==label)node.textContent=label;node.classList.toggle('aff-good',Boolean(a.available&&a.session_state==='connected'))}});
+   host.querySelectorAll('[data-aff="sync"]').forEach(button=>{button.disabled=running||Boolean(current&&!current.available)});
+   const notice=$('aff-sync-notice'),html=syncNotice();if(notice&&notice.innerHTML!==html)notice.innerHTML=html;
+   if(current)host.querySelectorAll('[data-aff-fact]').forEach(node=>{const key=node.dataset.affFact,label=key==='next_due'&&!current.enabled?'Désactivé':at(current[key]);if(node.textContent!==label)node.textContent=label});
  }
  function render(){
    renderVersion++;
-   const current=selected(),label=current?current.partner:'Affiliation',rows=model.aggregate,has=model.has_data,snap=current?.snapshot,summary=snap?.summary;
-   const candidates=current?[current]:model.accounts;
-   const payments=candidates.filter(a=>a.snapshot).reduce((n,a)=>n+a.snapshot.summary.payments_total,0);
+   const current=selected(),label=current?current.partner:'Affiliation';
    const tabs=[['overview','Vue d’ensemble'],...(current?[['sales','Ventes et commissions'],['payments','Paiements'],['settings','Connexion et synchronisation']]:[['partners','Mes partenaires']])];
    if(!tabs.some(t=>t[0]===tab))tab='overview';
    host.innerHTML=`<div class="section-head"><div><p class="aff-eyebrow">ANALYSER · AFFILIATION</p><h1>${esc(label)} ${current?badge(current):''}</h1><p>${current?esc(current.label)+' · '+esc(current.platform):'Vos revenus et l’état de vos partenaires.'}</p></div><div class="aff-actions">${current?'<button data-aff="global">Tous les partenaires</button>':'<button data-aff="partners">Gérer les partenaires</button>'}<button class="primary" data-aff="sync" ${current&&!current.available?'disabled':''}>${current?'Synchroniser':'Synchroniser les comptes connectés'}</button></div></div>
     <nav class="aff-tabs" aria-label="Rubriques affiliation">${tabs.map(([id,title])=>`<button data-aff-tab="${id}" ${tab===id?'aria-current="page" class="active"':''}>${title}</button>`).join('')}</nav>
     <div class="aff-filters" ${!['overview','sales'].includes(tab)?'hidden':''}><label>Période<select id="aff-period"><option value="custom">Dates sélectionnées</option><option value="month">Ce mois</option><option value="30">30 derniers jours</option><option value="all">Tout l’historique observé</option></select></label><label>Du<input id="aff-start" type="date" value="${esc(start)}"></label><label>Au<input id="aff-end" type="date" value="${esc(end)}"></label><button data-aff="range">Appliquer</button><small>Dates des ventes · fuseau du portail non documenté</small></div>
-    ${current?`<p class="aff-freshness">Dernier relevé complet : <strong>${esc(at(current.last_success))}</strong>${snap?' · '+number(snap.row_count)+' ventes · '+number(snap.pages)+' pages · '+(snap.source==='portal'?'Portail Domadoo':'Import manuel'):''}</p>${current.last_error?`<p class="aff-alert" role="status">${esc(current.last_error)} Le dernier relevé valide reste affiché.</p>`:''}`:`<p class="aff-freshness">${model.coverage.ready} / ${model.coverage.total} comptes disposent d’un relevé. Les totaux portent uniquement sur ces comptes.</p>`}
+    <div id="aff-sync-notice">${syncNotice()}</div>
     <div id="aff-content"></div><dialog id="aff-dialog" aria-labelledby="aff-dialog-title"></dialog>`;
+   renderContent();refreshSyncState();
+ }
+ function renderContent(){
+   const current=selected(),rows=model.aggregate,has=model.has_data,summary=current?.snapshot?.summary;
+   const candidates=current?[current]:model.accounts;
+   const payments=candidates.filter(a=>a.snapshot).reduce((n,a)=>n+a.snapshot.summary.payments_total,0);
    const content=$('aff-content');
    if(tab==='overview'){
      content.innerHTML=`${!has?'<div class="aff-empty"><h2>Vos revenus apparaîtront après la première synchronisation.</h2><p>Connectez Domadoo dans « Connexion et synchronisation ». Les autres plateformes pourront être préparées dans Mes partenaires.</p><button data-aff="open" data-id="domadoo">Configurer Domadoo</button></div>':''}
@@ -53,7 +85,7 @@
    }else if(tab==='payments'){
      content.innerHTML=`<div class="aff-kpis">${kpi('Total des paiements',euro(summary?.payments_total),'Cumul indiqué par Domadoo','green')}${kpi('Paiements en attente',euro(summary?.payments_pending),'Libellé du portail','purple')}${kpi('Solde',euro(summary?.balance),'Au dernier relevé')}</div><section class="panel"><h2>Mes bons de paiement</h2><p>Ce tableau décrit les bons visibles dans le portail. Il ne constitue pas un historique des virements bancaires. Les codes utilisables ne sont jamais collectés.</p><div id="aff-payments">Chargement…</div></section>`;loadPayments();
    }else if(tab==='settings'){
-     content.innerHTML=`<div class="aff-grid"><section class="panel"><h2>Connexion et session</h2>${badge(current)}<p>Si la connexion automatique est configurée sur votre serveur, cliquez sur Synchroniser. La fenêtre sécurisée reste disponible pour une connexion personnelle ou une vérification supplémentaire.</p><div class="aff-actions"><button class="primary" data-aff="login" ${!current.available?'disabled':''}>Ouvrir la connexion Domadoo</button><button data-aff="disconnect" ${!current.available?'disabled':''}>Déconnecter</button></div><dl class="aff-facts"><div><dt>Dernière tentative</dt><dd>${esc(at(current.last_attempt))}</dd></div><div><dt>Dernier relevé valide</dt><dd>${esc(at(current.last_success))}</dd></div><div><dt>Prochain passage</dt><dd>${current.enabled?esc(at(current.next_due)):'Désactivé'}</dd></div></dl><p class="field-help">Une session enregistrée peut expirer. Le résultat de la collecte confirme l’accès aux données.</p></section>
+     content.innerHTML=`<div class="aff-grid"><section class="panel"><h2>Connexion et session</h2>${badge(current)}<p>Si la connexion automatique est configurée sur votre serveur, cliquez sur Synchroniser. La fenêtre sécurisée reste disponible pour une connexion personnelle ou une vérification supplémentaire.</p><div class="aff-actions"><button class="primary" data-aff="login" ${!current.available?'disabled':''}>Ouvrir la connexion Domadoo</button><button data-aff="disconnect" ${!current.available?'disabled':''}>Déconnecter</button></div><dl class="aff-facts"><div><dt>Dernière tentative</dt><dd data-aff-fact="last_attempt">${esc(at(current.last_attempt))}</dd></div><div><dt>Dernier relevé valide</dt><dd data-aff-fact="last_success">${esc(at(current.last_success))}</dd></div><div><dt>Prochain passage</dt><dd data-aff-fact="next_due">${current.enabled?esc(at(current.next_due)):'Désactivé'}</dd></div></dl><p class="field-help">Une session enregistrée peut expirer. Le résultat de la collecte confirme l’accès aux données.</p></section>
       <section class="panel"><h2>Synchronisation quotidienne</h2><form id="aff-settings-form"><label class="aff-checkbox"><input type="checkbox" id="aff-enabled" ${current.enabled?'checked':''} ${!current.available?'disabled':''}>Activer la collecte quotidienne</label><p class="field-help">À activer après vérification des conditions d’utilisation du portail. CAPTCHA et double vérification demandent votre intervention.</p><div class="aff-filters"><label>Heure locale<select id="aff-hour">${Array.from({length:24},(_,h)=>`<option value="${h}" ${h===current.hour?'selected':''}>${String(h).padStart(2,'0')}:00</option>`).join('')}</select></label><label>Fuseau horaire<input id="aff-zone" value="${esc(current.zone)}" required maxlength="60"></label></div><button class="primary">Enregistrer</button></form><p>Lecture complète de l’historique, une seule collecte à la fois. Le dernier relevé valide est conservé en cas d’échec.</p></section></div><section class="panel"><h2>Historique des synchronisations</h2><div id="aff-runs">Chargement…</div></section>`;
      $('aff-settings-form').onsubmit=async e=>{e.preventDefault();try{await request('settings',{id:account,enabled:$('aff-enabled').checked,hour:Number($('aff-hour').value),zone:$('aff-zone').value});say('Synchronisation enregistrée.');await load()}catch(error){say(error.message,true)}};loadRuns();
    }
@@ -66,12 +98,12 @@
    return `<div class="aff-distribution">${ring}<dl class="aff-facts">${values.map(v=>`<div><dt>${esc(v.name)}</dt><dd>${v.known?euro(v.cents):'—'}</dd></div>`).join('')}</dl></div><small>Commissions approuvées de la période. Le cercle représente les montants positifs ; les corrections négatives restent dans les totaux.</small>`;
  }
  function salesQuery(){return new URLSearchParams({account,start,end,page:String(page),search,status})}
- async function loadSales(){const v=renderVersion,id=account;try{const result=await request('transactions?'+salesQuery());if(! $('aff-sales-table')||account!==id||v!==renderVersion)return;page=result.page;
+ async function loadSales(){const ticket=++salesVersion,v=renderVersion,id=account;try{const result=await request('transactions?'+salesQuery());if(ticket!==salesVersion||! $('aff-sales-table')||account!==id||v!==renderVersion)return;page=result.page;
    $('aff-sales-table').innerHTML=`<div class="aff-table-wrap"><table><thead><tr><th>ID</th><th>Date du portail</th><th>Commande</th><th>Commission</th><th>Statut</th><th>Historique</th></tr></thead><tbody>${result.items.map(r=>`<tr><td>#${esc(r.provider_id)}</td><td>${esc(r.occurred_at)}</td><td>${euro(r.order_cents)}</td><td>${euro(r.commission_cents)}</td><td><span class="aff-badge ${r.present&&r.status==='approved'?'aff-good':''}">${!r.present?'Absente du relevé':r.status==='approved'?'Approuvée':'Non approuvée'}</span></td><td><button data-aff="history" data-id="${esc(r.provider_id)}">Voir</button></td></tr>`).join('')||'<tr><td colspan="6">Aucune vente pour cette sélection.</td></tr>'}</tbody></table></div><div class="aff-pagination"><span>${number(result.total)} ventes · page ${result.page} / ${result.pages}</span><button data-aff="previous" ${page===1?'disabled':''}>Précédente</button><button data-aff="next" ${page===result.pages?'disabled':''}>Suivante</button></div>`;
    }catch(e){say(e.message,true)}
  }
- async function loadPayments(){const id=account;try{const result=await request('payments?account='+encodeURIComponent(id));if(!$('aff-payments')||id!==account)return;$('aff-payments').innerHTML=`<div class="aff-table-wrap"><table><thead><tr><th>Créé à</th><th>Montant</th><th>Approuvé</th><th>Utilisé</th></tr></thead><tbody>${result.items.map(r=>`<tr><td>${esc(r.issued_on)}</td><td>${euro(r.amount_cents)}</td><td>${r.approved?'Oui':'Non'}</td><td>${r.used?'Oui':'Non'}</td></tr>`).join('')||'<tr><td colspan="4">Aucun bon dans le dernier relevé disponible.</td></tr>'}</tbody></table></div>`}catch(e){say(e.message,true)}}
- async function loadRuns(){const id=account;try{const result=await request('runs?account='+encodeURIComponent(id));if(!$('aff-runs')||id!==account)return;$('aff-runs').innerHTML=result.items.length?`<ul class="aff-run-list">${result.items.map(r=>`<li><strong>${esc(at(r.started_at))}</strong><span>${({running:'En cours',success:'Complet',failed:'Échec'}[r.status])}</span><small>${r.status==='success'?number(r.rows)+' ventes · '+number(r.pages)+' pages':esc(r.message||'Lecture du portail…')}</small></li>`).join('')}</ul>`:'<p>Aucune synchronisation effectuée.</p>'}catch(e){say(e.message,true)}}
+ async function loadPayments(){const v=++paymentsVersion,id=account;try{const result=await request('payments?account='+encodeURIComponent(id));if(v!==paymentsVersion||!$('aff-payments')||id!==account)return;$('aff-payments').innerHTML=`<div class="aff-table-wrap"><table><thead><tr><th>Créé à</th><th>Montant</th><th>Approuvé</th><th>Utilisé</th></tr></thead><tbody>${result.items.map(r=>`<tr><td>${esc(r.issued_on)}</td><td>${euro(r.amount_cents)}</td><td>${r.approved?'Oui':'Non'}</td><td>${r.used?'Oui':'Non'}</td></tr>`).join('')||'<tr><td colspan="4">Aucun bon dans le dernier relevé disponible.</td></tr>'}</tbody></table></div>`}catch(e){say(e.message,true)}}
+ async function loadRuns(){const v=++runsVersion,id=account;try{const result=await request('runs?account='+encodeURIComponent(id));if(v!==runsVersion||!$('aff-runs')||id!==account)return;const html=result.items.length?`<ul class="aff-run-list">${result.items.map(r=>`<li><strong>${esc(at(r.started_at))}</strong><span>${({running:'En cours',success:'Complet',failed:'Échec'}[r.status])}</span><small>${r.status==='success'?number(r.rows)+' ventes · '+number(r.pages)+' pages':esc(r.message||'Connexion ou lecture du portail…')}</small></li>`).join('')}</ul>`:'<p>Aucune synchronisation effectuée.</p>';if($('aff-runs').innerHTML!==html)$('aff-runs').innerHTML=html}catch(e){say(e.message,true)}}
  function dialog(title,body){const d=$('aff-dialog');d.innerHTML=`<div class="panel-title"><h2 id="aff-dialog-title">${esc(title)}</h2><button data-aff="close" aria-label="Fermer">Fermer</button></div>${body}`;d.showModal();return d}
  async function closeDialog(){clearTimeout(loginTimer);loginGeneration++;const d=$('aff-dialog');if(loginAccount){const id=loginAccount;loginAccount='';await queueLogin('login/close',{account:id}).catch(()=>{})}d?.close()}
  async function showLogin(result){
@@ -109,9 +141,12 @@
      if(action==='range'){start=$('aff-start').value;end=$('aff-end').value;page=1;await load()}
      if(action==='previous'||action==='next'){page+=action==='next'?1:-1;await loadSales()}
      if(action==='sync'){
+       if(syncStarting||model.accounts.some(a=>a.running))return;
        const ids=account?[account]:model.accounts.filter(a=>a.available&&a.session_state==='connected').map(a=>a.id);
        if(!ids.length)throw new Error('Connectez d’abord un compte dans ses paramètres.');
-       await request('sync',{account:ids[0],accounts:ids});say('Synchronisation lancée.');await load();
+       syncStarting=true;refreshSyncState();
+       try{await request('sync',{account:ids[0],accounts:ids});say('Synchronisation lancée.');await load({poll:true})}
+       finally{syncStarting=false;refreshSyncState()}
      }
      if(action==='disconnect'){await request('disconnect',{account});say('Session supprimée et collecte quotidienne désactivée.');await load()}
      if(action==='close')await closeDialog();
