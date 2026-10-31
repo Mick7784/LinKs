@@ -1,117 +1,104 @@
-# Connexion Domadoo — comparaison ciblée du 31 octobre 2026
+# Domadoo — connexion automatique et diagnostic (V1.4.4)
 
-## Résultat et limite
+## Parcours retenu
 
-L’échec rapporté avec LinKs V1.4.2 se situe **avant le formulaire de connexion**,
-sur la vérification Cloudflare. Aucune preuve ne permet de l’attribuer au matériel
-ou au VPS : Creator Studio a déjà fonctionné sur ce VPS, selon l’administrateur.
+Le compte Domadoo intégré (`domadoo`) peut recevoir `DOMADOO_LOGIN` et
+`DOMADOO_PASSWORD`, exclusivement dans l'environnement serveur. Sans ces variables,
+la connexion humaine reste disponible. Les autres comptes de reporting ne les
+réutilisent pas, afin de ne pas mélanger les comptes financiers.
 
-Une ouverture publique, sans authentification, a été comparée depuis le même
-ordinateur Windows et avec la même politique de requêtes de LinKs :
+Une synchronisation ouvre d'abord le portail avec la session chiffrée compatible.
+Si l'espace affilié est reconnu, aucun identifiant n'est demandé ni soumis. Si le
+formulaire de connexion apparaît, LinKs vérifie sa structure et sa destination,
+remplit les champs `#field-email` et `#field-password`, puis clique `#submit-login`.
+Il attend au maximum 60 secondes le marqueur visible `#my_affiliate_link` et le
+résumé sur `/fr/affiliation`. La collecte commence sur cette page, sans navigation
+initiale supplémentaire. Sa pagination et ses contrôles financiers sont conservés.
 
-| Navigateur local, sans furtivité | Réponse initiale | Formulaire |
-| --- | --- | --- |
-| Chrome/Chromium 156.0.8078.74, headless | HTTP 403 | Absent |
-| Firefox Playwright 157.0, headless | HTTP 200 | Présent |
+La session est enregistrée après une collecte complète. Un échec conserve la
+session validée et le dernier relevé. Une vérification supplémentaire peut laisser
+un état intermédiaire chiffré, repris par la fenêtre de connexion humaine pendant
+24 heures. Aucun mot de passe, corps de formulaire ou capture automatique n'est
+retourné à l'interface ni ajouté aux diagnostics. La saisie est effacée du champ
+mot de passe à la fin de la tentative automatique.
 
-Firefox montre un formulaire POST vers `/fr/authentification` avec
-`#field-email`, `#field-password` et `#submit-login`. Aucun identifiant n’a été
-saisi et aucune protection n’a été actionnée. Des ressources de marketing,
-cartographie et polices hors liste étaient bloquées ; cela n’empêchait pas le
-formulaire Firefox d’apparaître. Aucune capture ni session réelle n’a été conservée.
+## Requêtes et autorisations
 
-Cela justifie Firefox par défaut. Ce n’est **pas** une validation du compte, du
-challenge depuis le VPS ou du binaire Linux Chromium de l’ancienne image : le
-test local utilise Chrome installé sur Windows. Le portail peut appliquer des
-décisions différentes selon le navigateur, sa version, le réseau et le moment.
-Seuls Domadoo/Cloudflare peuvent expliquer exactement leur décision de contrôle.
+- Le formulaire public observé le 31 octobre 2026 utilise POST
+  `/fr/authentification`, avec un retour `/fr/affiliation` dans l'action et le champ
+  caché `back`. Aucun identifiant réel n'a été soumis pendant cette inspection.
+- Seule la phase d'authentification automatique autorise ce POST comme navigation
+  principale, sur les hôtes Domadoo déjà autorisés. Les champs cachés sont soumis
+  naturellement par le navigateur ; aucun POST fabriqué ni API interne n'est utilisé.
+- Le retour observé reste dans les chemins déjà autorisés. Aucun chemin de profil,
+  paiement, déconnexion, domaine tiers ou nouvel endpoint n'est ajouté.
+- Avant collecte, cette permission est révoquée, succès ou échec. La collecte
+  conserve GET/HEAD seulement. Les POST de vérification restent réservés au mode
+  humain ; aucun défi n'est résolu ou relancé automatiquement.
+- Le routage Playwright n'est pas un pare-feu : les redirections HTTP ne déclenchent
+  pas systématiquement un nouveau handler. La validation du formulaire et de son
+  retour, les hôtes fixes et la reconnaissance stricte de la page d'arrivée sont
+  conservés. Les tests n'utilisent aucun réseau marchand, même pour les redirections.
 
-## Parcours comparés
+## Comparaison avec Creator Studio
 
-Source Creator Studio examinée : commit `6660e2d869871ebbfb9eeadcc5918f57875397a2`,
-[DomadooScraper.ts](https://github.com/AymericLeFeyer/aylabs-creator-studio/blob/6660e2d869871ebbfb9eeadcc5918f57875397a2/apps/api/src/infrastructure/integration/api/DomadooScraper.ts)
-et [browser.ts](https://github.com/AymericLeFeyer/aylabs-creator-studio/blob/6660e2d869871ebbfb9eeadcc5918f57875397a2/apps/api/src/infrastructure/integration/api/browser.ts).
-La version exacte anciennement déployée sur le VPS n’a pas été vérifiée.
+Référence actuelle : commit `43232392d4de2242e354a0b4a684725e9bf9c7bf`,
+[DomadooScraper.ts](https://github.com/AymericLeFeyer/aylabs-creator-studio/blob/43232392d4de2242e354a0b4a684725e9bf9c7bf/apps/api/src/infrastructure/integration/api/DomadooScraper.ts),
+[browser.ts](https://github.com/AymericLeFeyer/aylabs-creator-studio/blob/43232392d4de2242e354a0b4a684725e9bf9c7bf/apps/api/src/infrastructure/integration/api/browser.ts).
+La version exacte de l'image installée chez l'administrateur n'a pas été vérifiée.
 
-| Point | Creator Studio audité | LinKs V1.4.2 | Correctif |
-| --- | --- | --- | --- |
-| Moteur | Firefox Playwright via playwright-extra | Chromium système via Playwright Core | Firefox officiel correspondant au verrouillage Playwright ; Chromium optionnel |
-| Exécution | Headless, viewport 1280×720 | Headless, 1100×760 | Headless, 1100×760 ; aucune dissimulation ajoutée |
-| Connexion | Remplit email/mot de passe puis clique `#submit-login` | Actions humaines transmises par la fenêtre LinKs | Actions humaines conservées, commandes sérialisées |
-| Cookies/session | Nouveau navigateur et nouvelle connexion à chaque appel ; aucun état restauré dans `withSession` | État chiffré pour la collecte, mais `login/start` part toujours à vide | Reprise de l’état compatible ; état intermédiaire et état validé séparés |
-| Stockages | Vie du navigateur de la collecte | Cookies et localStorage | Cookies, localStorage, IndexedDB et sessionStorage Domadoo, chiffrés |
-| Navigation | `goto(affiliation)`, puis soumission réelle ; aucune liste réseau dans ce code | Liste fixe d’hôtes et de navigations ; POST authentification/vérification seulement en mode humain | Politique conservée, historique classé des réponses/redirections et blocages |
-| Délais | `goto`/actions par défaut Playwright ; attend `#my_affiliate_link` 60 s | Navigation 30 s, actions 15 s ; fenêtre 15 min ; ferme sur erreur de navigation initiale | Lancement borné à 20 s, navigation 30 s, appel initial 60 s ; actions 15 s et fenêtre 15 min ; timeout affiché sans détruire la page, aucune relance de défi automatique |
-| Succès | Présence `#my_affiliate_link` | Résumé affilié sur l’origine/chemin attendus, sans challenge | Même preuve de succès ; aucun clic accepté après reconnaissance |
-| Erreurs | Message groupant identifiants/protection/page modifiée | Message générique et indicateur challenge | Étapes distinctes, HTTP, navigateur, reprise, navigation, Ray ID si fourni ; aucun texte privé du formulaire |
+Creator Studio lance Firefox headless, crée une session neuve à chaque opération,
+remplit le formulaire et attend le même marqueur pendant 60 secondes. Il n'utilise
+pas d'API particulière. LinKs reprend ce parcours fonctionnel et ajoute la reprise
+de session, sans reprendre son plafond de 50 pages ni ses traitements financiers.
 
-Le contrôle du formulaire confirme que sa destination POST actuelle est autorisée
-par LinKs. Le retour **après** authentification réelle reste à observer : un autre
-chemin ou une protection supplémentaire sera signalé, sans élargissement automatique
-des autorisations. Le routage Playwright n’est pas un pare-feu réseau ; notamment,
-les redirections HTTP ne déclenchent pas systématiquement un nouveau handler.
-Les diagnostics enregistrent leurs catégories sans recopier les URLs sensibles.
+Le verrouillage Creator Studio utilise Playwright 1.63.0 ; LinKs conserve
+Playwright Core 1.64.1 avec son Firefox officiel correspondant (157.0). Aucun essai
+comparatif authentifié ne prouve qu'une rétrogradation corrigerait le refus.
+Firefox headless reste le moteur par défaut, Chromium reste optionnel. La version
+exacte est visible dans le diagnostic et les deux binaires sont testés dans Docker.
 
-## Rôle de la furtivité
+Creator Studio active `playwright-extra` et `puppeteer-extra-plugin-stealth`, sauf
+le remplacement du user-agent. Certaines injections JavaScript peuvent fonctionner
+avec Firefox ; les fonctions CDP propres à Chromium ne prouvent pas que tout le
+module est inactif. Sa nécessité n'a pas été mesurée. LinKs n'ajoute aucun de ces
+composants de dissimulation, ni proxy tournant, solveur ou rejeu externe de jeton.
 
-Creator Studio charge `puppeteer-extra-plugin-stealth` et désactive son remplacement
-du user-agent. Ce module vise à modifier des indices d’automatisation ; sa présence
-ne démontre pas qu’il est responsable du succès observé. Son propre projet décrit
-une compatibilité et une optimisation principalement Chromium : l’effet exact de
-cette combinaison Firefox n’a pas été mesuré. Aucun essai de dissimulation,
-résolution de CAPTCHA, rotation de proxy ou rejeu externe de jeton n’a été réalisé.
+## Échec observé et limites
 
-Références : [playwright-extra](https://github.com/berstend/puppeteer-extra/tree/master/packages/playwright-extra#plugins),
+L'essai réel rapporté sous Firefox 157.0 montre : affiliation HTTP 302, formulaire
+HTTP 200, puis authentification HTTP 403 avec `cf-mitigated: challenge`. La session
+était neuve. Il s'agit d'un contrôle Cloudflare réel, avant accès confirmé aux données.
+Une navigation classée `domadoo:autre` a aussi été bloquée ; son chemin n'était pas
+conservé, donc son rôle reste indéterminé. Le formulaire public retourne vers
+l'affiliation autorisée, sans preuve d'un détour nécessaire par « Mon compte ».
+
+Le POST interdit en collecte était un obstacle à l'ajout de la connexion automatique,
+mais n'explique pas à lui seul le 403 du parcours humain, où ce POST était autorisé.
+Aucune preuve ne permet d'attribuer cet échec au matériel ou au VPS. Un changement
+vers le NAS n'est pas requis par ce correctif.
+
+## Validation et informations utiles en cas d'échec
+
+Les tests synthétiques couvrent formulaire et champs cachés, authentification,
+collecte financière, session valide et expirée, redémarrage, permissions révoquées,
+formulaire modifié, erreur de formulaire, HTTP 403, contrôle Cloudflare, MFA,
+navigation bloquée et reprise humaine. Les tests natifs Docker AMD64/ARM64 vérifient
+les deux navigateurs avec UID 101, lecture seule, `/tmp` noexec de 512 Mo et `/data`.
+La CI conserve les tests Affiliation, titres, campagnes et pont PulSe existants.
+
+Après déploiement par l'administrateur : configurer les deux variables, cliquer
+Synchroniser, vérifier les chiffres, puis tester une seconde collecte et un
+redémarrage. L'acceptation réelle par Cloudflare reste à valider ; aucune réussite
+de connexion au compte n'est annoncée sur la seule base des tests synthétiques.
+
+En cas d'échec, conserver le message de synchronisation et, si la fenêtre humaine
+est utilisée, copier son diagnostic : étape, version du navigateur, session,
+HTTP, Ray ID, catégories de navigation bloquées et heure UTC. Ne transmettre aucun
+identifiant, cookie, fichier de session ou HAR. Les erreurs `security_check`,
+`authentication_rejected`, `request_policy` et HTTP restent distinctes. Un 401
+classé Cloudflare ne suffit pas, seul, à expliquer un échec de vérification.
+
+Voir [configuration et exploitation](affiliation.md),
+[documentation Playwright](https://playwright.dev/docs/auth) et
 [navigateurs Cloudflare](https://developers.cloudflare.com/cloudflare-challenges/reference/supported-browsers/).
-Cloudflare ne garantit pas la résolution de ses challenges dans Playwright.
-
-## Défauts de code corrigés et portée
-
-- Une réouverture jetait l’état déjà enregistré. Elle restaure maintenant l’état
-  compatible et reprend un checkpoint chiffré récent ; un échec ne remplace pas
-  la session validée ni le dernier relevé financier.
-- Le rafraîchissement d’image et les commandes pouvaient se chevaucher, recevoir
-  une réponse « navigateur occupé » et fermer la fenêtre. La file de commandes
-  évite cette concurrence et ignore les réponses d’une ancienne fenêtre.
-- « Vérifier » pouvait recharger un formulaire en cours de saisie. Le formulaire,
-  la MFA et le challenge sont maintenant inspectés sans rechargement.
-- Un timeout de navigation détruisait la fenêtre initiale. La page reste visible
-  avec son diagnostic, et le lancement du navigateur est distingué de l’accès HTTP.
-- Les erreurs de collecte sur challenge ne sont plus présentées comme preuve
-  d’une session expirée. Une page inconnue ou un refus HTTP reste une erreur
-  distincte ; l’historique financier n’est jamais remis à zéro.
-
-La session persistante est un état d’authentification chiffré, pas un profil Firefox
-complet. Elle ne garantit ni la durée de validité des cookies ni l’acceptation du
-portail lors d’une collecte ultérieure. Les versions antérieures sont lisibles
-avec Chromium ; un passage à Firefox demande une connexion humaine initiale.
-
-## Validation et exploitation
-
-Les tests utilisent des valeurs synthétiques, sans compte réel : soumission
-humaine autorisée, POST automatique refusé, redirections observables, challenge
-sans rechargement, HTTP 403 distinct, formulaire/MFA, session chiffrée après
-redémarrage, checkpoint, promotion et déconnexion, commandes UI concurrentes,
-diagnostic sans secrets et affichage mobile/clair/sombre.
-
-L’image installe Firefox via la CLI de la version Playwright verrouillée, avec
-ses dépendances Debian. Les contrôles natifs AMD64 et ARM64 doivent valider son
-lancement, le rendu et une reprise chiffrée, avec UID 101, système en lecture seule,
-capabilities supprimées, `init: true`, `/tmp` noexec de 512 Mo et `/data` inchangé.
-Références : [navigateurs Playwright](https://playwright.dev/docs/browsers),
-[authentification et stockages](https://playwright.dev/docs/auth).
-
-Après déploiement par l’administrateur : ouvrir la connexion, confirmer l’arrivée
-au formulaire Firefox, s’authentifier personnellement, vérifier la reconnaissance
-de l’espace affilié, puis lancer une collecte et comparer ses chiffres. Tester
-ensuite une reprise après redémarrage. Aucun accès au VPS n’est nécessaire pour
-développer ou publier ; aucun déploiement n’est effectué par l’agent.
-
-Si le blocage persiste : copier **uniquement le diagnostic de connexion** depuis
-la fenêtre LinKs. Il fournit heure UTC, version navigateur, reprise, étape, HTTP,
-redirections classées, blocages classés et éventuel Ray ID. Préciser si le formulaire
-est apparu et si le blocage précède ou suit l’envoi manuel. Ne pas transmettre de
-mot de passe, cookie, fichier `.session`, clé, HAR ou capture contenant des données
-personnelles. En cas de `security_check`, arrêter les essais et demander à Domadoo
-la vérification du Ray ID/heure ou un accès officiellement autorisé. Aucun succès
-de connexion en production n’est annoncé sans ce test réel.

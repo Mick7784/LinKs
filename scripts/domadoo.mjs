@@ -1,18 +1,19 @@
 // Original adapter for the observed Domadoo customer portal. No stealth plugin,
-// internal API, credential replay or inferred refused/pending commission status.
+// internal API or inferred refused/pending commission status.
 export const PORTAL = 'https://www.domadoo.fr/fr/affiliation';
 export class PortalError extends Error {
   constructor(message,code='portal_error'){super(message);this.code=code}
 }
-export function allowedPortalRequest(address,{human=false,method='GET',mainNavigation=false}={}) {
+export function allowedPortalRequest(address,{human=false,authenticating=false,method='GET',mainNavigation=false}={}) {
   let url;try{url=new URL(address)}catch{return false}
   const portal=['www.domadoo.fr','domadoo.fr'].includes(url.hostname);
   const verification=['www.google.com','www.gstatic.com','www.recaptcha.net','challenges.cloudflare.com'].includes(url.hostname);
   if(url.protocol!=='https:'||(url.port&&url.port!=='443')||url.username||url.password||!(portal||verification))return false;
   if(mainNavigation&&(!portal||!/^\/fr\/(affiliation|authentification)(\/|$)/.test(url.pathname)))return false;
   if(['GET','HEAD'].includes(method))return true;
-  // Only the person at the login window may submit authentication or the site's
-  // own verification requests. Collection remains GET/HEAD only, even here.
+  // Automatic login can submit only the observed first-party login form. It
+  // cannot submit a verification challenge. Collection remains GET/HEAD only.
+  if(authenticating&&mainNavigation&&method==='POST'&&portal&&url.pathname==='/fr/authentification')return true;
   return human&&method==='POST'&&(verification||(portal&&(
     /^\/fr\/authentification(\/|$)/.test(url.pathname)||url.pathname.startsWith('/cdn-cgi/challenge-platform/'))));
 }
@@ -74,7 +75,7 @@ export async function authenticationStage(page){
     const password=[...body.querySelectorAll('input[type="password"]')].find(visible);
     if(password){
       const form=password.closest('form');
-      return form&&[...form.querySelectorAll('.alert-danger,[role="alert"]')].some(visible)?'form_error':'login_form';
+      return form&&[...form.querySelectorAll('.alert-danger,[role="alert"]'),...body.querySelectorAll('.alert-danger')].some(visible)?'form_error':'login_form';
     }
     return 'unknown';
   });
@@ -167,9 +168,10 @@ async function traverse(page,kind,deadline,pause){
   }
   return {rows,pages:last,first};
 }
-export async function collect(page,{pause=()=>new Promise(r=>setTimeout(r,1000)),budgetMs=30*60*1000}={}){
+export async function collect(page,{pause=()=>new Promise(r=>setTimeout(r,1000)),budgetMs=30*60*1000,currentPage=false}={}){
   const deadline=Date.now()+budgetMs;
-  await page.goto(PORTAL,{waitUntil:'domcontentloaded'});await assertPortal(page);
+  if(!currentPage)await page.goto(PORTAL,{waitUntil:'domcontentloaded'});
+  await assertPortal(page);
   const summary=await readSummary(page);
   const sales=await traverse(page,'sales',deadline,pause);
   await pause();await page.goto(PORTAL,{waitUntil:'domcontentloaded'});await assertPortal(page);
