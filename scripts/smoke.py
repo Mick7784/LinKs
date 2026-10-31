@@ -1,5 +1,6 @@
 """Smoke-test a disposable Docker image through its real public/admin endpoints."""
-import http.cookiejar,json,os,sys
+import http.cookiejar,json,os,sys,hashlib
+from pathlib import Path
 from urllib.request import Request,build_opener,HTTPCookieProcessor,HTTPRedirectHandler
 from urllib.error import HTTPError
 
@@ -14,6 +15,13 @@ for path in ['/brand.svg','/mark.svg']:
 config=call(public,'/api/public-config');assert not config['setup_completed'];assert not config['links'];assert not config['socials']
 call(admin,'/api/setup',{'bootstrap':bootstrap,'username':'smoke-admin','password':'A-long-smoke-password','confirmation':'A-long-smoke-password','name':'Smoke test','link_title':'First link','link_url':'https://example.com','site_url':public,'timezone':'UTC','analytics_enabled':True})
 csrf=call(admin,'/api/auth/status')['csrf'];assert csrf
+# Exercise the actual packaged API without any external request. A metadata IP is
+# rejected before DNS/network, but the result must identify this exact engine file.
+title_probe=call(admin,'/api/tracked-links/title-preview',{'url':'http://169.254.169.254/private','current_title':'Titre conservé'},csrf)
+expected_engine=hashlib.sha256((Path(__file__).parent/'url_inspection.py').read_bytes()).hexdigest()[:12]
+assert title_probe['engine']=={'id':'bounded-metadata-v2','fingerprint':expected_engine},title_probe.get('engine')
+assert title_probe['reason']=='blocked_destination' and title_probe['title']=='Titre conservé'
+assert title_probe['diagnostics']['fetch']['stage']=='security'
 assert call(admin,'/api/storage')['grace_days']==7
 assert call(admin,'/api/storage',{'action':'cleanup'},csrf)['unused']==0
 for path in ['/uploads.js','/storage.js']:

@@ -36,12 +36,30 @@ class VersionTest(unittest.TestCase):
    subprocess.run(['git','init','--bare',str(remote)],check=True,capture_output=True)
    git('init','-b','main');git('config','user.name','Test');git('config','user.email','test@example.invalid');git('remote','add','origin',str(remote))
    (root/'scripts').mkdir();shutil.copy(Path(__file__).with_name('release-version.py'),root/'scripts/release-version.py');(root/'VERSION').write_text('V1.201');git('add','.');git('commit','-m','Initial');git('push','origin','main');first=git('rev-parse','HEAD')
-   def run(source,override=''):
-    output=root/'output';output.write_text('');subprocess.run([sys.executable,str(root/'scripts/release-version.py')],env={**os.environ,'GITHUB_SHA':source,'GITHUB_OUTPUT':str(output),'RELEASE_OVERRIDE':override},check=True,capture_output=True);return dict(line.split('=',1) for line in output.read_text().splitlines())
+   def run(source,override='',message=''):
+    output=root/'output';output.write_text('');subprocess.run([sys.executable,str(root/'scripts/release-version.py')],env={**os.environ,'GITHUB_SHA':source,'GITHUB_OUTPUT':str(output),'RELEASE_OVERRIDE':override,'RELEASE_MESSAGE':message},check=True,capture_output=True);return dict(line.split('=',1) for line in output.read_text().splitlines())
    output=run(first);self.assertEqual(output['version'],'V1.202');self.assertEqual(output['tag'],'V1.202');reserved=git('rev-parse','HEAD');self.assertIn('[skip ci]',git('log','-1','--format=%s'))
    self.assertEqual(run(first)['version'],'V1.202');self.assertEqual(git('rev-parse','HEAD'),reserved)
    git('commit','--allow-empty','-m','Next validated change');git('push','origin','HEAD:main');second=git('rev-parse','HEAD');self.assertEqual(run(second)['version'],'V1.203')
    self.assertEqual(run(first)['eligible'],'false');self.assertEqual((root/'VERSION').read_text().strip(),'V1.203')
+   git('commit','--allow-empty','-m','Release V1.4.1');git('push','origin','HEAD:main');patch=git('rev-parse','HEAD')
+   output=run(patch,message='Release V1.4.1');self.assertEqual(output['version'],'V1.4.1');self.assertEqual(output['tag'],'V1.4.1')
+   self.assertEqual(run(patch,message='Release V1.4.1')['commit'],output['commit'])
  def test_patch_overflow(self):
   with self.assertRaises(ValueError):release.next_version('V1.299')
+ def test_dotted_patch_reservation_and_successor(self):
+  import tempfile
+  self.assertEqual(release.choose('Release V1.4.1 — titres et affiliation'),'V1.4.1')
+  self.assertEqual(release.next_version('V1.4.1'),'V1.4.2')
+  self.assertEqual(release.next_version('V1.4.99'),'V1.4.100')
+  self.assertEqual(release.next_version('V1.4.1',minor=True),'V1.5.0')
+  for invalid in ['V1.4.1.2','V1.4.','V1.4.1-beta','V1.4.-1','V1.4.1\n']:
+   with self.assertRaises(ValueError):release.validate(invalid)
+  with tempfile.TemporaryDirectory() as directory:
+   root=Path(directory);(root/'VERSION').write_text('V1.4')
+   readme=root/'README.md';readme.write_text('Version du code : **V1.4**. État préservé.',encoding='utf-8')
+   self.assertEqual(release.reserve(root,'patch','V1.4.1'),'V1.4.1')
+   self.assertEqual(release.reserve(root,'patch','V1.4.1'),'V1.4.1')
+   self.assertEqual(release.reserve(root,'next'),'V1.4.2')
+   self.assertEqual(readme.read_text(encoding='utf-8'),'Version du code : **V1.4.2**. État préservé.')
 if __name__=='__main__':unittest.main()

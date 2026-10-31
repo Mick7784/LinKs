@@ -1,0 +1,232 @@
+[
+  {
+    "case": "coffee",
+    "current": "Paye moi un cafe",
+    "expected": "Paye-moi un café"
+  },
+  {
+    "case": "coffee_accent_only",
+    "current": "Paye-moi un cafe",
+    "expected": "Paye-moi un café"
+  },
+  {
+    "case": "accepted_spelling",
+    "current": "Paie moi un cafe",
+    "expected": "Paie-moi un café"
+  },
+  {
+    "case": "temperature",
+    "current": "Capteur de temperature zigbee",
+    "expected": "Capteur de température Zigbee"
+  },
+  {
+    "case": "green",
+    "current": "home assistant green",
+    "expected": "Home Assistant Green"
+  },
+  {
+    "case": "two_accents",
+    "current": "Capteur de temperature et d'humidite zigbee",
+    "expected": "Capteur de température et d'humidité Zigbee"
+  },
+  {
+    "case": "detector",
+    "current": "Detecteur de fumée zigbee",
+    "expected": "Détecteur de fumée Zigbee"
+  },
+  {
+    "case": "technical",
+    "current": "Capteur de temperature zigbee MOES ZC-HM 3.0 2,4 GHz 230 V ±0.5 °C 10–90 % RH IP65 CO2",
+    "expected": "Capteur de température Zigbee MOES ZC-HM 3.0 2,4 GHz 230 V ±0.5 °C 10–90 % RH IP65 CO2"
+  },
+  {
+    "case": "punctuation",
+    "current": "Paye moi un cafe!",
+    "expected": "Paye-moi un café !"
+  },
+  {
+    "case": "discord",
+    "current": "Rejoindre discord",
+    "expected": "Rejoindre Discord"
+  },
+  {
+    "case": "instagram",
+    "current": "instagram",
+    "expected": "Instagram"
+  },
+  {
+    "case": "brand",
+    "current": "Capteur de temperature aqara T1",
+    "expected": "Capteur de température Aqara T1"
+  },
+  {
+    "case": "unchanged_0",
+    "current": "Paye-moi un café",
+    "expected": "Paye-moi un café"
+  },
+  {
+    "case": "unchanged_1",
+    "current": "Paie-moi un café",
+    "expected": "Paie-moi un café"
+  },
+  {
+    "case": "unchanged_2",
+    "current": "Paye-moi un café !",
+    "expected": "Paye-moi un café !"
+  },
+  {
+    "case": "unchanged_3",
+    "current": "Paye-moi un café !",
+    "expected": "Paye-moi un café !"
+  },
+  {
+    "case": "unchanged_4",
+    "current": "Home Assistant Green",
+    "expected": "Home Assistant Green"
+  },
+  {
+    "case": "unchanged_5",
+    "current": "Capteur CO Zigbee MOES",
+    "expected": "Capteur CO Zigbee MOES"
+  },
+  {
+    "case": "unchanged_6",
+    "current": "Discord",
+    "expected": "Discord"
+  },
+  {
+    "case": "unchanged_7",
+    "current": "Instagram",
+    "expected": "Instagram"
+  },
+  {
+    "case": "unchanged_8",
+    "current": "Mon serveur Discord",
+    "expected": "Mon serveur Discord"
+  },
+  {
+    "case": "unchanged_9",
+    "current": "Offrir un café",
+    "expected": "Offrir un café"
+  },
+  {
+    "case": "unchanged_10",
+    "current": "Capteur de température Zigbee",
+    "expected": "Capteur de température Zigbee"
+  },
+  {
+    "case": "unchanged_11",
+    "current": "CAPTEUR TEMPERATURE TEMP-01",
+    "expected": "CAPTEUR TEMPERATURE TEMP-01"
+  },
+  {
+    "case": "unchanged_12",
+    "current": "Temperature sensor",
+    "expected": "Temperature sensor"
+  },
+  {
+    "case": "unchanged_13",
+    "current": "Cafe Racer 500",
+    "expected": "Cafe Racer 500"
+  },
+  {
+    "case": "unchanged_14",
+    "current": "camera Mini",
+    "expected": "camera Mini"
+  },
+  {
+    "case": "unchanged_15",
+    "current": "Un titre mal ecri",
+    "expected": "Un titre mal ecri"
+  },
+  {
+    "case": "unchanged_16",
+    "current": "Autre titre déjà naturel",
+    "expected": "Autre titre déjà naturel"
+  },
+  {
+    "case": "unchanged_17",
+    "current": "Capteur CO2/CO 2.4GHz 5 GHz 12V 50Hz 10mA 5W -20°C 1/2\" Zigbee",
+    "expected": "Capteur CO2/CO 2.4GHz 5 GHz 12V 50Hz 10mA 5W -20°C 1/2\" Zigbee"
+  },
+  {
+    "case": "unchanged_18",
+    "current": "zigbee3.0 zigbee-pro home_assistant_green discord.gg/X @discord #zigbee",
+    "expected": "zigbee3.0 zigbee-pro home_assistant_green discord.gg/X @discord #zigbee"
+  },
+  {
+    "case": "unchanged_19",
+    "current": "https://example.com/temperature?key=zigbee",
+    "expected": "https://example.com/temperature?key=zigbee"
+  },
+  {
+    "case": "unchanged_20",
+    "current": "support@discord.com",
+    "expected": "support@discord.com"
+  },
+  {
+    "case": "unchanged_21",
+    "current": "Modèle home assistant green",
+    "expected": "Modèle home assistant green"
+  },
+  {
+    "case": "unchanged_22",
+    "current": "Référence zigbee",
+    "expected": "Référence zigbee"
+  },
+  {
+    "case": "unchanged_23",
+    "current": "ref: temperature",
+    "expected": "ref: temperature"
+  },
+  {
+    "case": "unchanged_24",
+    "current": "Capteur \"temperature zigbee\"",
+    "expected": "Capteur \"temperature zigbee\""
+  },
+  {
+    "case": "unchanged_25",
+    "current": "« home assistant green »",
+    "expected": "« home assistant green »"
+  },
+  {
+    "case": "unchanged_26",
+    "current": "`zigbee`",
+    "expected": "`zigbee`"
+  },
+  {
+    "case": "unchanged_27",
+    "current": "AB:zigbee temperature.pro wifi-n zigbee+BLE",
+    "expected": "AB:zigbee temperature.pro wifi-n zigbee+BLE"
+  },
+  {
+    "case": "unchanged_28",
+    "current": "MOES ZC-HM",
+    "expected": "MOES ZC-HM"
+  },
+  {
+    "case": "unchanged_29",
+    "current": "Aqara T1",
+    "expected": "Aqara T1"
+  },
+  {
+    "case": "unchanged_30",
+    "current": "",
+    "expected": ""
+  },
+  {
+    "case": "unchanged_31",
+    "current": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+    "case": "existing_brand_variant",
+    "current": "NABU CASA",
+    "expected": "NABU CASA"
+  },
+  {
+    "case": "unknown_unicode_names",
+    "current": "dİscord dıscord ſonoff ézigbee zigbeeé",
+    "expected": "dİscord dıscord ſonoff ézigbee zigbeeé"
+  }
+]

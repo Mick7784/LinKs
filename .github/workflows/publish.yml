@@ -74,6 +74,7 @@ jobs:
           python3 scripts/tracked_duplicates_test.py
           python3 scripts/url_inspection_test.py
           python3 scripts/title_quality_test.py
+          python3 scripts/title_fetch_regression_test.py
           python3 scripts/tracked_title_preview_test.py
           python3 scripts/tracked_title_batch_test.py
           python3 scripts/tracked_batch_test.py

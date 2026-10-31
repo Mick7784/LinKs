@@ -132,8 +132,8 @@ def init():
         storage.scan(db,UPLOADS,assets=DATA_DIR/'assets',system_assets=STATIC/'assets')
 
 def checked_version(value):
-    if not isinstance(value,str) or not re.fullmatch(r"V[0-9]+\.[0-9]+",value) or len(value)>40:
-        raise ValueError("Format attendu : V1.2, V1.201 ou V2.1")
+    if not isinstance(value,str) or not re.fullmatch(r"V[0-9]+\.[0-9]+(?:\.[0-9]+)?",value) or len(value)>40:
+        raise ValueError("Format attendu : V1.4.1, V1.201 ou V2.1")
     return value
 
 def software_version():

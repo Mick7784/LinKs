@@ -632,14 +632,14 @@ class AnalyticsTests(unittest.TestCase):
         from unittest.mock import patch
         admin=self.server(True)
         self.assertEqual(self.request(admin+'/api/app-version',{'app_version':'V2.001'})[0],404)
-        with patch.dict(os.environ,{'APP_RELEASE_VERSION':'V1.302','APP_RELEASE_ID':'release-a'}):
+        with patch.dict(os.environ,{'APP_RELEASE_VERSION':'V1.4.1','APP_RELEASE_ID':'release-a'}):
             self.a.init()
             backup=json.loads(self.a.export_backup())
-            self.assertEqual(backup['software_version'],'V1.302')
+            self.assertEqual(backup['software_version'],'V1.4.1')
             for row in backup['tables']['settings']:
                 if row['key']=='app.version':row['value']='V1.3'
             self.a.restore_backup(backup)
-            self.assertEqual(self.a.public_config()['profile']['app_version'],'V1.302')
+            self.assertEqual(self.a.public_config()['profile']['app_version'],'V1.4.1')
 
     def test_bundled_version_applied_once(self):
         with self.a.connection() as db:

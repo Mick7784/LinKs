@@ -106,10 +106,12 @@ class TitleQualityTests(unittest.TestCase):
                 self.assertEqual(result['status'], 'unavailable')
                 self.assertEqual(calls, [])
 
-    def test_oversize_body_is_rejected_not_parsed_as_partial_product(self):
+    def test_oversize_body_keeps_complete_metadata_in_bounded_prefix(self):
         body = '<h1>Capteur CO MOES</h1>' + 'x' * ui.MAX_HTML
         result = ui.suggest_title('https://shop.example/item', requester=lambda *args: reply(html=body), resolver=public_resolver)
-        self.assertEqual(result['reason'], 'fetch_failed')
+        self.assertEqual(result['title'], 'Capteur CO MOES')
+        self.assertTrue(result['diagnostics']['fetch']['truncated'])
+        self.assertEqual(result['diagnostics']['fetch']['bytes_read'], ui.MAX_HTML)
 
     def test_dns_wait_is_bounded(self):
         def resolver(*args, **kwargs):
@@ -155,8 +157,14 @@ class TitleQualityTests(unittest.TestCase):
         for headers in [{'Content-Length': '1000'}, {}, {'Content-Encoding': 'gzip'}]:
             response = FakeResponse(headers)
             with self.subTest(headers=headers), patch.object(ui, '_PinnedHTTPS', FakeConnection):
-                with self.assertRaises(ui.InspectionError):
-                    ui._request_once(ui._target('https://shop.example/item'), '93.184.216.34', 'GET', 100)
+                if headers.get('Content-Encoding') == 'gzip':
+                    with self.assertRaises(ui.InspectionError):
+                        ui._request_once(ui._target('https://shop.example/item'), '93.184.216.34', 'GET', 100)
+                else:
+                    result = ui._request_once(ui._target('https://shop.example/item'), '93.184.216.34', 'GET', 100)
+                    self.assertEqual(len(result.body), 100)
+                    self.assertEqual(result.wire_bytes, 101)
+                    self.assertTrue(result.truncated)
 
     def test_deadline_interrupts_a_stalled_detached_response_socket(self):
         stopped = threading.Event()
@@ -193,6 +201,85 @@ class TitleQualityTests(unittest.TestCase):
         self.assertTrue(stopped.is_set())
         self.assertTrue(response.closed)
         self.assertEqual(result['status'], 'unavailable')
+
+
+
+class TitleEditorialTests(unittest.TestCase):
+    def suggest(self, title, page='', status=200, url='https://shop.example/item'):
+        return ui.suggest_title(url, current_title=title,
+            requester=lambda *args: reply(status, html=page), resolver=public_resolver)
+
+    def test_editorial_fixtures_and_idempotence(self):
+        cases = json.loads((Path(__file__).parent / 'fixtures/title_editorial.json').read_text(encoding='utf-8'))
+        for case in cases:
+            with self.subTest(case=case['case']):
+                result = self.suggest(case['current'], status=403)
+                self.assertEqual(result['title'], case['expected'])
+                self.assertEqual(result['diagnostics']['fetch']['code'], 'http_403')
+                if case['current'] != case['expected']:
+                    self.assertEqual((result['source'], result['status'], result['confidence']), ('editorial', 'ok', 'high'))
+                    self.assertEqual(result['reason'], 'editorial_correction')
+                    self.assertEqual(result['diagnostics']['destination_decision']['status'], 'unavailable')
+                else:
+                    self.assertNotEqual(result['status'], 'ok')
+                    self.assertNotIn('editorial', result['diagnostics'])
+                again = self.suggest(result['title'], status=403)
+                self.assertEqual(again['title'], result['title'])
+                self.assertNotEqual(again['status'], 'ok', 'Never repeatedly propose a corrected title')
+
+    def test_editorial_works_without_reliable_destination(self):
+        cases = [('', 'metadata_missing'), ('<title>Catalogue</title>', 'generic_metadata'),
+                 ('<title>Robot check</title>', 'blocked_page'),
+                 ('<h1>Capteur AQARA T1</h1><meta property="og:title" content="Caméra Reolink R2">', 'conflicting_metadata')]
+        for page, reason in cases:
+            with self.subTest(reason=reason):
+                result = self.suggest('Capteur de temperature zigbee', page)
+                self.assertEqual(result['title'], 'Capteur de température Zigbee')
+                self.assertEqual(result['source'], 'editorial')
+                self.assertEqual(result['diagnostics']['destination_decision']['reason'], reason)
+
+    def test_equivalent_metadata_does_not_hide_existing_typo(self):
+        result = self.suggest('home assistant green', '<h1>Home Assistant Green</h1>')
+        self.assertEqual((result['title'], result['source']), ('Home Assistant Green', 'editorial'))
+        self.assertEqual(result['diagnostics']['destination_decision']['status'], 'unchanged')
+
+    def test_retained_title_can_be_corrected_without_losing_information(self):
+        result = self.suggest('Capteur de temperature zigbee MOES ZC-HM', '<h1>Capteur MOES</h1>')
+        self.assertEqual(result['title'], 'Capteur de température Zigbee MOES ZC-HM')
+        self.assertEqual(result['diagnostics']['destination_decision']['status'], 'retained')
+
+    def test_destination_enrichment_remains_distinct_and_prioritary(self):
+        result = self.suggest('home assistant', '<h1>Home Assistant Green</h1>')
+        self.assertEqual((result['title'], result['source'], result['status']), ('Home Assistant Green', 'heading', 'ok'))
+        self.assertNotIn('editorial', result['diagnostics'])
+
+    def test_network_and_security_errors_survive_editorial_correction(self):
+        with patch.object(ui, '_fetch', side_effect=ui.InspectionError('secret', 'dns_error', 'dns')):
+            result = self.suggest('Paye moi un cafe')
+        self.assertEqual(result['title'], 'Paye-moi un café')
+        self.assertEqual(result['diagnostics']['fetch']['code'], 'dns_error')
+        self.assertNotIn('secret', json.dumps(result))
+        calls = []
+        result = ui.suggest_title('http://169.254.169.254/private?secret=1', current_title='home assistant green',
+            requester=lambda *args: calls.append(args), resolver=public_resolver)
+        self.assertEqual(calls, [])
+        self.assertEqual(result['title'], 'Home Assistant Green')
+        self.assertEqual(result['diagnostics']['fetch']['code'], 'blocked_destination')
+        self.assertEqual(result['diagnostics']['destination_decision']['status'], 'unavailable')
+        self.assertNotIn('169.254', json.dumps(result))
+        self.assertNotIn('secret', json.dumps(result))
+
+    def test_creation_does_not_use_editorial_fallback(self):
+        result = self.suggest('', '<h1>home assistant green</h1>')
+        self.assertEqual((result['title'], result['source']), ('home assistant green', 'heading'))
+        self.assertNotIn('editorial', result['diagnostics'])
+
+    def test_maximum_length_never_drops_reference(self):
+        title = 'Paye moi un cafe'  # Hyphenation itself does not extend the title.
+        self.assertEqual(ui._editorial_title(title)[0], 'Paye-moi un café')
+        title = 'Capteur de temperature ' + 'x' * 136 + '!'
+        self.assertEqual(len(title), 160)
+        self.assertEqual(ui._editorial_title(title), (title, []))
 
 
 if __name__ == '__main__':

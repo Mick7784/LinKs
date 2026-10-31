@@ -30,6 +30,9 @@ le DNS et la durée totale de la chaîne n'étaient pas bornés.
 
 ## Décision dans le service existant
 
+La régression de récupération introduite en V1.331 et sa correction sont décrites
+dans [l'audit de régression](audits/2026-10-31-title-regression.md).
+
 Les candidats viennent de `Product` (nom, marque, modèle explicitement fourni),
 des articles et profils structurés, du H1, du titre produit Amazon, d'Open Graph,
 de Twitter, du titre HTML et du segment d'URL. Les listes de recommandations ne
@@ -38,19 +41,22 @@ entraînent l'abstention.
 
 Le nettoyage retire les enseignes et formulations commerciales reconnues ; il
 ne coupe plus au premier séparateur et ne tronque pas une référence longue.
-La limite d'une proposition automatique est de 120 caractères ; au-delà, ce
-candidat est écarté. Le champ manuel reste limité à 160 caractères.
+La limite d'un candidat extrait est de 120 caractères ; au-delà, ce candidat
+est écarté. Le champ manuel et les corrections locales du titre existant restent
+limités à 160 caractères, sans troncature.
 
 La provenance et la concordance de sources distinctes déterminent une fiabilité
 `high`, `medium` ou `low`. Ce sont des niveaux heuristiques, pas des probabilités.
-Un segment d'URL seul est de faible fiabilité et ne remplace jamais un nom courant.
+Un segment descriptif d'au moins trois mots utiles a une fiabilité moyenne et peut
+enrichir un nom ou remplacer une marque seule ; un segment moins précis reste de
+faible fiabilité. Les identifiants opaques et les codes d'invitation ne sont pas des noms.
 Les identités ou modèles contradictoires entraînent l'abstention, même lorsqu'une
 source est prioritaire. Le titre HTML n'est jamais privilégié automatiquement.
 
 Avec `current_title`, le moteur conserve les mots utiles et les références du nom
 courant. Il accepte un enrichissement démontrable ou le remplacement d'une marque
 ou d'un libellé générique reconnu. L'ajout de la seule marque connue, les variations
-de ponctuation, de casse ou d'ordre ne sont pas comptés comme des améliorations.
+de ponctuation ou d'ordre sans correction démontrée ne sont pas comptés comme des améliorations.
 Une formulation plus courte mais sémantiquement incertaine est volontairement
 écartée. Les noms existants inconnus d'un seul mot ne sont pas réputés génériques.
 
@@ -59,20 +65,53 @@ Instagram explicite dans l'URL, nom de serveur Discord attesté par les métadon
 formulation Ko-fi traduite à partir du nom effectivement présent. Un code
 d'invitation Discord n'est pas utilisé comme nom du serveur. Aucune traduction
 générale, API d'IA, référence inventée ou dépendance supplémentaire.
+Les noms existants d'Instagram et Discord sont conservés. Les formes produit
+Domadoo reconnues sont raccourcies seulement lorsque les mots du nom ou du slug
+attestent chaque caractéristique : par exemple, « Zigbee » n'est jamais ajouté
+à un capteur dont les indices ne le mentionnent pas.
 
-L'API renvoie `title`, `source`, `status`, `confidence` et `reason` :
+L'API renvoie `title`, `source`, `status`, `confidence`, `reason`, ainsi que
+`engine` (identifiant et empreinte du fichier chargé) et `diagnostics` :
 
 | État | Signification |
 | --- | --- |
-| `ok` | Proposition nouvelle ou amélioration démontrable |
+| `ok` | Proposition nouvelle, enrichissement ou correction rédactionnelle sûre |
 | `unchanged` | Nom déjà pertinent, conservé exactement |
-| `retained` | Destination identifiée, gain non démontré |
+| `retained` | Titre conservé sans gain démontré ; un slug concordant n'atteste pas une extraction réussie |
 | `unavailable` | Identification impossible, contradictoire ou récupération refusée |
 
 Sans `current_title`, le contrat de création reste `ok` ou `unavailable`.
 La prévisualisation ne modifie aucune donnée. La fenêtre laisse toutes les cases
 décochées, affiche les états et la fiabilité, permet une correction manuelle même
 après un échec et n'active la validation que pour des modifications sélectionnées.
+
+## Corrections rédactionnelles locales
+
+Quand la destination ne fournit pas d'amélioration, la même décision finale peut
+corriger le titre existant : « Paye moi un cafe » → « Paye-moi un café », accents
+dans les expressions françaises de température/humidité et détecteur, casse d'une
+liste explicite de marques/technologies (Home Assistant Green, Zigbee, Discord…),
+espacement français de la ponctuation finale dans ces formulations reconnues.
+La variante correcte « Paie-moi » reste acceptée. Un titre déjà correct ne change
+pas pour varier le résultat. Aucune traduction ni réécriture libre des formulations
+inconnues ; seuls les mots et contextes explicitement reconnus sont corrigés.
+
+Ce n'est pas un correcteur linguistique général : les règles contextuelles sont
+locales, déterministes et limitées. Les noms cités, les références explicites et
+les identifiants techniques sont protégés ; aucune unité, caractéristique ou
+référence n'est inventée, retirée ou tronquée. Les règles incertaines s'abstiennent.
+Une proposition fiable venant de la destination reste prioritaire. Sans titre
+existant, le comportement de création est inchangé.
+
+Une correction retourne `source: editorial`, `reason: editorial_correction`,
+`status: ok` et une fiabilité élevée sur la correction seule, jamais sur la
+destination. `diagnostics.destination_decision` conserve la décision d'extraction
+initiale et `diagnostics.editorial.rules` liste uniquement des identifiants de
+règles. Les erreurs réseau et les refus de sécurité restent visibles dans le
+diagnostic, même si le texte peut être corrigé localement. La fenêtre indique
+discrètement « Correction rédactionnelle du titre existant », conserve la
+comparaison, l'édition et la sélection explicite. Aucune donnée n'est enregistrée
+avant validation ; une correction compte seulement si le texte change.
 
 ## Récupération distante
 
@@ -83,31 +122,50 @@ Les URL, paramètres d'affiliation et destinations enregistrées ne sont jamais
 réécrits.
 
 Limites : quatre redirections, trois secondes d'attente réseau/DNS, budget global
-de douze secondes par récupération, 256 Kio maximum. Les résolutions DNS bloquées
-sont bornées à huit tâches en attente. Les pages trop grandes ou compressées malgré
-la demande `identity`, les contenus non HTML et les pages de challenge reconnues
-sont refusés. Un refus de sécurité ne déclenche pas de repli sur un slug non vérifié.
-Une réponse HTTP bloquée peut fournir un slug de faible fiabilité à la création,
-mais ne remplace pas un titre existant.
+de douze secondes par récupération. Le moteur conserve au maximum 256 Kio de HTML
+et borne également les octets transférés (un octet sentinelle supplémentaire permet
+de constater la limite). Gzip et deflate sont décompressés dans cette même limite.
+La lecture s'arrête dès qu'une limite est atteinte ; le reste n'est pas téléchargé.
+Les métadonnées complètes de la portion lue restent utilisables, contrairement au
+rejet intégral de V1.331. Un titre, H1 ou JSON-LD coupé n'est jamais exploité.
+Les résolutions DNS bloquées sont bornées à huit tâches en attente.
+
+Les erreurs réseau, HTTP, compression, redirection, extraction et classement sont
+distinctes. Une erreur réseau ou HTTP peut autoriser un repli sur le slug descriptif
+de l'URL validée, en conservant le motif d'échec dans le diagnostic. Un refus de
+sécurité ou une redirection invalide ne déclenche jamais ce repli. Un slug concordant
+avec le titre actuel produit `retained`, jamais `unchanged` : les métadonnées n'ont
+pas confirmé ce titre. Les diagnostics ne contiennent ni URL, paramètres, IP, corps
+de page, en-têtes ou messages d'exception ; ils ne sont pas journalisés automatiquement.
 
 Limites assumées : absence d'exécution JavaScript, pas de contournement de CAPTCHA,
-pas d'identification d'un produit Amazon à partir du seul ASIN. Les pages lourdes,
-dynamiques ou insuffisamment documentées conservent donc leur titre actuel.
+pas d'identification d'un produit Amazon à partir du seul ASIN. Lorsque la portion
+lue et l'URL ne suffisent pas, le titre actuel est conservé avec un motif précis.
 
 ## Tests reproductibles
+
+`scripts/fixtures/title_editorial.json` couvre les corrections locales, les titres
+déjà corrects, les formulations inconnues et la conservation des références/unités.
+Les tests vérifient aussi l’absence de nouvelle proposition après correction,
+la provenance, les diagnostics et la prévisualisation HTTP sans écriture.
 
 `scripts/fixtures/title_metadata.json` couvre les exemples Domadoo, Amazon, Ko-fi,
 Discord, Instagram, les titres déjà corrects, catégories, marques seules,
 contradictions et références. Les produits et pages sont synthétiques ; le moteur
 est testé sans accès externe, via transport et DNS injectés.
+`scripts/fixtures/titles/` contient les métadonnées minimales observées sur les
+trois pages réelles fournies. Le test de régression recrée leur taille par remplissage
+et exerce le transport de production en clair, gzip et deflate, sans sites externes.
 
 Commandes depuis le dépôt :
 
 ```sh
 python3 scripts/url_inspection_test.py
 python3 scripts/title_quality_test.py
+python3 scripts/title_fetch_regression_test.py
 python3 scripts/tracked_title_preview_test.py
 python3 scripts/tracked_title_batch_test.py
+python3 scripts/tracked_copy_test.py
 python3 scripts/tracked_batch_test.py
 python3 scripts/affiliate_partners_test.py
 python3 scripts/links_pulse_integration_test.py
@@ -123,3 +181,6 @@ vérifient l'édition, la sélection, les états, les compteurs, les thèmes et 
 Le test de qualité est ajouté à la suite existante du workflow, sans modifier ses
 conditions de publication. Aucun lancement de workflow, release ou déploiement
 n'est nécessaire pour exécuter ces tests locaux.
+Le test HTTP vérifie l'empreinte du module réellement appelé. `scripts/smoke.py`
+vérifie la même empreinte via l'API réelle de chaque image jetable AMD64/ARM64,
+avec une URL privée refusée avant tout accès réseau.

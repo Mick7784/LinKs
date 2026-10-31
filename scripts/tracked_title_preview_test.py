@@ -1,6 +1,8 @@
 """HTTP contract for read-only title suggestions, using disposable SQLite fixtures."""
 import json
 import unittest
+import hashlib
+from pathlib import Path
 from unittest.mock import patch
 
 import analytics_test
@@ -77,6 +79,44 @@ class TrackedTitlePreviewTests(unittest.TestCase):
                     'url': 'https://shop.example/item', 'current_title': title})
                 self.assertEqual(status, 400)
             mocked.assert_not_called()
+
+    def test_real_editorial_preview_is_read_only_even_when_destination_fails(self):
+        admin = self.server(True)
+        engine = self.a.url_inspection
+        with self.a.connection() as db:
+            before = list(db.iterdump())
+        with patch.object(engine, '_fetch', return_value=(engine.Response(403, 'text/html'), 'https://ko-fi.com/example')):
+            status, body = self.request(admin+'/api/tracked-links/title-preview', {
+                'url': 'https://ko-fi.com/example', 'current_title': 'Paye moi un cafe'})
+        result = json.loads(body)
+        self.assertEqual(status, 200)
+        self.assertEqual((result['title'], result['source'], result['status']), ('Paye-moi un café', 'editorial', 'ok'))
+        self.assertEqual(result['diagnostics']['destination_decision']['reason'], 'http_403')
+        self.assertEqual(result['engine']['fingerprint'], hashlib.sha256(Path(engine.__file__).read_bytes()).hexdigest()[:12])
+        with self.a.connection() as db:
+            self.assertEqual(list(db.iterdump()), before)
+
+    def test_real_api_runs_corrected_engine_and_returns_sanitized_trace(self):
+        from title_fetch_regression_test import TransportFixture, FIXTURES, MOES
+        admin = self.server(True)
+        engine = self.a.url_inspection
+        fixture = TransportFixture((FIXTURES/'domadoo-moes.html').read_bytes() + b' ' * engine.MAX_HTML, 'gzip')
+        with self.a.connection() as db:
+            before = list(db.iterdump())
+        with patch.object(engine, '_PinnedHTTPS', fixture.connection), \
+             patch.object(engine, '_resolve_before_deadline', return_value='93.184.216.34'):
+            status, body = self.request(admin+'/api/tracked-links/title-preview', {'url':MOES, 'current_title':'Capteur CO MOES'})
+        result = json.loads(body)
+        self.assertEqual(status, 200)
+        self.assertEqual(result['title'], 'Capteur CO Zigbee MOES')
+        self.assertEqual(result['engine'], {'id':'bounded-metadata-v2',
+            'fingerprint':hashlib.sha256(Path(engine.__file__).read_bytes()).hexdigest()[:12]})
+        self.assertEqual(result['diagnostics']['fetch']['http_status'], 200)
+        self.assertEqual(result['diagnostics']['fetch']['content_encoding'], 'gzip')
+        self.assertEqual(result['diagnostics']['extraction']['selected_source'], 'schema_product')
+        self.assertEqual(result['diagnostics']['decision']['status'], 'ok')
+        with self.a.connection() as db:
+            self.assertEqual(list(db.iterdump()), before)
 
 
 if __name__ == '__main__':
