@@ -11,10 +11,11 @@ services:
       ADMIN_ORIGIN: ${ADMIN_ORIGIN:-}
     volumes:
       - links-data:/data
+    init: true
     restart: unless-stopped
     read_only: true
     tmpfs:
-      - /tmp:rw,noexec,nosuid,size=32m,mode=1777
+      - /tmp:rw,noexec,nosuid,size=512m,mode=1777
     cap_drop:
       - ALL
     security_opt:

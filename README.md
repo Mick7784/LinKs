@@ -121,7 +121,7 @@ Une copie de code est une action, sans indication d’achat. Les compteurs histo
 
 ## Version actuelle
 
-Version du code : **V1.331**.
+Version du code : **V1.4**.
 
 L’image `ghcr.io/mick7784/links:latest` inclut les correctifs et améliorations du dashboard intégrés sur `main`. Elle est publiée pour **AMD64 et ARM64** ; une image `sha-<commit>` permet de sélectionner un build précis. Chaque publication validée réserve une version persistante et publie également un tag Docker numéroté.
 
@@ -187,3 +187,10 @@ LinKs a été créé initialement pour DomotiK Studio. Cette origine ne conditio
 ### Configuration YouTube
 
 Dans Paramètres → YouTube, renseignez une chaîne (identifiant UC…, @nom ou URL) et une clé YouTube Data API v3, puis testez la connexion. LinKs lit les vidéos publiques depuis la playlist d’uploads, ignore les publications privées et futures, et met les résultats en cache pendant cinq minutes. La clé reste côté serveur ; `YOUTUBE_API_KEY` permet aussi une configuration serveur prioritaire. La clé saisie est conservée dans le volume persistant, hors sauvegarde JSON : renseignez-la de nouveau lors d’un transfert vers une autre installation.
+
+## Affiliation
+
+Le module financier et la première connexion Domadoo sont décrits dans le
+[guide Affiliation](docs/affiliation.md). La collecte quotidienne est désactivée
+par défaut. La mise à jour conserve le volume `/data` ; voir les ajustements
+Compose (`init: true`, tmpfs `/tmp` de 512 Mo) avant le prochain déploiement.
