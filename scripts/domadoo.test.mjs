@@ -4,8 +4,44 @@ import {createRequire} from 'node:module';
 import {mkdtemp,readFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {cents,approval,parseTable,collect,PORTAL} from './domadoo.mjs';
+import {cents,approval,parseTable,collect,PORTAL,allowedPortalRequest,securityChallenge,isConnected} from './domadoo.mjs';
 const require=createRequire(import.meta.url);
+test('human verification requests stay inside the fixed portal and cannot mutate an account',()=>{
+  for(const url of ['https://www.domadoo.fr/cdn-cgi/challenge-platform/synthetic','https://www.domadoo.fr/fr/authentification','https://challenges.cloudflare.com/synthetic']){
+    assert.equal(allowedPortalRequest(url,{human:true,method:'POST'}),true);
+    assert.equal(allowedPortalRequest(url,{method:'POST'}),false);
+    assert.equal(allowedPortalRequest(url,{human:true,method:'DELETE'}),false);
+  }
+  for(const url of ['http://www.domadoo.fr/cdn-cgi/challenge-platform/synthetic','https://www.domadoo.fr:444/cdn-cgi/challenge-platform/synthetic','https://domadoo.fr.evil.example/cdn-cgi/challenge-platform/synthetic','https://127.0.0.1/fr/authentification','https://www.domadoo.fr/fr/authentification-extra','https://www.domadoo.fr/fr/identite','https://www.domadoo.fr/fr/affiliation','https://www.domadoo.fr/cdn-cgi/other','https://user:secret@www.domadoo.fr/fr/authentification'])
+    assert.equal(allowedPortalRequest(url,{human:true,method:'POST'}),false,url);
+  assert.equal(allowedPortalRequest(PORTAL,{mainNavigation:true}),true);
+  assert.equal(allowedPortalRequest('https://www.domadoo.fr/cdn-cgi/challenge-platform/synthetic',{human:true,method:'POST',mainNavigation:true}),false);
+  assert.equal(allowedPortalRequest('https://challenges.cloudflare.com/synthetic',{human:true,mainNavigation:true}),false);
+});
+
+test('synthetic browser verification exchange and challenge recognition',{timeout:30000},async()=>{
+  const {chromium}=require('playwright-core');
+  const browser=await chromium.launch({headless:true,executablePath:process.env.CHROMIUM_PATH});
+  try{
+    for(const human of [false,true]){
+      const context=await browser.newContext();let submitted=0;
+      // All traffic is fulfilled or aborted locally. Never contact Domadoo or Cloudflare.
+      await context.route('**/*',route=>{
+        const request=route.request();
+        if(!allowedPortalRequest(request.url(),{human,method:request.method(),mainNavigation:request.isNavigationRequest()&&request.frame().parentFrame()===null}))return route.abort();
+        if(request.method()==='POST'){submitted++;return route.fulfill({status:200,body:'synthetic verification'})}
+        return route.fulfill({contentType:'text/html',body:'<h1>www.domadoo.fr</h1><h2>Performing security verification</h2>'});
+      });
+      const page=await context.newPage();await page.goto(PORTAL);
+      assert.equal(await securityChallenge(page),true);assert.equal(await isConnected(page),false);
+      const sent=await page.evaluate(()=>fetch('/cdn-cgi/challenge-platform/synthetic',{method:'POST',body:'fixture'}).then(r=>r.ok).catch(()=>false));
+      assert.equal(sent,human);assert.equal(submitted,human?1:0);
+      await page.setContent('<form><input name="email"></form><div id="challenge-stage" hidden>inactive</div>');
+      assert.equal(await securityChallenge(page),false);
+      await context.close();
+    }
+  }finally{await browser.close()}
+});
 test('strict signed EUR and unknown status',()=>{
   assert.equal(cents('1\u202f234,56 €'),123456);assert.equal(cents('−12,34 €'),-1234);assert.equal(cents('0 €'),0);
   for(const v of ['','invalid','1,234.56 €','12,3 €','€12.34','10 USD'])assert.throws(()=>cents(v));

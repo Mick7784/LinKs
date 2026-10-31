@@ -77,6 +77,8 @@
    if(!result.active){await closeDialog();say('Fenêtre de connexion fermée ou expirée.');return}
    if(!$('aff-login-image'))return;
    $('aff-login-image').src='data:image/jpeg;base64,'+result.image;$('aff-login-location').textContent=result.location;
+   $('aff-login-challenge').hidden=!result.challenge;
+   $('aff-login-verify').disabled=Boolean(result.challenge);
    clearTimeout(loginTimer);loginTimer=setTimeout(async()=>{if(!loginAccount)return;try{await showLogin(await request('login/state',{account:loginAccount}))}catch(e){say(e.message,true);await closeDialog()}},2500);
  }
  async function loginInput(data){clearTimeout(loginTimer);try{await showLogin(await request('login/input',{account:loginAccount,...data}))}catch(e){say(e.message,true)}}
@@ -116,12 +118,12 @@
      }
      if(action==='login'){
        button.disabled=true;const result=await request('login/start',{account});loginAccount=account;
-       const d=dialog('Connexion personnelle Domadoo',`<p>Les saisies sont transmises au navigateur du serveur, sans enregistrement du mot de passe. Cliquez dans le champ de la page puis utilisez la saisie ci-dessous. Réalisez vous-même toute double vérification ou protection.</p><p id="aff-login-location"></p><img id="aff-login-image" class="aff-login-image" alt="Fenêtre de connexion Domadoo interactive" tabindex="0"><form id="aff-type-form" class="aff-filters"><label>Saisie dans le champ sélectionné<input id="aff-login-text" type="password" autocomplete="off" maxlength="500"></label><button>Transmettre la saisie</button></form><div class="aff-actions"><button data-login-key="Tab">Champ suivant</button><button data-login-key="ControlOrMeta+A">Tout sélectionner</button><button data-login-key="Backspace">Effacer</button><button data-login-key="Enter">Entrée</button><button data-login-scroll="-500">Monter</button><button data-login-scroll="500">Descendre</button><button id="aff-login-verify">Vérifier mon accès affilié</button></div>`);
+       const d=dialog('Connexion personnelle Domadoo',`<p>Les saisies sont transmises au navigateur du serveur, sans enregistrement du mot de passe. Cliquez dans le champ de la page puis utilisez la saisie ci-dessous. Réalisez vous-même toute double vérification ou protection.</p><p id="aff-login-challenge" role="status" hidden><strong>Vérification de sécurité Domadoo en cours.</strong> Suivez uniquement les instructions affichées par le portail. Si cette page reste bloquée, fermez la fenêtre et contactez Domadoo : le navigateur du serveur peut être refusé. Une connexion réussie sur votre ordinateur ne connecte pas LinKs. Aucun relevé ne sera récupéré avant validation de cet accès.</p><p id="aff-login-location"></p><img id="aff-login-image" class="aff-login-image" alt="Fenêtre de connexion Domadoo interactive" tabindex="0"><form id="aff-type-form" class="aff-filters"><label>Saisie dans le champ sélectionné<input id="aff-login-text" type="password" autocomplete="off" maxlength="500"></label><button>Transmettre la saisie</button></form><div class="aff-actions"><button data-login-key="Tab">Champ suivant</button><button data-login-key="ControlOrMeta+A">Tout sélectionner</button><button data-login-key="Backspace">Effacer</button><button data-login-key="Enter">Entrée</button><button data-login-scroll="-500">Monter</button><button data-login-scroll="500">Descendre</button><button id="aff-login-verify">Vérifier mon accès affilié</button></div>`);
        $('aff-login-image').onclick=event=>{const rect=event.target.getBoundingClientRect();loginInput({kind:'click',x:(event.clientX-rect.left)/rect.width*1100,y:(event.clientY-rect.top)/rect.height*760})};
        $('aff-type-form').onsubmit=event=>{event.preventDefault();const input=$('aff-login-text'),text=input.value;input.value='';loginInput({kind:'text',text})};
        d.querySelectorAll('[data-login-key]').forEach(b=>b.onclick=()=>loginInput({kind:'key',key:b.dataset.loginKey}));d.querySelectorAll('[data-login-scroll]').forEach(b=>b.onclick=()=>loginInput({kind:'scroll',delta:Number(b.dataset.loginScroll)}));
        $('aff-login-verify').onclick=async()=>{clearTimeout(loginTimer);try{await showLogin(await request('login/verify',{account:loginAccount}))}catch(error){say(error.message,true)}};
-       await showLogin(result);
+       await showLogin(result);button.disabled=false;
      }
    }catch(error){say(error.message,true);button.disabled=false}
  });

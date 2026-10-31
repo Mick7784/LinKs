@@ -4,7 +4,7 @@ import {mkdir,readFile,writeFile,rename,unlink} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createRequire} from 'node:module';
-import {PORTAL,PortalError,isConnected,collect} from './domadoo.mjs';
+import {PORTAL,PortalError,isConnected,collect,allowedPortalRequest,securityChallenge} from './domadoo.mjs';
 const require=createRequire(import.meta.url);
 const root=process.env.AFFILIATION_DATA_DIR||'/data/affiliation';
 let login=null,busy=false;
@@ -36,13 +36,8 @@ async function browserContext(state,human=false){
     // Fixed portal only. Block intranet/localhost, arbitrary browsing and all
     // state-changing portal requests during unattended collection.
     await context.route('**/*',route=>{
-      const request=route.request(),url=new URL(request.url());
-      const host=url.hostname,portal=host==='www.domadoo.fr'||host==='domadoo.fr';
-      const captcha=['www.google.com','www.gstatic.com','www.recaptcha.net','challenges.cloudflare.com'].includes(host);
-      const allowed=url.protocol==='https:' && (!url.port||url.port==='443') && (portal||captcha);
-      if(!allowed)return route.abort();
-      if(request.isNavigationRequest()&&request.frame().parentFrame()===null&&(!portal||!/^\/fr\/(affiliation|authentification)(\/|$)/.test(url.pathname)))return route.abort();
-      if(!['GET','HEAD'].includes(request.method())&&!(human&&((portal&&url.pathname.startsWith('/fr/authentification'))||captcha)))return route.abort();
+      const request=route.request();
+      if(!allowedPortalRequest(request.url(),{human,method:request.method(),mainNavigation:request.isNavigationRequest()&&request.frame().parentFrame()===null}))return route.abort();
       return route.continue();
     });
     context.on('page',page=>{if(context.pages().length>1)page.close().catch(()=>{})});
@@ -57,7 +52,7 @@ async function loginState(){
     await saveSession(login.account,await login.context.storageState());await closeLogin();return {active:false,connected:true};
   }
   if(Date.now()>login.expires){await closeLogin();return {active:false,expired:true}}
-  return {active:true,image:(await login.page.screenshot({type:'jpeg',quality:65})).toString('base64'),width:1100,height:760,
+  return {active:true,challenge:await securityChallenge(login.page),image:(await login.page.screenshot({type:'jpeg',quality:65})).toString('base64'),width:1100,height:760,
     location:new URL(login.page.url()).origin+new URL(login.page.url()).pathname};
 }
 async function action(name,data){
@@ -88,6 +83,8 @@ async function action(name,data){
   if(login.account!==data.account)throw new PortalError('Un autre compte utilise la fenêtre de connexion.');
   if(name==='login/close'){await closeLogin();return {active:false}}
   if(name==='login/verify'){
+    // Do not reset an outstanding security check with another navigation.
+    if(await securityChallenge(login.page))return loginState();
     await login.page.goto(PORTAL,{waitUntil:'domcontentloaded'});return loginState();
   }
   if(name==='login/state')return loginState();
