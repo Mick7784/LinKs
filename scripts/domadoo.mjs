@@ -1,7 +1,9 @@
 // Original adapter for the observed Domadoo customer portal. No stealth plugin,
 // internal API, credential replay or inferred refused/pending commission status.
 export const PORTAL = 'https://www.domadoo.fr/fr/affiliation';
-export class PortalError extends Error {}
+export class PortalError extends Error {
+  constructor(message,code='portal_error'){super(message);this.code=code}
+}
 export function allowedPortalRequest(address,{human=false,method='GET',mainNavigation=false}={}) {
   let url;try{url=new URL(address)}catch{return false}
   const portal=['www.domadoo.fr','domadoo.fr'].includes(url.hostname);
@@ -15,7 +17,8 @@ export function allowedPortalRequest(address,{human=false,method='GET',mainNavig
     /^\/fr\/authentification(\/|$)/.test(url.pathname)||url.pathname.startsWith('/cdn-cgi/challenge-platform/'))));
 }
 export async function securityChallenge(page) {
-  return page.locator('body').evaluate(body=>{
+  return page.evaluate(()=>{
+    const body=document.body;if(!body)return false;
     const visible=node=>node.getBoundingClientRect().width>0&&node.getBoundingClientRect().height>0;
     return [...body.querySelectorAll('#challenge-running,#challenge-stage,#challenge-form,iframe[src*="challenges.cloudflare.com"]')].some(visible)||
       [...body.querySelectorAll('h1,h2')].some(node=>visible(node)&&/performing security verification|verifying you are human|checking your browser|vérification de sécurité/i.test(node.textContent));
@@ -61,9 +64,27 @@ export async function isConnected(page) {
   return !challenge && new URL(page.url()).origin===new URL(PORTAL).origin && new URL(page.url()).pathname==='/fr/affiliation' &&
     await page.locator('#myaffiliateaccount-summary .list-group-hover').count()>0;
 }
+export async function authenticationStage(page){
+  if(await securityChallenge(page))return 'security_check';
+  if(await isConnected(page))return 'connected';
+  return page.evaluate(()=>{
+    const body=document.body;if(!body)return 'loading';
+    const visible=n=>n.getBoundingClientRect().width>0&&n.getBoundingClientRect().height>0;
+    if([...body.querySelectorAll('iframe[src*="captcha"],iframe[src*="challenge"],input[autocomplete="one-time-code"]')].some(visible))return 'verification';
+    const password=[...body.querySelectorAll('input[type="password"]')].find(visible);
+    if(password){
+      const form=password.closest('form');
+      return form&&[...form.querySelectorAll('.alert-danger,[role="alert"]')].some(visible)?'form_error':'login_form';
+    }
+    return 'unknown';
+  });
+}
 export async function assertPortal(page) {
-  if(!await isConnected(page))
-    throw new PortalError('Reconnexion requise : connexion, double vérification ou protection du portail. Intervention humaine requise.');
+  const stage=await authenticationStage(page);
+  if(stage==='connected')return;
+  if(stage==='security_check')throw new PortalError('Contrôle de sécurité du portail : collecte suspendue. Intervention humaine requise.','security_check');
+  if(['login_form','form_error','verification'].includes(stage))throw new PortalError('Reconnexion requise : connexion ou double vérification demandée.','authentication_required');
+  throw new PortalError('Espace affilié non reconnu. Dernier relevé conservé.','portal_not_recognized');
 }
 export async function readSummary(page) {
   const info=await page.locator('#myaffiliateaccount-summary').evaluate(root=>({

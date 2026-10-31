@@ -5,6 +5,8 @@
  const number=v=>v===null||v===undefined?'—':fmt.format(v);
  const at=v=>v?new Intl.DateTimeFormat('fr-FR',{dateStyle:'short',timeStyle:'short',timeZone:adminTimezone}).format(new Date(v)):'Jamais';
  const request=(action,data)=>api('/api/affiliation/'+action,data?{method:'POST',body:JSON.stringify(data)}:{});
+ let loginQueue=Promise.resolve(),loginGeneration=0;
+ const queueLogin=(action,data)=>{loginQueue=loginQueue.catch(()=>{}).then(()=>request(action,data));return loginQueue};
  const selected=()=>model?.accounts.find(a=>a.id===account);
  const sum=(rows,kind)=>rows.filter(r=>!kind||r.status===kind).reduce((n,r)=>n+r.cents,0);
  const badge=a=>a.available?`<span class="aff-badge ${a.session_state==='connected'?'aff-good':''}">${a.running?'Synchronisation…':({connected:'Session enregistrée',reconnect:'À reconnecter',disconnected:'À connecter'}[a.session_state]||'À connecter')}</span>`:'<span class="aff-badge">Connecteur à venir</span>';
@@ -71,7 +73,7 @@
  async function loadPayments(){const id=account;try{const result=await request('payments?account='+encodeURIComponent(id));if(!$('aff-payments')||id!==account)return;$('aff-payments').innerHTML=`<div class="aff-table-wrap"><table><thead><tr><th>Créé à</th><th>Montant</th><th>Approuvé</th><th>Utilisé</th></tr></thead><tbody>${result.items.map(r=>`<tr><td>${esc(r.issued_on)}</td><td>${euro(r.amount_cents)}</td><td>${r.approved?'Oui':'Non'}</td><td>${r.used?'Oui':'Non'}</td></tr>`).join('')||'<tr><td colspan="4">Aucun bon dans le dernier relevé disponible.</td></tr>'}</tbody></table></div>`}catch(e){say(e.message,true)}}
  async function loadRuns(){const id=account;try{const result=await request('runs?account='+encodeURIComponent(id));if(!$('aff-runs')||id!==account)return;$('aff-runs').innerHTML=result.items.length?`<ul class="aff-run-list">${result.items.map(r=>`<li><strong>${esc(at(r.started_at))}</strong><span>${({running:'En cours',success:'Complet',failed:'Échec'}[r.status])}</span><small>${r.status==='success'?number(r.rows)+' ventes · '+number(r.pages)+' pages':esc(r.message||'Lecture du portail…')}</small></li>`).join('')}</ul>`:'<p>Aucune synchronisation effectuée.</p>'}catch(e){say(e.message,true)}}
  function dialog(title,body){const d=$('aff-dialog');d.innerHTML=`<div class="panel-title"><h2 id="aff-dialog-title">${esc(title)}</h2><button data-aff="close" aria-label="Fermer">Fermer</button></div>${body}`;d.showModal();return d}
- async function closeDialog(){clearTimeout(loginTimer);const d=$('aff-dialog');if(loginAccount){const id=loginAccount;loginAccount='';await request('login/close',{account:id}).catch(()=>{})}d?.close()}
+ async function closeDialog(){clearTimeout(loginTimer);loginGeneration++;const d=$('aff-dialog');if(loginAccount){const id=loginAccount;loginAccount='';await queueLogin('login/close',{account:id}).catch(()=>{})}d?.close()}
  async function showLogin(result){
    if(result.connected){loginAccount='';clearTimeout(loginTimer);$('aff-dialog').close();say('Session Domadoo enregistrée. Lancez une synchronisation pour vérifier les données.');await load();return}
    if(!result.active){await closeDialog();say('Fenêtre de connexion fermée ou expirée.');return}
@@ -79,9 +81,19 @@
    $('aff-login-image').src='data:image/jpeg;base64,'+result.image;$('aff-login-location').textContent=result.location;
    $('aff-login-challenge').hidden=!result.challenge;
    $('aff-login-verify').disabled=Boolean(result.challenge);
-   clearTimeout(loginTimer);loginTimer=setTimeout(async()=>{if(!loginAccount)return;try{await showLogin(await request('login/state',{account:loginAccount}))}catch(e){say(e.message,true);await closeDialog()}},2500);
+   const d=result.diagnostic;
+   const stages={security_check:'Vérification de sécurité du portail',verification:'Double vérification demandée',login_form:'Formulaire de connexion prêt',form_error:'Le formulaire signale une erreur — consultez la page',http_error:'Le portail refuse la requête HTTP',navigation_error:'Navigation interrompue',loading:'Chargement en cours',unknown:'Page non reconnue',browser_closed:'Navigateur fermé'};
+   const sessions={restored:'Session précédente reprise',new:'Nouvelle session',browser_changed:'Navigateur changé : une première connexion humaine est nécessaire',unreadable:'Session illisible : une nouvelle connexion est nécessaire'};
+   $('aff-login-status').textContent=d?`${stages[d.stage]||'Connexion en cours'} · ${sessions[d.session]||''}`:'';
+   $('aff-login-diagnostic').textContent=d?JSON.stringify(d,null,2):'Diagnostic indisponible.';
+   clearTimeout(loginTimer);loginTimer=setTimeout(()=>{if(loginAccount)loginAction('login/state')},2500);
  }
- async function loginInput(data){clearTimeout(loginTimer);try{await showLogin(await request('login/input',{account:loginAccount,...data}))}catch(e){say(e.message,true)}}
+ async function loginAction(action,data={}){
+   clearTimeout(loginTimer);const generation=loginGeneration,id=loginAccount;if(!id)return;
+   try{const result=await queueLogin(action,{account:id,...data});if(generation===loginGeneration&&loginAccount===id)await showLogin(result)}
+   catch(e){if(generation===loginGeneration){say(e.message,true);loginTimer=setTimeout(()=>{if(loginAccount)loginAction('login/state')},2500)}}
+ }
+ async function loginInput(data){await loginAction('login/input',data)}
  host.addEventListener('cancel',e=>{if(e.target.id==='aff-dialog'){e.preventDefault();closeDialog()}},true);
  host.addEventListener('change',e=>{if(e.target.id!=='aff-period')return;const v=e.target.value;if(v==='month')month();else if(v==='all'){start='';end=''}else if(v==='30'){const now=new Date();end=new Intl.DateTimeFormat('sv-SE',{timeZone:adminTimezone}).format(now);now.setUTCDate(now.getUTCDate()-29);start=new Intl.DateTimeFormat('sv-SE',{timeZone:adminTimezone}).format(now)}else return;page=1;load()});
  host.addEventListener('click',async e=>{
@@ -117,12 +129,16 @@
        $('aff-add-form').onsubmit=async event=>{event.preventDefault();try{await request('accounts',Object.fromEntries(new FormData(event.target)));await closeDialog();await load()}catch(error){say(error.message,true)}};
      }
      if(action==='login'){
-       button.disabled=true;const result=await request('login/start',{account});loginAccount=account;
+       button.disabled=true;loginGeneration++;const result=await queueLogin('login/start',{account});loginAccount=account;
        const d=dialog('Connexion personnelle Domadoo',`<p>Les saisies sont transmises au navigateur du serveur, sans enregistrement du mot de passe. Cliquez dans le champ de la page puis utilisez la saisie ci-dessous. Réalisez vous-même toute double vérification ou protection.</p><p id="aff-login-challenge" role="status" hidden><strong>Vérification de sécurité Domadoo en cours.</strong> Suivez uniquement les instructions affichées par le portail. Si cette page reste bloquée, fermez la fenêtre et contactez Domadoo : le navigateur du serveur peut être refusé. Une connexion réussie sur votre ordinateur ne connecte pas LinKs. Aucun relevé ne sera récupéré avant validation de cet accès.</p><p id="aff-login-location"></p><img id="aff-login-image" class="aff-login-image" alt="Fenêtre de connexion Domadoo interactive" tabindex="0"><form id="aff-type-form" class="aff-filters"><label>Saisie dans le champ sélectionné<input id="aff-login-text" type="password" autocomplete="off" maxlength="500"></label><button>Transmettre la saisie</button></form><div class="aff-actions"><button data-login-key="Tab">Champ suivant</button><button data-login-key="ControlOrMeta+A">Tout sélectionner</button><button data-login-key="Backspace">Effacer</button><button data-login-key="Enter">Entrée</button><button data-login-scroll="-500">Monter</button><button data-login-scroll="500">Descendre</button><button id="aff-login-verify">Vérifier mon accès affilié</button></div>`);
+       const diagnostic=document.createElement('div');diagnostic.className='aff-connection-diagnostic';
+       diagnostic.innerHTML='<p id="aff-login-status" role="status"></p><details><summary>Diagnostic de connexion (sans identifiants)</summary><p>À transmettre si la connexion reste bloquée. Aucun mot de passe, cookie ni jeton n’est inclus.</p><pre id="aff-login-diagnostic"></pre><button type="button" id="aff-copy-diagnostic">Copier le diagnostic</button></details>';
+       $('aff-login-location').before(diagnostic);
+       $('aff-copy-diagnostic').onclick=async()=>{try{await navigator.clipboard.writeText($('aff-login-diagnostic').textContent);say('Diagnostic copié.')}catch{say('Sélectionnez le diagnostic pour le copier manuellement.',true)}};
        $('aff-login-image').onclick=event=>{const rect=event.target.getBoundingClientRect();loginInput({kind:'click',x:(event.clientX-rect.left)/rect.width*1100,y:(event.clientY-rect.top)/rect.height*760})};
        $('aff-type-form').onsubmit=event=>{event.preventDefault();const input=$('aff-login-text'),text=input.value;input.value='';loginInput({kind:'text',text})};
        d.querySelectorAll('[data-login-key]').forEach(b=>b.onclick=()=>loginInput({kind:'key',key:b.dataset.loginKey}));d.querySelectorAll('[data-login-scroll]').forEach(b=>b.onclick=()=>loginInput({kind:'scroll',delta:Number(b.dataset.loginScroll)}));
-       $('aff-login-verify').onclick=async()=>{clearTimeout(loginTimer);try{await showLogin(await request('login/verify',{account:loginAccount}))}catch(error){say(error.message,true)}};
+       $('aff-login-verify').onclick=()=>loginAction('login/verify');
        await showLogin(result);button.disabled=false;
      }
    }catch(error){say(error.message,true);button.disabled=false}
