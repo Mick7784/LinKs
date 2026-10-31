@@ -1,5 +1,35 @@
 # Changelog
 
+## V1.331
+
+### 🔧 Titres automatiques plus pertinents
+
+- Le moteur existant compare les données produit structurées, les titres principaux, Open Graph, le titre HTML et les segments descriptifs des URL. Le titre HTML n'est pas privilégié automatiquement.
+- Les marques et références attestées sont conservées. Les marques seules, catégories de boutiques et formulations commerciales génériques sont écartées ; le nettoyage ne coupe plus systématiquement au premier séparateur.
+- Les liens Domadoo et Amazon, les redirections et liens courts, les pages Ko-fi, les invitations Discord et les profils Instagram bénéficient d'une identification plus prudente.
+- Le titre actuel reste inchangé lorsque le gain n'est pas démontré, que les sources se contredisent ou que la destination ne peut pas être identifiée. Aucune référence produit n'est inventée et aucune API d'IA payante n'est utilisée.
+
+### 🎨 Fenêtre « Générer des titres »
+
+- Les améliorations, titres déjà pertinents, titres conservés faute de gain certain et destinations non identifiées sont distingués.
+- Un niveau de fiabilité discret accompagne les résultats. Les titres inchangés ne sont pas comptabilisés comme des améliorations.
+- Les propositions restent modifiables manuellement ; aucun changement n'est présélectionné et seule la sélection explicite est validée.
+
+### 🛡️ Récupération et compatibilité
+
+- Les protections SSRF et la validation de chaque redirection sont conservées et renforcées : attente DNS bornée, budget global de récupération, rejet des pages trop volumineuses et interruption des réponses bloquées.
+- Le service commun reste utilisé par la création individuelle, la création en lot et la révision des titres. Aucun changement de schéma ni migration de données.
+- Les URL finales, liens courts, données d'affiliation et statistiques ne sont pas modifiés par l'analyse ; la validation ne met à jour que les noms sélectionnés.
+- Les pages bloquées, trop lourdes, dynamiques ou insuffisamment documentées peuvent conserver leur titre actuel : la pertinence est privilégiée au nombre de propositions.
+
+### ✅ Validation
+
+- Corpus de 25 fixtures HTML reproductibles couvrant Domadoo, Amazon accessible et inaccessible, Ko-fi, Discord, Instagram, titres corrects et métadonnées génériques ou contradictoires.
+- 67 tests Python ciblés et trois parcours navigateur validés localement, avec contrôle de la sélection, de l'édition, des états, des compteurs et de la conservation des données.
+- Vérifications de la fenêtre aux largeurs 320, 390 et 1440 px, en thèmes clair et sombre. La chaîne complète de tests et de validation Docker AMD64/ARM64 s'exécute avant publication.
+
+La publication met à disposition la release et les images Docker ; elle ne déploie pas l'application sur une instance ou un VPS.
+
 ## V1.330
 
 ### ✨ Back-office organisé par usage
