@@ -87,6 +87,9 @@ async function action(name,data){
   if(!login)return {active:false};
   if(login.account!==data.account)throw new PortalError('Un autre compte utilise la fenêtre de connexion.');
   if(name==='login/close'){await closeLogin();return {active:false}}
+  if(name==='login/verify'){
+    await login.page.goto(PORTAL,{waitUntil:'domcontentloaded'});return loginState();
+  }
   if(name==='login/state')return loginState();
   if(name==='login/input'){
     // Stop accepting clicks immediately after login; never expose an interactive

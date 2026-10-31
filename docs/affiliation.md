@@ -39,7 +39,8 @@ Ne pas utiliser ce service comme navigateur généraliste.
    serveur ; cliquer le champ souhaité, saisir dans le champ masqué sous l’image,
    puis choisir **Transmettre la saisie**. Tab, Entrée et défilement sont disponibles.
 3. Effectuer personnellement l’authentification et toute double vérification.
-   La fenêtre se ferme lorsque l’espace affilié est reconnu. Aucun identifiant
+   La fenêtre se ferme lorsque l’espace affilié est reconnu. Si elle reste ouverte
+   après votre authentification, choisir **Vérifier mon accès affilié**. Aucun identifiant
    ni mot de passe n’est enregistré dans la configuration ou la base de LinKs.
 4. Cliquer **Synchroniser**. Le travail continue côté serveur même en fermant
    l’administration. Une collecte complète peut prendre plusieurs minutes.

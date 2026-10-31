@@ -8,10 +8,10 @@ RUN node scripts/build-links.mjs
 FROM node:24-bookworm-slim
 ARG APP_RELEASE_VERSION
 ARG APP_RELEASE_ID
-ENV APP_RELEASE_VERSION=$APP_RELEASE_VERSION APP_RELEASE_ID=$APP_RELEASE_ID
-RUN apt-get update && apt-get install -y --no-install-recommends nginx python3 python3-pil tzdata chromium ca-certificates wget fonts-dejavu-core \
+ENV APP_RELEASE_VERSION=$APP_RELEASE_VERSION APP_RELEASE_ID=$APP_RELEASE_ID HOME=/tmp
+RUN groupadd -g 101 nginx && useradd -u 101 -g nginx -M -s /usr/sbin/nologin nginx \
+    && apt-get update && apt-get install -y --no-install-recommends nginx python3 python3-pil tzdata chromium ca-certificates wget fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/* \
-    && groupadd -g 101 nginx && useradd -u 101 -g nginx -M -s /usr/sbin/nologin nginx \
     && mkdir -p /data && chown nginx:nginx /data
 WORKDIR /app
 COPY package.json package-lock.json ./

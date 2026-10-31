@@ -339,7 +339,7 @@ def post(connect, action, data):
         if action=='settings': return configure(db,data)
         a=account(db,identity)
     if a['platform_id']!='domadoo': raise ValueError('Connecteur à venir.')
-    if action in {'login/start','login/state','login/input','login/close','disconnect'}:
+    if action in {'login/start','login/state','login/input','login/close','login/verify','disconnect'}:
         result=worker(action,{**data,'account':identity})
         if result.get('connected') or action=='disconnect':
             with connect() as db:
