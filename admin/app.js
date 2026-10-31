@@ -217,10 +217,10 @@ $("statistics").addEventListener("click",event=>{
  const scope=metric.dataset.metricScope;$("analysis-scope").value=scope;
  if(["public","tracked","campaigns"].includes(scope)){$("daily-category").value=scope;$("daily-category").dispatchEvent(new Event("change"))}
  if(scope==="public"||scope==="tracked"){$("top-link-type").value=scope;showTopLinkType()}
- syncAnalysis();jumpToStatistics("analysis-history");
+ syncAnalysis();jumpToStatistics(metric.dataset.metricTarget||"analysis-history");
 });
 $("analysis-search").oninput=filterAnalysis;$("analysis-sort").onchange=filterAnalysis;
-$("analysis-scope").onchange=syncAnalysis;
+$("analysis-scope").onchange=()=>{const scope=analysisScope();if(scope!=="copies"){$("daily-category").value=["public","tracked","campaigns"].includes(scope)?scope:"all";$("daily-category").dispatchEvent(new Event("change"))}syncAnalysis()};
 $("campaign-metric").onchange=()=>{drawCampaignRanking();syncAnalysis()};
 function focusStatisticsSection(id){
  if(id==="statistics-public"||id==="statistics-tracked"){
@@ -245,7 +245,7 @@ $("statistics").addEventListener("click",async event=>{
 });
 document.addEventListener("click",event=>{const button=event.target.closest("[data-open-statistics]");if(button){
  const scope=button.dataset.openStatistics;$("analysis-scope").value=["public","shared","campaigns","copies"].includes(scope)?scope:"all";
- $("analysis-search").value=button.dataset.analysisQuery||"";activate("statistics");
+ $("analysis-search").value=button.dataset.analysisQuery||"";$("daily-category").value=scope==="shared"?"tracked":["public","campaigns"].includes(scope)?scope:"all";$("daily-category").dispatchEvent(new Event("change"));activate("statistics");
  focusStatisticsSection(({shared:"statistics-tracked",public:"statistics-public",campaigns:"statistics-campaigns",copies:"statistics-campaigns"})[scope]||"statistics-overview");
 }});
 let chartRenderedWidth=0;
@@ -253,9 +253,9 @@ function chart(days,labels=["Visites","Clics publics"]){const statistics=$("stat
 
 let statsRequest=0;
 async function loadStats(force=false){if(force===true)reportCache.clear();const request=++statsRequest;let range;
- try{range=dates();$("stats-range-error").textContent=""}catch(error){$("stats-range-error").textContent=error.message;$("analysis-grid").setAttribute("aria-busy","false");return}
+ try{range=dates();$("stats-range-error").textContent=""}catch(error){$("stats-range-error").textContent=error.message;$("analysis-grid").setAttribute("aria-busy","false");$("stats-loading").hidden=true;$("stats-retry").hidden=true;return}
  try{
- $("analysis-grid").setAttribute("aria-busy","true");
+ $("analysis-grid").setAttribute("aria-busy","true");$("stats-loading").hidden=false;$("stats-retry").hidden=true;
  const [data,metadata]=await Promise.all([reportApi("/api/stats?"+new URLSearchParams(range)),reportApi("/api/tracking-sources").catch(()=>null)]),stories=data.stories||[],tracked=data.tracked||[],previous=$("source").value,previousLabel=$("source").selectedOptions[0]?.textContent;
  if(request!==statsRequest)return;
  const sameMetadata=sourceMetadata===(metadata?.items||null);sourceMetadata=metadata?.items||null;
@@ -309,7 +309,8 @@ async function loadStats(force=false){if(force===true)reportCache.clear();const 
  document.querySelectorAll(".statistics-kpis strong").forEach(node=>node.classList.toggle("is-long-number",node.textContent.length>8));
  drawSources();syncAnalysis();renderedData=data;renderedSource=source;
 
- }catch(error){$("stats-range-error").textContent="Actualisation impossible. Les derniers résultats affichés correspondent au filtre précédent.";say(error.message,true)}finally{if(request===statsRequest)$("analysis-grid").setAttribute("aria-busy","false")}}
+ }catch(error){if(request!==statsRequest)return;$("stats-retry").hidden=false;$("stats-range-error").textContent="Actualisation impossible. Les derniers résultats affichés correspondent au filtre précédent.";say(error.message,true)}finally{if(request===statsRequest){$("analysis-grid").setAttribute("aria-busy","false");$("stats-loading").hidden=true}}}
+$("stats-retry").onclick=()=>loadStats(true);
 $("filters").onsubmit=event=>event.preventDefault();
 $("period").addEventListener("change",()=>{const custom=$("period").value==="custom";document.querySelectorAll("[data-custom-period]").forEach(node=>node.hidden=!custom);if(custom&&!$("stats-start").value){$("period").value="14";const range=dates();$("stats-start").value=range.start;$("stats-end").value=range.end;$("period").value="custom"}loadStats()});
 $("stats-start").onchange=loadStats;$("stats-end").onchange=loadStats;$("source").addEventListener("change",loadStats);new ResizeObserver(()=>{const width=$("chart").clientWidth;if(width>0&&width!==chartRenderedWidth&&state.chart.length)chart(state.chart,state.chartLabels)}).observe($("chart"));

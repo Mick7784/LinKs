@@ -37,6 +37,13 @@ const {tmpdir}=require('node:os'),{join,resolve}=require('node:path');
   await page.locator('.daily-inspect-action').click();assert.equal(await page.evaluate(()=>document.activeElement.id),'daily-detail-title');
   await page.locator('[data-statistics-jump=statistics-partners]').click();assert(await page.locator('#statistics-partners').getAttribute('open')!==null);
   await page.fill('#analysis-search','introuvable');await page.locator('#analysis-reset').click();assert.equal(await page.locator('#analysis-search').inputValue(),'');
+  const unchanged=await page.locator('.statistics-kpis strong').allTextContents();
+  // A failed refresh preserves the last report and offers a real retry.
+  await page.route('**/api/stats?**',route=>route.fulfill({status:503,json:{error:'Rapport indisponible'}}));
+  await page.selectOption('#period','7');await page.locator('#stats-retry:visible').waitFor();assert.deepEqual(await page.locator('.statistics-kpis strong').allTextContents(),unchanged);
+  assert.match(await page.locator('#stats-range-error').textContent(),/filtre précédent/);
+  await page.unroute('**/api/stats?**');await page.locator('#stats-retry').click();await page.locator('#stats-retry').waitFor({state:'hidden'});await page.waitForFunction(()=>document.querySelector('#analysis-grid').getAttribute('aria-busy')==='false');
+  await page.selectOption('#period','14');await page.waitForFunction(()=>document.querySelector('#analysis-grid').getAttribute('aria-busy')==='false');
   const totals=await page.locator('.statistics-kpis strong').allTextContents();
   const directory=process.env.ERGONOMICS_SCREENSHOTS;if(directory)mkdirSync(directory,{recursive:true});
   for(const width of [320,360,390,768,1024,1440]){

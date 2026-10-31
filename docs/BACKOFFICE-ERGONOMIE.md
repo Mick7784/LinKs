@@ -31,3 +31,20 @@ Le back-office natif partage les panneaux et filtres entre le dashboard et les s
 4. Une PR de synthèse et une seule publication via le workflow documenté, après validation intégrale. Aucun accès au VPS.
 
 Les fichiers `site/`, API, stockage, sécurité, migrations, instrumentation et calculs restent hors périmètre. Les tests utilisent exclusivement des bases jetables. Les changements de présentation peuvent adapter les assertions de disposition, jamais les valeurs métier attendues.
+
+## Parcours livrés et contrôle
+
+| Action depuis son écran de départ | Avant | Après |
+| --- | --- | --- |
+| Accueil → formulaire de lien suivi | Navigation puis création : 2 clics | Création directe : 1 clic |
+| Accueil → fiche d'une campagne en cours | Gestion puis recherche de la ligne et modification : 2 clics | Modifier sur la carte : 1 clic |
+| Mobile → statistiques depuis une autre page | Menu puis destination : 2 clics | Accès fréquent : 1 clic |
+| Lien créé → copie | Retrouver la ligne et choisir sa source | Bloc de partage immédiatement disponible, même si la liste est filtrée |
+| Bibliothèque → partenaires | Défilement sous la liste | Raccourci avec focus sur le titre |
+| Indicateur de clics/ouvertures → fiche du jour | Choisir la section et sa catégorie | Indicateur → catégorie quotidienne correspondante → fiche |
+
+Les modes de calcul, les requêtes métier, les identifiants et la classification des sources sont inchangés. Le bloc de partage réutilise `copyTracked` (contrôle de destination, confirmation, source et presse-papiers) ; aucune logique parallèle de création de token. La mémorisation du sélecteur de source est uniquement en mémoire dans l'interface.
+
+Les assertions de disposition et de focus des tests existants ont été adaptées : recherche désormais visible, détail quotidien avant les classements, URL ciblée à la création. Les valeurs de référence statistiques et les assertions métier sont conservées. La recette `ergonomics-browser-test.cjs`, intégrée à la CI, ajoute les raccourcis réels, le partage après création, la reprise après erreur, 120 combinaisons écran/largeur/thème et la conservation du rendu configuré de la page publique. Les suites existantes couvrent le contenu réel de l'éditeur, les titres, lots, doublons, sources, archives et PulSe.
+
+Le chargement et la reprise du rapport sont des changements d'état d'interface ; une réponse d'erreur devenue obsolète ne remplace plus le message d'une requête plus récente. Cela n'affecte ni les calculs ni les appels métier.

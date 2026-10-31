@@ -3,9 +3,11 @@
 (()=>{"use strict";
 const get=id=>document.getElementById(id),safe=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const fmt=new Intl.NumberFormat("fr-FR");
+const selectedSources=new Map();
 const state={sources:[],items:[],editing:"",partners:[],editingPartner:"",reusing:""};
 const close=which=>get(which)?.close();
-const library=StudioCollection.create(get("tracked-list"),{empty:"Aucun lien suivi à afficher. Créez un lien ou ajustez les filtres.",renderRow(row){const template=document.createElement("template");template.innerHTML=rowHTML(row);return template.content.firstElementChild}});
+const library=StudioCollection.create(get("tracked-list"),{empty:"Aucun lien suivi à afficher. Créez un lien ou ajustez les filtres.",renderRow(row){const template=document.createElement("template");template.innerHTML=rowHTML(row);const node=template.content.firstElementChild,select=node.querySelector("select"),value=selectedSources.get(row.id);if([...select.options].some(option=>option.value===value))select.value=value;return node}});
+get("tracked-list").addEventListener("change",event=>{const select=event.target.closest("select"),row=select?.closest("[data-tracked-id]");if(row)selectedSources.set(row.dataset.trackedId,select.value)});
 function sourceOptions(prefix="",published=null){
  const available=state.sources.filter(source=>source.active);
  return [["Plateformes",source=>source.platform],["Autres sources",source=>!source.platform&&!source.historical],["Historiques",source=>source.historical]].map(([label,include])=>{
@@ -55,6 +57,7 @@ async function load(){
   const [links,sources]=await Promise.all([api("/api/tracked-links"),api("/api/tracking-sources")]);
   state.items=links.items;state.sources=sources.items;
   if(savedLinkId&&!state.items.some(row=>row.id===savedLinkId&&row.enabled&&!row.archived))get("tracked-saved").hidden=true;
+  if(savedLinkId){const select=get("tracked-saved-source"),value=select.value;select.innerHTML=sourceOptions();if([...select.options].some(option=>option.value===value))select.value=value;get("tracked-saved-copy").disabled=!select.value}
   render();renderSources();if(get("tracked-reuse-dialog").open)renderReuseSources();
  }catch(error){get("tracked-list").textContent=error.message;}
 }
@@ -222,7 +225,7 @@ function showSaved(id){
 get("tracked-saved-dismiss").onclick=()=>{get("tracked-saved").hidden=true;get("tracked-search").focus()};
 get("tracked-saved-copy").onclick=async()=>{
  const button=get("tracked-saved-copy"),row=state.items.find(item=>item.id===savedLinkId);if(!row)return;
- button.disabled=true;try{await copyTracked(row,get("tracked-saved-source").value);await load()}catch(error){say(error.message,true)}finally{button.disabled=false}
+ button.disabled=true;try{await copyTracked(row,get("tracked-saved-source").value);await load()}catch(error){say(error.message,true)}finally{button.disabled=!get("tracked-saved-source").value}
 };
 get("tracked-form").elements.name.addEventListener("input",()=>{
  const input=get("tracked-form").elements.name;
