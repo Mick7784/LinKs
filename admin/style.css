@@ -3275,3 +3275,35 @@ button.drag-handle{touch-action:none;user-select:none;min-width:44px;min-height:
  #statistics .statistics-kpis .kpi-action{margin-top:auto;min-height:40px}
  .statistics-jumps button{min-height:44px}
 }
+
+/* Group destinations by task without hiding their existing capabilities. */
+.nav-group{display:grid;gap:3px;min-width:0}
+.nav-group-label{font-size:10px;letter-spacing:.08em;text-transform:uppercase;font-weight:700;color:var(--muted);margin:14px 12px 5px}
+.nav-group:first-child .nav-group-label{margin-top:3px}
+.sidebar .tabs{gap:4px}
+.sidebar .tabs button{min-height:39px}
+.mobile-shortcuts{display:none}
+.quick-create{display:flex;flex-wrap:wrap;gap:8px}
+.saved-link{display:flex;gap:10px;align-items:end;flex-wrap:wrap;background:var(--accent-soft);border:1px solid var(--accent);border-radius:10px;padding:14px;margin:12px 0}
+.saved-link p{flex-basis:100%;margin:0;overflow-wrap:anywhere;font-weight:600}
+.saved-link label{display:grid;gap:5px;min-width:0;font-size:12px}
+.saved-link select{max-width:100%}
+.tracked-destination{max-width:36ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tracked-item-actions [data-tracked-action="copy"]{font-weight:650;color:var(--accent);border-color:var(--accent)}
+.tracked-item-actions [data-tracked-action="archive"],.tracked-item-actions [data-tracked-action="disable"]{background:transparent;color:var(--muted)}
+#campaign-planning,#tracked-links-partners,#tracked-links-library-heading{scroll-margin-top:24px}
+.content-section-header{flex-wrap:wrap;gap:8px}
+@media(max-width:1100px){.tracked-destination{max-width:28ch}}
+@media(max-width:760px){
+ .navigation.open .nav-group{display:grid}
+ .nav-group-label{margin-top:12px}
+ .sidebar .tabs button{min-height:44px}
+ .mobile-shortcuts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;padding:8px 12px;background:var(--surface);border-bottom:1px solid var(--line)}
+ .mobile-shortcuts button{min-height:44px;font-size:12px;padding:6px 4px;white-space:normal}
+ .mobile-shortcuts [aria-current="page"]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:700}
+ .quick-create{width:100%}
+ .saved-link label{width:100%}
+ .tracked-item-actions [data-tracked-action="copy"]{flex:1 1 auto}
+ .tracked-destination{max-width:100%;white-space:normal;overflow-wrap:anywhere}
+ .tracked-item-actions button{min-height:40px}
+}

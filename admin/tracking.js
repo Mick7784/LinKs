@@ -19,9 +19,9 @@ function rowHTML(item){
  const options=sourceOptions();
  const title=item.archived?"Archivé":!item.enabled?"Désactivé":"Actif";
  return `<article class="tracked-item${item.archived?" archived":""}" data-tracked-id="${safe(item.id)}">
- <div class="tracked-item-top"><button type="button" class="tracked-expand" data-open-statistics="shared" data-analysis-query="${safe(item.name)}" title="Voir les statistiques de ce lien"><span class="tracked-item-icon" aria-hidden="true">↗</span><span class="tracked-item-label"><strong>${safe(item.name)}</strong><small>Lien suivi · ${fmt.format(value)} clic(s) · ${title}</small></span><span class="tracked-expander" aria-hidden="true">→</span></button>
+ <div class="tracked-item-top"><button type="button" class="tracked-expand" data-open-statistics="shared" data-analysis-query="${safe(item.name)}" title="Voir les statistiques de ce lien"><span class="tracked-item-icon" aria-hidden="true">↗</span><span class="tracked-item-label"><strong>${safe(item.name)}</strong><small>${fmt.format(value)} clic(s) · ${title} · Statistiques</small><small class="tracked-destination">${safe(item.url)}</small></span><span class="tracked-expander" aria-hidden="true">→</span></button>
  <div class="tracked-item-actions"><label class="sr-only" for="source-${safe(item.id)}">Source de publication</label><select id="source-${safe(item.id)}" aria-label="Source pour ${safe(item.name)}" ${!usable||!options?"disabled":""}>${options||'<option>Aucune source</option>'}</select>
- <button type="button" data-tracked-action="copy" ${!usable||!options?"disabled":""} aria-label="Copier un lien permanent pour ${safe(item.name)}" title="Copier le lien permanent de cette source">⧉</button>
+ <button type="button" data-tracked-action="copy" ${!usable||!options?"disabled":""} aria-label="Copier un lien permanent pour ${safe(item.name)}" title="Copier le lien permanent de cette source">Copier</button>
  <button type="button" data-tracked-action="open" title="Ouvrir la destination de ${safe(item.name)} dans un nouvel onglet">Ouvrir</button>
  <button type="button" data-tracked-action="edit" title="Modifier la destination de ${safe(item.name)}">Modifier</button>
  <button type="button" data-tracked-action="${item.archived?"restore":"archive"}" title="${item.archived?"Restaurer":"Archiver"} ce lien">${item.archived?"Restaurer":"Archiver"}</button>
@@ -54,6 +54,7 @@ async function load(){
  try{
   const [links,sources]=await Promise.all([api("/api/tracked-links"),api("/api/tracking-sources")]);
   state.items=links.items;state.sources=sources.items;
+  if(savedLinkId&&!state.items.some(row=>row.id===savedLinkId&&row.enabled&&!row.archived))get("tracked-saved").hidden=true;
   render();renderSources();if(get("tracked-reuse-dialog").open)renderReuseSources();
  }catch(error){get("tracked-list").textContent=error.message;}
 }
@@ -128,7 +129,7 @@ async function openEditor(item){
  cancelTitleSuggestion();manualTitle=!!item;automaticTitle="";titleSuggestionFeedback("");
  manualPartner=false;reapplyPartner=false;savingTracked=false;get("tracked-recalculate").hidden=!item;
  get("tracked-dialog-title").textContent=item?"Modifier le lien suivi":"Créer un lien suivi";
- get("tracked-dialog").showModal();previewTracked(!item);form.elements.name.focus();
+ get("tracked-dialog").showModal();previewTracked(!item);(item?form.elements.name:form.elements.url).focus();
 }
 function prepareClipboard(){
  // Start the write inside the click activation (not after the network awaits).
@@ -207,9 +208,22 @@ get("tracked-form").addEventListener("submit",async event=>{
   if(preview.changed&&!confirm(`Remplacer la destination existante ?\n\nActuelle : ${preview.previous_url}\n\nNouvelle : ${preview.url}\n\nLes URL courtes déjà publiées utiliseront cette nouvelle destination.`))return;
   if(preview.duplicate_confirmation_required&&!confirm(`Créer exceptionnellement un doublon de destination ?\n\nDéjà utilisée par : ${preview.duplicates.map(row=>row.name).join(", ")}\n\n${preview.url}\n\nVous pouvez réutiliser leurs liens courts et sources. Continuer malgré ce doublon ?`))return;
   const fields={...Object.fromEntries(new FormData(form)),apply_partner:reapplyPartner,expected_url:preview.url,previous_url:preview.previous_url,confirm_destination:preview.changed,allow_duplicate:preview.duplicate_confirmation_required,duplicate_ids:preview.duplicates.map(row=>row.id).sort()};
-  await api(state.editing?"/api/tracked-links/"+state.editing:"/api/tracked-links",{method:state.editing?"PUT":"POST",body:JSON.stringify(fields)});await load();await loadPartners();close("tracked-dialog");say("Lien suivi enregistré.")
+  const creating=!state.editing;const saved=await api(state.editing?"/api/tracked-links/"+state.editing:"/api/tracked-links",{method:state.editing?"PUT":"POST",body:JSON.stringify(fields)});await load();await loadPartners();close("tracked-dialog");say("Lien suivi enregistré.");if(creating&&saved?.id){if(!get("tracked-links").classList.contains("active"))activate("tracked-links");showSaved(saved.id)}
  }catch(error){say(error.message,true);previewTracked()}finally{savingTracked=false;button.disabled=!linkPreview}
 });
+let savedLinkId="";
+function showSaved(id){
+ const row=state.items.find(item=>item.id===id);if(!row)return;
+ savedLinkId=id;get("tracked-saved-label").textContent="Lien enregistré · "+row.name;
+ get("tracked-saved-source").innerHTML=sourceOptions();get("tracked-saved").hidden=false;
+ get("tracked-saved-copy").disabled=!get("tracked-saved-source").value;
+ get("tracked-saved").scrollIntoView({block:"nearest"});get("tracked-saved-copy").focus({preventScroll:true});
+}
+get("tracked-saved-dismiss").onclick=()=>{get("tracked-saved").hidden=true;get("tracked-search").focus()};
+get("tracked-saved-copy").onclick=async()=>{
+ const button=get("tracked-saved-copy"),row=state.items.find(item=>item.id===savedLinkId);if(!row)return;
+ button.disabled=true;try{await copyTracked(row,get("tracked-saved-source").value);await load()}catch(error){say(error.message,true)}finally{button.disabled=false}
+};
 get("tracked-form").elements.name.addEventListener("input",()=>{
  const input=get("tracked-form").elements.name;
  manualTitle=!!input.value.trim();
@@ -291,7 +305,7 @@ get("tracked-source-list").addEventListener("click",async event=>{
 get("tracked-filters").addEventListener("submit",event=>event.preventDefault());
 get("tracked-search").addEventListener("input",render);
 get("tracked-status").addEventListener("change",render);
-document.querySelector('[data-action="new-tracked"]').addEventListener("click",()=>openEditor());
+document.querySelectorAll('[data-action="new-tracked"]').forEach(button=>button.addEventListener("click",()=>openEditor()));
 get("tracked-manage-sources").addEventListener("click",()=>{renderSources();get("tracked-sources-dialog").showModal()});
 document.querySelectorAll("[data-close-tracked]").forEach(button=>button.addEventListener("click",()=>close("tracked-dialog")));
 document.querySelectorAll("[data-close-sources]").forEach(button=>button.addEventListener("click",()=>close("tracked-sources-dialog")));
@@ -352,5 +366,5 @@ async function openEntity(type,id){
  if(!item)throw Error("Cette fiche n’est plus disponible.");
  if(type==="partner")openPartner(item);else await openEditor(item);
 }
-window.LinksTracking={load,campaignOptions,loadPartners,openEntity,reuseEntity:openReuse};
+window.LinksTracking={createEntity:()=>openEditor(),load,campaignOptions,loadPartners,openEntity,reuseEntity:openReuse};
 })();
