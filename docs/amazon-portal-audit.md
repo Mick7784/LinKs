@@ -76,3 +76,33 @@ Pour les trois archives examinées : Catégories peut servir de référence, Pro
 L’évolution quotidienne (tableau) s’appuie exclusivement sur les dates des lignes des rapports de référence. Les dates issues de la confirmation manuelle d’une journée, dont Tracking IDs, sont exclues de cette évolution. Les jours absents et indicateurs inconnus ne deviennent pas des zéros. Un seul jour disponible donne un seul point ; aucun historique n’est extrapolé.
 
 Validation ciblée : quatre tests supplémentaires (trois vues sans cumul, corrections et sauvegarde/restauration, chevauchements entre types, date absente et ancien format sans clics), traitement des trois archives réelles en SQLite en mémoire, et un parcours navigateur/API synthétique. Les chiffres des trois fichiers réels concordent sans triplement après leurs imports respectifs. Aucun fichier privé ni Tracking ID réel n’est ajouté à Git. Aucun accès automatisé Amazon ni déploiement n’est activé.
+
+## Audit ciblé de récupération automatique — 1 novembre 2026
+
+### Observé et testé
+
+L’URL https://partenaires.amazon.fr/home/reports redirige vers https://www.amazon.fr/ap/signin. Un diagnostic Playwright Chromium classique, dans un contexte neuf, sans identifiants ni cookies, a atteint une page HTTP 200 contenant un formulaire de connexion. Résultat : login_required, connected=false, collection_enabled=false. Aucun identifiant, code TOTP, cookie ou demande de génération de rapport n’a été envoyé. Cette observation ne prouve pas l’acceptation du navigateur hébergé sur le VPS.
+
+Le module amazon-portal.mjs réutilise le choix de moteur, le viewport et la classification des erreurs réseau de l’infrastructure existante. Il ouvre un contexte séparé de Domadoo, supprime les variables de secrets du processus navigateur, interdit les méthodes autres que GET/HEAD et les navigations hors des routes publiques vérifiées. Il ne sauvegarde ni capture, ni contenu de page, ni URL complète de connexion. Il n’est relié ni à une route de synchronisation ni au scheduler.
+
+Diagnostic préparé : login_required, otp_required, intervention_required (CAPTCHA reconnu), access_denied (HTTP 401/403), rate_limited (429), navigation_blocked, network_error, unverified. Les marqueurs reconnus sont couverts par des fixtures ; une nouvelle présentation de contrôle Amazon reste non reconnue et ne peut jamais devenir une réussite. Aucune classification technique ne prétend constater une interdiction contractuelle.
+
+### Autorisation et accès
+
+Les politiques France, consultées en français le 1 novembre 2026, excluent les robots et outils d’extraction du périmètre de la licence du Contenu du Programme : https://partenaires.amazon.fr/help/operating/policies?language=fr_FR . La portée exacte sur les rapports privés du titulaire n’est pas confirmée ici. La clé MFA validée n’établit pas l’autorisation de collecte automatique. L’état contractuel reste « non établi », distinct d’un refus HTTP ou d’un CAPTCHA. Une interdiction explicitement applicable devra maintenir le connecteur désactivé, sans nouvelle tentative.
+
+La FAQ https://partenaires.amazon.fr/help/topic/reports/faq décrit une sélection des données/périodes et une commande de téléchargement. Les trois ZIP réels prouvent l’existence de leurs exports ; ils ne révèlent pas le mécanisme authentifié de génération. La liste effective du compte (sept types, sans Tendances quotidiennes) prévaut sur les exemples génériques de l’aide. Creators API reste une voie officielle distincte, dont ListReports/GetReport et les droits financiers France doivent être vérifiés avec des identifiants API dédiés, non avec le mot de passe du portail.
+
+### Parcours encore à observer sur le compte
+
+Après établissement de l’accès autorisé : connexion normale par formulaire, MFA demandé explicitement, vérification du magasin France et de l’association à un unique compte LinKs, sélection de la période et des types réellement disponibles, demande de génération, attente bornée du résultat, téléchargement terminé. Les sélecteurs, l’état « en génération », la présence éventuelle d’une file de rapports, les délais et les hôtes de téléchargement n’ont pas été observés. Aucun endpoint interne, URL signée ou sélecteur de téléchargement n’est inventé à partir des noms de fichiers.
+
+Le renouvellement de session réutilise ensureAmazonSession : vérification réelle avant réutilisation ; enregistrement chiffré de l’état renouvelé ; une reconnexion normale seulement si la session est expirée ; suspension sur tout autre état. Le correctif de cette étape persiste les cookies tournants après une vérification réussie. Un échec de capture garde l’état précédent et suspend le parcours, sans fuite de l’erreur brute. Restent à valider sur le compte : compatibilité du moteur, cookies/localStorage requis, durée de vie effective, association du magasin et apparition des contrôles supplémentaires. Une session ne sera jamais présumée valide d’après sa seule date locale.
+
+### Raccordement prévu au moteur validé
+
+Le futur adaptateur recevra une configuration de compte, période, vues et mappings validée. Il devra produire les octets ZIP/CSV avec le magasin et la période confirmés par le portail, sans inclure d’URL signée ni de cookies dans sa réponse. Chaque téléchargement sera borné, achevé et validé avant import. Les ZIP passent par inspect_archive, les membres choisis par normalize puis ingest ; aucune nouvelle formule financière. Les trois vues gardent leur rôle référence/complémentaire. La période n’est jamais déduite du nom du fichier. Toutes les écritures d’un lot et son statut de réussite seront regroupés dans une transaction ; aucun last_success ni relevé partiel sur échec de génération/téléchargement. Les contrôles existants de doublons/chevauchements et l’absence de calcul de pertes restent inchangés.
+
+### Vérifications limitées à cette étape
+
+Deux nouveaux tests ciblés réussis : rotation de session sans reconnexion, maintien de l’état précédent sur erreur, et six états diagnostiques sur pages synthétiques dans Chromium. Un diagnostic public réel a observé login_required/HTTP 200. Aucun test authentifié, aucune demande de rapport, aucune collecte quotidienne activée. Le moteur ZIP/CSV et les calculs statistiques n’ont pas été modifiés.

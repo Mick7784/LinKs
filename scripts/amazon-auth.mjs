@@ -131,7 +131,11 @@ export async function ensureAmazonSession(adapter,env=process.env){
   if(saved){
     let status;
     try{status=await adapter.verify(saved)}catch{throw new Error('Vérification de la session Amazon interrompue.')}
-    if(status==='authenticated')return saved;
+    if(status==='authenticated'){
+      // Persist cookies rotated by Amazon during session verification.
+      try{const refreshed=await adapter.capture();await saveAmazonSession(refreshed);return refreshed}
+      catch{throw new Error('Renouvellement de session Amazon non enregistré. Synchronisation suspendue.')}
+    }
     if(status!=='expired')throw new Error('Vérification Amazon requise. Connexion automatique suspendue.');
   }
   const credentials=amazonCredentials(env);
