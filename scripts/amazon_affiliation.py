@@ -63,7 +63,10 @@ def inspect_csv(data):
         dialect=csv.Sniffer().sniff(''.join(lines[:10]),delimiters=',;\t')
         reader=csv.reader(io.StringIO(''.join(lines)),dialect)
         headers=next(reader); rows=list(reader)
-        if not headers or len(headers)>100 or len(set(headers))!=len(headers) or any(not h.strip() for h in headers): raise ValueError()
+        if not headers or len(headers)>100 or any(not h.strip() for h in headers): raise ValueError()
+        original=headers[:]
+        headers=[h if original.count(h)==1 else f'{h} [colonne {i+1}]' for i,h in enumerate(original)]
+        if len(set(headers))!=len(headers): raise ValueError()
         rows=[r for r in rows if any(c.strip() for c in r)]
         if len(rows)>10000 or any(len(r)!=len(headers) for r in rows): raise ValueError()
     except (ValueError,StopIteration,csv.Error):
@@ -77,7 +80,7 @@ def normalize(data):
     if view not in VIEWS: raise ValueError('Vue Amazon inconnue.')
     kind=data.get('kind'); mapping=data.get('mapping',{})
     if kind not in METRICS or not isinstance(mapping,dict) or set(mapping)-set(FIELDS): raise ValueError('Type ou colonnes invalides.')
-    if not mapping.get('date') or not any(mapping.get(k) for k in METRICS[kind]): raise ValueError('Associez la date et au moins un indicateur du type de rapport choisi.')
+    if (not mapping.get('date') and data.get('single_day') is not True) or not any(mapping.get(k) for k in METRICS[kind]): raise ValueError('Associez la date et au moins un indicateur du type de rapport choisi.')
     if any(v not in headers for v in mapping.values() if v) or len([v for v in mapping.values() if v])!=len(set(v for v in mapping.values() if v)): raise ValueError('Correspondance de colonnes invalide ou dupliquée.')
     if any(mapping.get(k) for k in set(FIELDS[6:])-set(METRICS[kind])): raise ValueError('Séparez les rapports Commandes, Rémunérations et Paiements.')
     try:
@@ -86,21 +89,26 @@ def normalize(data):
     except (ValueError,KeyError,TypeError): raise ValueError('Période du rapport invalide.') from None
     scope=data.get('scope','').strip()
     if not re.fullmatch(r'(all|[A-Za-z0-9_-]{1,100})',scope): raise ValueError('Indiquez all pour tous les Tracking IDs, ou le Tracking ID exact.')
+    if data.get('single_day') is True and start!=end: raise ValueError('Sans colonne Date, seule une période explicitement confirmée d’un jour est acceptée.')
+    date_format=data.get('date_format','dmy')
+    if date_format not in {'dmy','mdy'}: raise ValueError('Format de date invalide.')
     decimal=data.get('decimal','comma')
     if decimal not in {'comma','dot'}: raise ValueError('Séparateur décimal invalide.')
     result=[]
     for row in rows:
         item={k:(row[headers.index(mapping[k])].strip() if mapping.get(k) else '') for k in FIELDS}
         try:
-            day=date.fromisoformat(item['date']) if re.fullmatch(r'\d{4}-\d{2}-\d{2}',item['date']) else datetime.strptime(item['date'],'%d/%m/%Y').date()
+            if not mapping.get('date') and data.get('single_day') is True: item['date']=start
+            day=date.fromisoformat(item['date']) if re.fullmatch(r'\d{4}-\d{2}-\d{2}',item['date']) else datetime.strptime(item['date'],'%m-%d-%Y' if date_format=='mdy' else '%d/%m/%Y').date()
             item['date']=day.isoformat()
             if not start<=item['date']<=end: raise ValueError()
             for key in FIELDS[6:]:
                 raw=item[key].replace('\u00a0','').replace('\u202f','').replace(' ','')
-                if not raw: item[key]=None;continue
+                if raw in {'','-'}: item[key]=None;continue
                 if decimal=='comma': raw=raw.replace(',','.')
                 if not re.fullmatch(r'-?\d+(\.\d+)?',raw): raise ValueError()
                 value=Decimal(raw)*(100 if key.endswith('_cents') else 1)
+                if key.endswith('_cents') and value.is_finite() and abs(value-value.to_integral_value())<=Decimal('0.00000001'): value=value.to_integral_value()
                 if not value.is_finite() or value!=value.to_integral_value() or abs(value)>10**14: raise ValueError()
                 item[key]=int(value)
             if scope!='all':
@@ -109,7 +117,7 @@ def normalize(data):
             if any(len(item[k])>500 for k in ('tracking_id','asin','title','provider_status','transaction_id')): raise ValueError()
         except (ValueError,InvalidOperation): raise ValueError('Date, quantité, montant EUR ou Tracking ID invalide. Aucun import effectué.') from None
         result.append(item)
-    return {'version':1,**({'view':view} if view!='legacy' else {}),'kind':kind,'start':start,'end':end,'scope':scope,'currency':'EUR','rows':result}
+    return {'version':1,**({'date_basis':'confirmed_single_day'} if not mapping.get('date') else {}),**({'view':view} if view!='legacy' else {}),'kind':kind,'start':start,'end':end,'scope':scope,'currency':'EUR','rows':result}
 
 
 def active_reports(db,identity):
@@ -122,7 +130,8 @@ def active_reports(db,identity):
 
 
 def validate_saved(value):
-    if not isinstance(value,dict) or set(value)-{'view'}!={'version','kind','start','end','scope','currency','rows','digest'} or value['version']!=1 or value['currency']!='EUR':raise ValueError('Rapport Amazon sauvegardé invalide.')
+    if not isinstance(value,dict) or set(value)-{'view','date_basis'}!={'version','kind','start','end','scope','currency','rows','digest'} or value['version']!=1 or value['currency']!='EUR':raise ValueError('Rapport Amazon sauvegardé invalide.')
+    if 'date_basis' in value and (value['date_basis']!='confirmed_single_day' or value['start']!=value['end']): raise ValueError('Origine de date invalide.')
     if value.get('view','legacy') not in VIEWS: raise ValueError('Vue Amazon sauvegardée invalide.')
     if value['kind'] not in METRICS or not isinstance(value['rows'],list) or len(value['rows'])>10000:raise ValueError('Rapport Amazon sauvegardé invalide.')
     if date.fromisoformat(value['start'])>date.fromisoformat(value['end']) or not re.fullmatch(r'(all|[A-Za-z0-9_-]{1,100})',value['scope']):raise ValueError('Périmètre Amazon invalide.')

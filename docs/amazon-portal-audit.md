@@ -54,3 +54,13 @@ Tendances quotidiennes est prévu comme vue explicite ; les dates sont celles de
 Accès étudiés : téléchargement manuel documenté par la FAQ française ; Creators API officielle avec diagnostic ListReports/GetReport existant, dont les droits de reporting financier France restent à vérifier sur le compte. La validation MFA ne démontre ni ces droits API ni l’autorisation de robotiser le portail. Aucun formulaire de connexion Amazon automatisé, téléchargement authentifié ou planification quotidienne activé.
 
 Vérifications nouvelles uniquement : quatre tests synthétiques réussis (ZIP et limites, non-cumul entre vues, sauvegarde/restauration, dates et compatibilité des imports anciens) et syntaxe JavaScript. Aucune archive réelle ni compte Amazon testé.
+
+## Examen des archives transmises
+
+Les trois archives ont été lues depuis le Bureau, sans copie dans Git et sans import financier. Chacune contient un CSV UTF-8 à virgules. Les trois vues concordent sur les totaux des clics, articles commandés, expédiés et revenus totaux ; aucune addition entre vues n’est permise. Les chiffres privés et Tracking IDs réels ne sont pas enregistrés dans cette documentation ni dans les fixtures.
+
+Catégories et Produits liés contiennent Date au format MM-JJ-AAAA. Tracking IDs ne contient pas de date et répète certains libellés de colonnes : les répétitions sont distinguées par leur position. Le rattachement de ce fichier à un jour nécessite une confirmation explicite début=fin ; cette origine est historisée par date_basis=confirmed_single_day. Le nom de l’archive ne fournit aucune date statistique implicite.
+
+Les valeurs manquantes « - » deviennent inconnues, jamais zéro. Les artefacts de représentation flottante de montants sont acceptés uniquement à moins de 0,00000001 centime d’un entier ; une vraie fraction de centime reste refusée. La colonne « revenus totaux » a été utilisée pour vérifier la normalisation des revenus affiliés, sans confusion avec le chiffre d’affaires des articles expédiés. Les quantités et valeurs de conversion ne démontrent pas un nombre de commandes distinctes.
+
+Validation : lecture ZIP et normalisation des trois fichiers réels réussies sans stockage financier ; quatre nouveaux tests synthétiques ciblés réussis. Les archives réelles restent hors du dépôt. Les clics ne sont pas encore intégrés au moteur statistique. Le rapport Tendances quotidiennes reste à recevoir, et aucun accès authentifié au portail n’a été testé.
