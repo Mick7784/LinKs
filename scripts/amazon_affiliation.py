@@ -15,8 +15,8 @@ from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, HTTPRedirectHandler, build_opener
 
 LIMIT = 1024 * 1024
-FIELDS = ('date','tracking_id','asin','title','provider_status','transaction_id','orders','ordered_items','shipped_items','commission_cents','payment_cents')
-METRICS = {'orders':('orders','ordered_items'), 'earnings':('shipped_items','commission_cents'), 'payments':('payment_cents',)}
+FIELDS = ('date','tracking_id','asin','title','provider_status','transaction_id','orders','ordered_items','shipped_items','commission_cents','payment_cents','clicks')
+METRICS = {'orders':('orders','ordered_items'), 'earnings':('shipped_items','commission_cents'), 'payments':('payment_cents',), 'performance':('clicks','ordered_items','shipped_items','commission_cents')}
 
 
 
@@ -78,6 +78,8 @@ def normalize(data):
     headers,rows=inspect_csv(data)
     view=data.get('view','legacy')
     if view not in VIEWS: raise ValueError('Vue Amazon inconnue.')
+    contribution=data.get('contribution','totals')
+    if contribution not in {'totals','detail'}: raise ValueError('Usage du rapport invalide.')
     kind=data.get('kind'); mapping=data.get('mapping',{})
     if kind not in METRICS or not isinstance(mapping,dict) or set(mapping)-set(FIELDS): raise ValueError('Type ou colonnes invalides.')
     if (not mapping.get('date') and data.get('single_day') is not True) or not any(mapping.get(k) for k in METRICS[kind]): raise ValueError('Associez la date et au moins un indicateur du type de rapport choisi.')
@@ -117,7 +119,7 @@ def normalize(data):
             if any(len(item[k])>500 for k in ('tracking_id','asin','title','provider_status','transaction_id')): raise ValueError()
         except (ValueError,InvalidOperation): raise ValueError('Date, quantité, montant EUR ou Tracking ID invalide. Aucun import effectué.') from None
         result.append(item)
-    return {'version':1,**({'date_basis':'confirmed_single_day'} if not mapping.get('date') else {}),**({'view':view} if view!='legacy' else {}),'kind':kind,'start':start,'end':end,'scope':scope,'currency':'EUR','rows':result}
+    return {'version':1,**({'contribution':contribution} if contribution=='detail' else {}),**({'date_basis':'confirmed_single_day'} if not mapping.get('date') else {}),**({'view':view} if view!='legacy' else {}),'kind':kind,'start':start,'end':end,'scope':scope,'currency':'EUR','rows':result}
 
 
 def active_reports(db,identity):
@@ -125,23 +127,24 @@ def active_reports(db,identity):
     for row in db.execute('SELECT * FROM aff_snapshots WHERE account_id=? ORDER BY id',(identity,)):
         value=json.loads(row['summary']).get('amazon')
         if value:
-            latest[(value['kind'],value['start'],value['end'],value['scope'])]={'id':row['id'],'observed_at':row['observed_at'],**value}
+            latest[(value['kind'],value['start'],value['end'],value['scope'],value.get('view','legacy'),value.get('contribution','totals'))]={'id':row['id'],'observed_at':row['observed_at'],**value}
     return list(latest.values())
 
 
 def validate_saved(value):
-    if not isinstance(value,dict) or set(value)-{'view','date_basis'}!={'version','kind','start','end','scope','currency','rows','digest'} or value['version']!=1 or value['currency']!='EUR':raise ValueError('Rapport Amazon sauvegardé invalide.')
+    if not isinstance(value,dict) or set(value)-{'view','date_basis','contribution'}!={'version','kind','start','end','scope','currency','rows','digest'} or value['version']!=1 or value['currency']!='EUR':raise ValueError('Rapport Amazon sauvegardé invalide.')
+    if value.get('contribution','totals') not in {'totals','detail'}: raise ValueError('Usage sauvegardé invalide.')
     if 'date_basis' in value and (value['date_basis']!='confirmed_single_day' or value['start']!=value['end']): raise ValueError('Origine de date invalide.')
     if value.get('view','legacy') not in VIEWS: raise ValueError('Vue Amazon sauvegardée invalide.')
     if value['kind'] not in METRICS or not isinstance(value['rows'],list) or len(value['rows'])>10000:raise ValueError('Rapport Amazon sauvegardé invalide.')
     if date.fromisoformat(value['start'])>date.fromisoformat(value['end']) or not re.fullmatch(r'(all|[A-Za-z0-9_-]{1,100})',value['scope']):raise ValueError('Périmètre Amazon invalide.')
     for row in value['rows']:
-        if not isinstance(row,dict) or set(row)!=set(FIELDS):raise ValueError('Ligne Amazon invalide.')
+        if not isinstance(row,dict) or set(row) not in (set(FIELDS),set(FIELDS)-{'clicks'}):raise ValueError('Ligne Amazon invalide.')
         if not value['start']<=date.fromisoformat(row['date']).isoformat()<=value['end']:raise ValueError('Date Amazon invalide.')
         for key in FIELDS[1:6]:
             if not isinstance(row[key],str) or len(row[key])>500:raise ValueError('Texte Amazon invalide.')
         for key in FIELDS[6:]:
-            if row[key] is not None and (key not in METRICS[value['kind']] or type(row[key]) is not int or abs(row[key])>10**14):raise ValueError('Indicateur Amazon invalide.')
+            if row.get(key) is not None and (key not in METRICS[value['kind']] or type(row[key]) is not int or abs(row[key])>10**14):raise ValueError('Indicateur Amazon invalide.')
     original={k:v for k,v in value.items() if k!='digest'}
     if hashlib.sha256(json.dumps(original,sort_keys=True,ensure_ascii=False).encode()).hexdigest()!=value['digest']:raise ValueError('Empreinte Amazon invalide.')
 
@@ -153,13 +156,16 @@ def ingest(db,identity,data,observed):
     digest=hashlib.sha256(canonical.encode()).hexdigest()
     for previous in active_reports(db,identity):
         same=all(previous[k]==value[k] for k in ('kind','start','end','scope'))
-        if same and previous.get('view','legacy')!=value.get('view','legacy'):
-            raise ValueError('Une autre vue couvre déjà ces indicateurs et cette période. Ne cumulez pas Catégories, Produits liés, Tracking IDs et Tendances quotidiennes ; conservez la même vue de référence.')
-        if same and previous.get('digest')==digest:return {'ok':True,'duplicate':True,'rows':len(value['rows'])}
+        same_view=previous.get('view','legacy')==value.get('view','legacy')
+        same_usage=previous.get('contribution','totals')==value.get('contribution','totals')
+        if same and same_view and same_usage and previous.get('digest')==digest:return {'ok':True,'duplicate':True,'rows':len(value['rows'])}
         overlap=previous['start']<=value['end'] and value['start']<=previous['end']
         shared=previous['scope']==value['scope'] or 'all' in (previous['scope'],value['scope'])
-        if previous['kind']==value['kind'] and overlap and shared and not same:
-            raise ValueError('Périodes/Tracking IDs chevauchants : import refusé pour éviter un double comptage. Réimportez le même périmètre pour le corriger.')
+        financial=previous.get('contribution','totals')=='totals' and value.get('contribution','totals')=='totals'
+        common=set(METRICS[previous['kind']]) & set(METRICS[value['kind']])
+        if overlap and shared and common and (financial or (same_usage and same_view)):
+            if not (same and same_view and same_usage):
+                raise ValueError('Indicateurs et périodes chevauchants : utilisez une vue complémentaire pour éviter le double comptage. Une correction doit conserver la même vue et le même périmètre.')
     value['digest']=digest
     db.execute('INSERT INTO aff_snapshots(account_id,observed_at,summary,row_count,pages,source) VALUES(?,?,?,?,1,?)',
                (identity,observed,json.dumps({'amazon':value}),len(value['rows']),'amazon-csv'))
@@ -168,12 +174,25 @@ def ingest(db,identity,data,observed):
 
 
 def report(db,identity,start='',end=''):
-    reports=active_reports(db,identity);rows=[]
-    for report in reports:
-        rows.extend({**r,'kind':report['kind']} for r in report['rows'] if (not start or r['date']>=start) and (not end or r['date']<=end))
-    totals={key:(sum(r[key] for r in rows if r[key] is not None) if any(r[key] is not None for r in rows) else None) for key in FIELDS[6:]}
-    return {'totals':totals,'rows':rows,'reports':[{k:r[k] for k in ('id','kind','start','end','scope','observed_at')} for r in reports],
+    reports=active_reports(db,identity);rows=[];details=[];dated=[]
+    for source in reports:
+        selected=[{**r,'clicks':r.get('clicks'),'kind':source['kind'],'view':source.get('view','legacy')} for r in source['rows'] if (not start or r['date']>=start) and (not end or r['date']<=end)]
+        if source.get('contribution','totals')=='totals':
+            rows.extend(selected)
+            if not source.get('date_basis'):dated.extend(selected)
+        else:details.extend(selected)
+    def totals(items):
+        return {key:sum(r.get(key) or 0 for r in items) if any(r.get(key) is not None for r in items) else None for key in FIELDS[6:]}
+    daily=[{'date':day,**totals([r for r in dated if r['date']==day])} for day in sorted({r['date'] for r in dated})]
+    tracking_rows=[r for r in details if r['view']=='tracking_id']
+    if not tracking_rows:tracking_rows=[r for r in rows if r['view']=='tracking_id']
+    tracking=[{'tracking_id':tag,**totals([r for r in tracking_rows if r['tracking_id']==tag])} for tag in sorted({r['tracking_id'] for r in tracking_rows})]
+    return {'totals':totals(rows),'rows':rows,'daily':daily,'tracking':tracking,
+            'daily_limitation':'Seules les dates présentes dans les lignes des rapports de référence alimentent l’évolution. Les jours absents ne valent pas zéro. Les dates confirmées manuellement sont exclues.',
+            'tracking_limitation':'Vue Tracking IDs séparée, jamais ajoutée aux totaux. Sa couverture peut différer de celle du rapport de référence.',
+            'reports':[{**{k:r[k] for k in ('id','kind','start','end','scope','observed_at')},'view':r.get('view','legacy'),'contribution':r.get('contribution','totals')} for r in reports],
             'loss_tracking':False,'limitation':'Rapports agrégés ou limités dans le temps : aucune perte par transaction calculée.'}
+
 
 
 class NoRedirect(HTTPRedirectHandler):

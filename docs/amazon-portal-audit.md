@@ -64,3 +64,15 @@ Catégories et Produits liés contiennent Date au format MM-JJ-AAAA. Tracking ID
 Les valeurs manquantes « - » deviennent inconnues, jamais zéro. Les artefacts de représentation flottante de montants sont acceptés uniquement à moins de 0,00000001 centime d’un entier ; une vraie fraction de centime reste refusée. La colonne « revenus totaux » a été utilisée pour vérifier la normalisation des revenus affiliés, sans confusion avec le chiffre d’affaires des articles expédiés. Les quantités et valeurs de conversion ne démontrent pas un nombre de commandes distinctes.
 
 Validation : lecture ZIP et normalisation des trois fichiers réels réussies sans stockage financier ; quatre nouveaux tests synthétiques ciblés réussis. Les archives réelles restent hors du dépôt. Les clics ne sont pas encore intégrés au moteur statistique. Le rapport Tendances quotidiennes reste à recevoir, et aucun accès authentifié au portail n’a été testé.
+
+## Statistiques intégrées à partir des trois vues disponibles
+
+L’utilisateur a vérifié les sept types de rapports disponibles dans son interface France : Tendances quotidiennes n’y figure pas. Ce fichier n’est donc ni requis ni attendu pour poursuivre.
+
+Le type « Clics, articles et commissions » associe les colonnes des trois formats examinés : clics, articles commandés, articles expédiés et revenus totaux. Les chiffres de commandes distinctes ne sont pas déduits des articles. Un import peut alimenter les totaux (référence) ou être conservé comme vue complémentaire hors totaux. Une référence qui chevauche les mêmes indicateurs d’une autre référence est refusée, y compris entre les anciens types Commandes/Rémunérations et le nouveau type combiné. Réimport identique dédupliqué ; corrections d’une même vue, usage et période historisées.
+
+Pour les trois archives examinées : Catégories peut servir de référence, Produits liés de complément et Tracking IDs de complément de répartition. La répartition est présentée séparément avec sa couverture ; elle ne s’ajoute jamais aux totaux. Les champs Other ou vides ne sont pas assimilés à une plateforme de partage LinKs. Les compléments restent dans les sauvegardes, sans contribuer au cumul financier global.
+
+L’évolution quotidienne (tableau) s’appuie exclusivement sur les dates des lignes des rapports de référence. Les dates issues de la confirmation manuelle d’une journée, dont Tracking IDs, sont exclues de cette évolution. Les jours absents et indicateurs inconnus ne deviennent pas des zéros. Un seul jour disponible donne un seul point ; aucun historique n’est extrapolé.
+
+Validation ciblée : quatre tests supplémentaires (trois vues sans cumul, corrections et sauvegarde/restauration, chevauchements entre types, date absente et ancien format sans clics), traitement des trois archives réelles en SQLite en mémoire, et un parcours navigateur/API synthétique. Les chiffres des trois fichiers réels concordent sans triplement après leurs imports respectifs. Aucun fichier privé ni Tracking ID réel n’est ajouté à Git. Aucun accès automatisé Amazon ni déploiement n’est activé.
