@@ -129,7 +129,7 @@ export async function ensureAmazonSession(adapter,env=process.env){
   const saved=await loadAmazonSession();
   if(saved){
     let status;
-    try{status=await adapter.verify(saved)}catch{throw new Error('Vérification de la session Amazon interrompue.')}
+    try{status=await adapter.verify(saved)}catch(error){throw new Error('Vérification de la session Amazon interrompue.',{cause:error})}
     if(status==='authenticated'){
       // Persist cookies rotated by Amazon during session verification.
       try{const refreshed=await adapter.capture();await saveAmazonSession(refreshed);return refreshed}
@@ -143,7 +143,7 @@ export async function ensureAmazonSession(adapter,env=process.env){
   let result;
   try{result=await adapter.signIn({login:credentials.login,password:credentials.password,
     totp:()=>mfaSecret?amazonTotp(mfaSecret):null})}
-  catch{throw new Error('Connexion Amazon interrompue. Vérification manuelle requise.')}
+  catch(error){throw new Error('Connexion Amazon interrompue. Vérification manuelle requise.',{cause:error})}
   if(result?.status!=='authenticated')throw new Error('Connexion Amazon non confirmée. Vérification manuelle requise.');
   let state;
   try{state=await adapter.capture()}catch{throw new Error('Session Amazon non enregistrée. Vérification manuelle requise.')}
