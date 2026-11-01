@@ -170,6 +170,21 @@ def period(query):
     if start and end and start>end: raise ValueError('Période inversée.')
     return start,end
 
+def loss_day(value):
+    return datetime.fromisoformat(value.replace('Z','+00:00')).astimezone(ZoneInfo('Europe/Paris')).date().isoformat() if value else None
+
+
+def transaction_source(db):
+    # Derive the first disappearance from the existing immutable history: no migration
+    # or synthetic dates for old backups. One row per account/provider ID, even after
+    # repeated absences or reappearance. status and commission retain the last observation.
+    db.create_function('aff_loss_day', 1, loss_day)
+    return """(SELECT t.*, l.first_missing_at FROM aff_transactions t LEFT JOIN
+      (SELECT account_id,provider_id,MIN(observed_at) first_missing_at FROM aff_revisions
+       WHERE json_extract(after_json,'$.present')=0 GROUP BY account_id,provider_id) l
+      ON l.account_id=t.account_id AND l.provider_id=t.provider_id)"""
+
+
 def report(db, query):
     start,end = period(query); identity=query.get('account','')
     accounts=[dict(r) for r in db.execute('SELECT a.*,p.name partner,f.name platform,f.available FROM aff_accounts a JOIN aff_partners p ON p.id=a.partner_id JOIN aff_platforms f ON f.id=a.platform_id ORDER BY a.created_at,a.id')]
@@ -185,27 +200,34 @@ def report(db, query):
     if end: clause+=' AND substr(occurred_at,1,10)<=?'; args.append(end)
     aggregate=[dict(r) for r in db.execute('SELECT account_id,status,SUM(commission_cents) cents,COUNT(*) sales FROM aff_transactions WHERE '+clause+' GROUP BY account_id,status',args)]
     daily=[dict(r) for r in db.execute('SELECT substr(occurred_at,1,10) day,status,SUM(commission_cents) cents FROM aff_transactions WHERE '+clause+' GROUP BY day,status ORDER BY day',args)]
-    return {'accounts':accounts,'platforms':[dict(r) for r in db.execute('SELECT * FROM aff_platforms')],
+    loss_clause='present=0'; loss_args=[]
+    if identity: loss_clause+=' AND account_id=?'; loss_args.append(identity)
+    if start: loss_clause+=' AND aff_loss_day(first_missing_at)>=?'; loss_args.append(start)
+    if end: loss_clause+=' AND aff_loss_day(first_missing_at)<=?'; loss_args.append(end)
+    losses=[dict(r) for r in db.execute('SELECT account_id,COUNT(*) sales,SUM(commission_cents) cents FROM '+transaction_source(db)+' WHERE '+loss_clause+' GROUP BY account_id',loss_args)]
+    return {'losses':losses,'accounts':accounts,'platforms':[dict(r) for r in db.execute('SELECT * FROM aff_platforms')],
             'aggregate':aggregate,'daily':daily,'has_data':any(a['snapshot'] for a in selected),
             'coverage':{'ready':sum(bool(a['snapshot']) for a in selected),'total':len(selected)},'currency':'EUR'}
 
 def transactions(db, query):
     identity=query.get('account','domadoo'); account(db,identity)
     start,end=period(query); clause='account_id=?'; args=[identity]
-    if start: clause+=' AND substr(occurred_at,1,10)>=?'; args.append(start)
-    if end: clause+=' AND substr(occurred_at,1,10)<=?'; args.append(end)
+    source=transaction_source(db)
+    period_day="CASE WHEN present=0 THEN aff_loss_day(first_missing_at) ELSE substr(occurred_at,1,10) END"
+    if start: clause+=' AND '+period_day+'>=?'; args.append(start)
+    if end: clause+=' AND '+period_day+'<=?'; args.append(end)
     status=query.get('status','')
     if status:
-        if status not in {'approved','not_approved','missing'}: raise ValueError('Statut invalide.')
-        if status=='missing': clause+=' AND present=0'
+        if status not in {'approved','not_approved','missing','lost'}: raise ValueError('Statut invalide.')
+        if status in {'missing','lost'}: clause+=' AND present=0'
         else: clause+=' AND present=1 AND status=?'; args.append(status)
     search=query.get('search','').strip().removeprefix('#')
     if len(search)>80: raise ValueError('Recherche trop longue.')
     if search: clause+=" AND instr(provider_id,?)>0"; args.append(search)
     page=max(1,int(query.get('page','1'))); size=20
-    count=db.execute('SELECT COUNT(*) FROM aff_transactions WHERE '+clause,args).fetchone()[0]
+    count=db.execute('SELECT COUNT(*) FROM '+source+' WHERE '+clause,args).fetchone()[0]
     page=min(page,max(1,(count+size-1)//size))
-    items=[dict(r) for r in db.execute('SELECT * FROM aff_transactions WHERE '+clause+' ORDER BY occurred_at DESC,provider_id DESC LIMIT ? OFFSET ?',args+[size,(page-1)*size])]
+    items=[dict(r) for r in db.execute('SELECT * FROM '+source+' WHERE '+clause+' ORDER BY '+period_day+' DESC,occurred_at DESC,provider_id DESC LIMIT ? OFFSET ?',args+[size,(page-1)*size])]
     snapshot=db.execute('SELECT MAX(id) FROM aff_snapshots WHERE account_id=?',(identity,)).fetchone()[0]
     return {'items':items,'total':count,'page':page,'pages':max(1,(count+size-1)//size),'snapshot_id':snapshot}
 

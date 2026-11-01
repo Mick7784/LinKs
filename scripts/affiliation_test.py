@@ -54,6 +54,55 @@ class FinancialTests(unittest.TestCase):
         self.assertEqual(due,'2026-10-25T03:00:00Z')
         a.configure(self.db,{'enabled':True,'hour':4,'zone':'Europe/Paris'})
         self.assertEqual(a.account(self.db,'domadoo')['enabled'],1)
+    def test_immediate_losses_first_date_reappearance_and_backup(self):
+        original=observation(2)
+        original['transactions'][0]['commission_cents']=100
+        original['transactions'][1]['commission_cents']=200
+        empty=observation(0)
+        with patch.object(a,'stamp',return_value='2026-10-30T12:00:00Z'):
+            a.ingest(self.db,'domadoo',original)
+        # Invalid/incomplete observations and a failed run cannot create losses.
+        with self.assertRaises(ValueError):
+            a.ingest(self.db,'domadoo',{**empty,'complete':False})
+        self.db.execute("INSERT INTO aff_runs(account_id,started_at,status) VALUES('domadoo','2026-10-31','failed')")
+        self.assertEqual(a.report(self.db,{})['losses'],[])
+        with patch.object(a,'stamp',return_value='2026-10-31T23:30:00Z'):
+            a.ingest(self.db,'domadoo',empty)
+        # Both statuses disappear immediately. Paris date is November 1, not October 31.
+        query={'start':'2026-11-01','end':'2026-11-01'}
+        self.assertEqual(a.report(self.db,query)['losses'],[{'account_id':'domadoo','sales':2,'cents':300}])
+        self.assertEqual(a.report(self.db,{'end':'2026-10-31'})['losses'],[])
+        items=a.transactions(self.db,{**query,'status':'lost'})['items']
+        self.assertEqual(len(items),2)
+        self.assertEqual({r['status'] for r in items},{'approved','not_approved'})
+        self.assertEqual({r['first_missing_at'] for r in items},{'2026-10-31T23:30:00Z'})
+        with patch.object(a,'stamp',return_value='2026-11-02T12:00:00Z'):
+            a.ingest(self.db,'domadoo',empty)
+        self.assertEqual(a.report(self.db,query)['losses'][0]['sales'],2)
+        self.assertEqual(self.db.execute('SELECT COUNT(*) FROM aff_revisions').fetchone()[0],4)
+        returned=copy.deepcopy(original);returned['transactions']=returned['transactions'][:1]
+        returned['transactions'][0].update(status='not_approved',commission_cents=175)
+        with patch.object(a,'stamp',return_value='2026-11-03T12:00:00Z'):
+            a.ingest(self.db,'domadoo',returned)
+        self.assertEqual(a.report(self.db,query)['losses'][0]['cents'],200)
+        actual=a.transactions(self.db,{'status':'not_approved','search':'1'})['items'][0]
+        self.assertEqual((actual['present'],actual['commission_cents']),(1,175))
+        with patch.object(a,'stamp',return_value='2026-11-04T12:00:00Z'):
+            a.ingest(self.db,'domadoo',empty)
+        self.assertEqual(a.report(self.db,query)['losses'][0],{'account_id':'domadoo','sales':2,'cents':375})
+        self.assertEqual(a.report(self.db,{'start':'2026-11-04'})['losses'],[])
+        target=sqlite3.connect(':memory:');target.row_factory=sqlite3.Row;a.initialize(target)
+        try:
+            a.restore_backup(target,a.export_backup(self.db))
+            self.assertEqual(a.report(target,query)['losses'],a.report(self.db,query)['losses'])
+        finally:target.close()
+
+    def test_loss_ids_are_scoped_to_account(self):
+        other=a.add_account(self.db,{'partner':'Other','label':'Other','platform':'domadoo'})['id']
+        a.ingest(self.db,'domadoo',observation(1));a.ingest(self.db,other,observation(1))
+        a.ingest(self.db,'domadoo',observation(0))
+        self.assertEqual(a.report(self.db,{'account':other})['losses'],[])
+        self.assertEqual(a.report(self.db,{})['losses'],[{'account_id':'domadoo','sales':1,'cents':-123}])
     def test_no_voucher_secrets_in_snapshot(self):
         data=observation();data['vouchers'][0]['code']='SECRET'
         with self.assertRaises(ValueError):a.ingest(self.db,'domadoo',data)
