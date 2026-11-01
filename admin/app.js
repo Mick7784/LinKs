@@ -597,6 +597,8 @@ const iconPaths={
  visits:'<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>',
  click:'<path d="m5 3 14 9-6 1-3 6-5-16Zm8 11 4 6"/>',
  chart:'<path d="M4 3v17h17M8 16v-4m5 4V8m5 8V5"/>',
+ 'hand-coins':'<circle cx="16" cy="4" r="2"/><circle cx="20" cy="8" r="2"/><path d="m2 16 6 6m-5-5 5.6-5.4c.4-.4.9-.6 1.4-.6h3a2 2 0 0 1 0 4h-2m4 0 3.5-3a2 2 0 0 1 2.5 3l-4.2 3.8c-.7.8-1.7 1.2-2.8 1.2h-4l-2 1"/>',
+ 'file-pen-line':'<path d="M10 22H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8l6 6v2M14 2v6h6M8 12h5M8 16h2m2 1 7-7 3 3-7 7-4 1 1-4Zm5-5 3 3"/>',
  story:'<rect x="6" y="2" width="12" height="20" rx="3"/><path d="M10 18h4m-3-12 4 3-4 3V6Z"/>'
 };
 document.querySelectorAll("[data-icon]").forEach(node=>{node.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${iconPaths[node.dataset.icon]||""}</svg>`});
