@@ -6,7 +6,8 @@ import {join} from 'node:path';
 
 const directory=await mkdtemp(join(tmpdir(),'links-amazon-auth-'));
 process.env.AFFILIATION_DATA_DIR=directory;
-const {amazonCredentials,amazonTotp,loadAmazonSession,saveAmazonSession,ensureAmazonSession}=await import('./amazon-auth.mjs');
+const {amazonCredentials,amazonTotp,loadAmazonSession,saveAmazonSession,ensureAmazonSession,amazonMfaAction}=await import('./amazon-auth.mjs');
+const {createActions}=await import('./affiliation-worker.mjs');
 test.after(()=>rm(directory,{recursive:true,force:true}));
 const env={AMAZON_LOGIN:'test@example.invalid',AMAZON_PASSWORD:'synthetic-password',AMAZON_MFA_SECRET:'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ'};
 
@@ -49,4 +50,31 @@ test('encrypted Amazon session is separate and normal reconnect happens once',as
   adapter.verify=async()=> 'expired';
   adapter.signIn=async()=>{throw new Error('PRIVATE-SESSION '+env.AMAZON_PASSWORD)};
   await assert.rejects(ensureAmazonSession(adapter,env),error=>!error.message.includes(env.AMAZON_PASSWORD));
+});
+
+test('MFA seed is encrypted, never returned, confirmed locally, replaceable and removable',async()=>{
+  const secret='GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZA';
+  assert.equal(secret.length,52);
+  const first=await amazonMfaAction('preview',{secret},{});
+  assert.match(first.code,/^\d{6}$/);
+  assert.equal(JSON.stringify(first).includes(secret),false);
+  assert.equal((await readFile(join(directory,'amazon-mfa.pending-session'))).includes(Buffer.from(secret)),false);
+  assert.equal((await amazonMfaAction('status',{},{})).pending,true);
+  const routed=await createActions().action('amazon/mfa/code',{account:'a'.repeat(32)});
+  assert.match(routed.code,/^\d{6}$/);
+  assert.equal(JSON.stringify(routed).includes(secret),false);
+  await assert.rejects(amazonMfaAction('confirm',{},{}),/Confirmez/);
+  const confirmed=await amazonMfaAction('confirm',{confirmed:true},{});
+  assert.deepEqual(confirmed,{active:true,pending:false,environment:false});
+  assert.equal(JSON.stringify(confirmed).includes(secret),false);
+  assert.equal((await readFile(join(directory,'amazon-mfa.session'))).includes(Buffer.from(secret)),false);
+  assert.equal((await amazonMfaAction('status',{},{})).active,true);
+  const replacement='A'.repeat(52);
+  await amazonMfaAction('preview',{secret:replacement},{});
+  assert.equal((await amazonMfaAction('status',{},{})).active,true);
+  await amazonMfaAction('cancel',{},{});
+  assert.equal((await amazonMfaAction('status',{},{})).active,true);
+  await assert.rejects(amazonMfaAction('remove',{},env),/Retirez/);
+  await amazonMfaAction('remove',{},{});
+  assert.deepEqual(await amazonMfaAction('status',{},{}),{active:false,pending:false,environment:false});
 });

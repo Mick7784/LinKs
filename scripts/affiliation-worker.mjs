@@ -28,6 +28,7 @@ export async function loadSession(account,pending=false){
   return JSON.parse(Buffer.concat([decipher.update(data.subarray(28)),decipher.final()]).toString());
 }
 const forget=(account,pending=false)=>unlink(filename(account,pending)).catch(error=>{if(error.code!=='ENOENT')throw error});
+export const deleteSession=forget;
 // A controller owns one browser. The factory parameter lets offline regression
 // tests exercise the real lifecycle without an external account or endpoint.
 export function createActions(openBrowser=browserContext){
@@ -53,6 +54,14 @@ async function loginState(){
 async function action(name,data){
   if(!/^(domadoo|[a-f0-9]{32})$/.test(data.account||''))throw new PortalError('Compte invalide.');
   if(busy)throw new PortalError('Navigateur occupé par une synchronisation.');
+  if(name.startsWith('amazon/mfa/')){
+    const {amazonMfaAction}=await import('./amazon-auth.mjs');
+    try{return await amazonMfaAction(name.slice('amazon/mfa/'.length),data)}
+    catch(error){
+      const safe=/^(La clé MFA Amazon|AMAZON_MFA_SECRET doit|Aucune clé MFA|Confirmez d’abord|Retirez d’abord|Clé MFA chiffrée illisible|Action MFA Amazon inconnue)/.test(error.message);
+      throw new PortalError(safe?error.message:'Configuration MFA Amazon indisponible.','amazon_mfa');
+    }
+  }
   if(name==='collect'){
     if(login)throw new PortalError('Terminer ou fermer la connexion humaine avant de synchroniser.');
     busy=true;let runtime;

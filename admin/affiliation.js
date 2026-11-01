@@ -1,6 +1,6 @@
 "use strict";
 (()=>{
- const host=$('affiliation');let model=null,account='',tab='overview',page=1,search='',status='',timer=null,loginTimer=null,loginAccount='',renderVersion=0,initialRange=true;
+ const host=$('affiliation');let model=null,account='',tab='overview',page=1,search='',status='',timer=null,loginTimer=null,mfaTimer=null,loginAccount='',renderVersion=0,initialRange=true;
  // Editing the controls never changes the range used by requests.
  let selectedRange={period:'30',start:'',end:''},appliedRange=null;
  const euro=v=>v===null||v===undefined?'—':new Intl.NumberFormat('fr-FR',{style:'currency',currency:'EUR'}).format(v/100);
@@ -68,9 +68,10 @@
    if(current)host.querySelectorAll('[data-aff-fact]').forEach(node=>{const key=node.dataset.affFact,label=key==='next_due'&&!current.enabled?'Désactivé':at(current[key]);if(node.textContent!==label)node.textContent=label});
  }
  function render(){
+   clearInterval(mfaTimer);mfaTimer=null;
    renderVersion++;
    const current=selected(),label=current?current.partner:'Affiliation';
-   const tabs=[['overview','Vue d’ensemble'],...(current?[['sales',current.platform_id==='amazon'?'Rapports Amazon':'Ventes et commissions'],['payments','Paiements'],['settings',current.platform_id==='amazon'?'Import et accès API':'Connexion et synchronisation']]:[['partners','Mes partenaires']])];
+   const tabs=[['overview','Vue d’ensemble'],...(current?[['sales',current.platform_id==='amazon'?'Rapports Amazon':'Ventes et commissions'],['payments','Paiements'],...(current.platform_id==='amazon'?[['connection','Connexion']]:[]),['settings',current.platform_id==='amazon'?'Import et accès API':'Connexion et synchronisation']]:[['partners','Mes partenaires']])];
    if(!tabs.some(t=>t[0]===tab))tab='overview';
    host.innerHTML=`<div class="section-head"><div><p class="aff-eyebrow">ANALYSER · AFFILIATION</p><h1>${esc(label)} ${current?badge(current):''}</h1><p>${current?esc(current.label)+' · '+esc(current.platform):'Vos revenus et l’état de vos partenaires.'}</p></div><div class="aff-actions">${current?'<button data-aff="global">Tous les partenaires</button>':'<button data-aff="partners">Gérer les partenaires</button>'}${current?.platform_id==='amazon'?'<button class="primary" data-aff="amazon-import">Importer un rapport CSV</button>':`<button class="primary" data-aff="sync" ${current&&!current.available?'disabled':''}>${current?'Synchroniser':'Synchroniser les comptes connectés'}</button>`}</div></div>
     <nav class="aff-tabs" aria-label="Rubriques affiliation">${tabs.map(([id,title])=>`<button data-aff-tab="${id}" ${tab===id?'aria-current="page" class="active"':''}>${title}</button>`).join('')}</nav>
@@ -106,11 +107,59 @@
      $('aff-settings-form').onsubmit=async e=>{e.preventDefault();try{await request('settings',{id:account,enabled:$('aff-enabled').checked,hour:Number($('aff-hour').value),zone:$('aff-zone').value});say('Synchronisation enregistrée.');await load()}catch(error){say(error.message,true)}};loadRuns();
    }
  }
+ function setupAmazonMfa(id){
+   const version=renderVersion,form=$('aff-mfa-form'),state=$('aff-mfa-state'),box=$('aff-mfa-code-box'),manage=$('aff-mfa-manage');
+   const live=()=>version===renderVersion&&account===id&&tab==='connection'&&state.isConnected;
+   const call=(action,data={})=>request('amazon/mfa/'+action,{account:id,...data});
+   let expires=0,refreshing=false;
+   const setCode=result=>{
+     if(!live())return;
+     $('aff-mfa-code').textContent=result.code;
+     expires=Date.now()+result.remainingMs;
+     box.hidden=false;form.hidden=true;manage.hidden=true;
+     clearInterval(mfaTimer);
+     mfaTimer=setInterval(async()=>{
+       if(!live()){clearInterval(mfaTimer);return}
+       const left=Math.max(0,Math.ceil((expires-Date.now())/1000));
+       $('aff-mfa-countdown').textContent='Nouveau code dans '+left+' s';
+       if(left===0&&!refreshing){
+         refreshing=true;
+         try{setCode(await call('code'))}catch(error){if(live()){box.hidden=true;state.textContent=error.message}}
+         finally{refreshing=false}
+       }
+     },250);
+   };
+   const loadState=async()=>{
+     const result=await call('status');if(!live())return;
+     if(result.pending){state.textContent='Clé en attente de validation sur Amazon.';setCode(await call('code'));return}
+     state.textContent=result.active?(result.environment?'Clé MFA configurée sur le serveur. Retirez AMAZON_MFA_SECRET du serveur pour la supprimer ici.':'Clé MFA activée et conservée chiffrée sur le serveur.'):'Aucune clé MFA enregistrée.';
+     box.hidden=true;form.hidden=result.active;manage.hidden=!result.active;
+     $('aff-mfa-remove').hidden=result.environment;
+   };
+   form.onsubmit=async event=>{
+     event.preventDefault();const input=$('aff-mfa-secret'),secret=input.value;input.value='';
+     const button=form.querySelector('button');button.disabled=true;
+     try{setCode(await call('preview',{secret}));if(live())state.textContent='Saisissez ce code sur Amazon, puis confirmez ici.'}
+     catch(error){if(live())state.textContent=error.message}
+     finally{button.disabled=false}
+   };
+   $('aff-mfa-copy').onclick=async()=>{try{await navigator.clipboard.writeText($('aff-mfa-code').textContent);say('Code copié.')}catch{say('Copie impossible ; saisissez le code affiché.',true)}};
+   $('aff-mfa-confirm-check').onchange=event=>{$('aff-mfa-confirm').disabled=!event.target.checked};
+   $('aff-mfa-confirm').onclick=async()=>{try{await call('confirm',{confirmed:true});if(live()){clearInterval(mfaTimer);$('aff-mfa-code').textContent='';await loadState();say('Activation MFA confirmée dans LinKs.')}}catch(error){if(live())state.textContent=error.message}};
+   $('aff-mfa-cancel').onclick=async()=>{try{await call('cancel');if(live()){clearInterval(mfaTimer);$('aff-mfa-code').textContent='';await loadState()}}catch(error){if(live())state.textContent=error.message}};
+   $('aff-mfa-replace').onclick=()=>{form.hidden=false;manage.hidden=true;state.textContent='La clé actuelle reste active jusqu’à la confirmation de sa remplaçante.'};
+   $('aff-mfa-remove').onclick=async()=>{if(!confirm('Supprimer la clé MFA enregistrée dans LinKs ?'))return;try{await call('remove');if(live()){clearInterval(mfaTimer);$('aff-mfa-code').textContent='';await loadState();say('Clé MFA supprimée de LinKs.')}}catch(error){if(live())state.textContent=error.message}};
+   loadState().catch(error=>{if(live())state.textContent=error.message});
+ }
  function renderAmazon(current){
    const data=(model.amazon||[]).find(r=>r.account_id===current.id),totals=data?.totals||{},content=$('aff-content');
    const labels={orders:'Commandes distinctes',ordered_items:'Articles commandés',shipped_items:'Articles expédiés',commission_cents:'Commissions déclarées',payment_cents:'Paiements déclarés'};
    const kinds={orders:'Commandes',earnings:'Rémunérations',payments:'Paiements'};
    content.innerHTML=`<p class="aff-alert">${esc(data?.limitation||'Aucune perte par transaction calculée.')} Les Tracking IDs Amazon sont conservés séparément des sources de partage LinKs. Un montant absent reste inconnu.</p>`;
+   if(tab==='connection'){
+     content.innerHTML+='<section class="panel aff-mfa"><h2>Connexion Amazon Partenaires</h2><p>Configurez AMAZON_LOGIN et AMAZON_PASSWORD sur le serveur. Pour activer la double vérification, saisissez ici la clé TOTP de 52 caractères fournie par Amazon. Saisissez le code affiché sur le site Amazon, puis confirmez ici que l’activation est terminée.</p><p class="field-help">LinKs ne valide pas la clé auprès d’Amazon. La récupération automatique des rapports du portail reste désactivée tant que son accès autorisé n’est pas établi.</p><p id="aff-mfa-state" role="status">Chargement de la configuration MFA…</p><form id="aff-mfa-form" hidden><label>Clé secrète TOTP Amazon<input id="aff-mfa-secret" type="password" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="80" required placeholder="52 caractères Base32"></label><button class="primary">Afficher le code</button></form><div id="aff-mfa-code-box" hidden><p>Code à saisir chez Amazon :</p><div class="aff-mfa-code-row"><strong id="aff-mfa-code" aria-live="polite"></strong><button id="aff-mfa-copy" type="button">Copier</button></div><p id="aff-mfa-countdown" role="status"></p><label class="aff-checkbox"><input id="aff-mfa-confirm-check" type="checkbox">J’ai activé cette clé sur le site Amazon</label><div class="aff-actions"><button id="aff-mfa-confirm" class="primary" disabled>Confirmer l’activation</button><button id="aff-mfa-cancel">Annuler cette clé</button></div></div><div id="aff-mfa-manage" class="aff-actions" hidden><button id="aff-mfa-replace">Remplacer la clé</button><button id="aff-mfa-remove">Supprimer la clé</button></div></section>';
+     setupAmazonMfa(current.id);return;
+   }
    if(tab==='settings'){
      content.innerHTML+='<section class="panel"><h2>Amazon Partenaires France</h2><p>Importez un CSV UTF-8 exporté du portail Partenaires. Vérifiez les colonnes, la période et les Tracking IDs avant validation. Les réimports du même périmètre sont historisés ; les chevauchements sont refusés.</p><button data-aff="amazon-import">Importer un rapport CSV</button><h3>Creators API</h3><p>Les identifiants sont configurés exclusivement côté serveur. Ce diagnostic vérifie les rapports réellement accessibles ; il ne garantit pas l’accès aux commissions France. La collecte automatique reste désactivée tant que le format et la couverture de votre compte ne sont pas validés.</p><button id="aff-amazon-probe">Vérifier les rapports disponibles</button><div id="aff-amazon-files" role="status"></div></section>';
      const id=current.id;
