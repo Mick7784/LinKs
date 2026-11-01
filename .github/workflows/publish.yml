@@ -58,6 +58,7 @@ jobs:
           python3 scripts/description_analysis_test.py
           python3 scripts/description_search_test.py
           python3 scripts/description_workflow_test.py
+          node --test scripts/uuid.test.cjs scripts/description-editor-loading.test.cjs
           node --test scripts/description-sections.test.cjs
           node --test scripts/description-analysis.test.cjs
           node --test scripts/description-search.test.cjs

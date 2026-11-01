@@ -21,7 +21,7 @@ window.LinksDescriptions=(()=>{
   input.value=object[key]||'';input.addEventListener('change',()=>{object[key]=input.value;changed();onChange?.()});return wrap;
  }
  function check(label,object,key){const wrap=node('label',undefined,'description-check'),input=node('input');input.type='checkbox';input.checked=object[key];input.addEventListener('change',()=>{object[key]=input.checked;changed()});wrap.append(input,node('span',label));return wrap}
- function freshSection(merchant=false){return {id:crypto.randomUUID(),name:merchant?'Nouvelle boutique':'Nouvelle section',heading:'',text:'',after_text:'',hide_if_empty:merchant,links:[],...(merchant?{partner_id:''}:{mode:'manual',merchants:[]})}}
+ function freshSection(merchant=false){return {id:window.LinksUUID(),name:merchant?'Nouvelle boutique':'Nouvelle section',heading:'',text:'',after_text:'',hide_if_empty:merchant,links:[],...(merchant?{partner_id:''}:{mode:'manual',merchants:[]})}}
  function move(items,index,destination){if(busy||destination<0||destination>=items.length||index===destination)return;const item=items.splice(index,1)[0];items.splice(destination,0,item);changed();render();root.querySelector(`[data-section-id="${CSS.escape(item.id)}"] > summary button`)?.focus()}
  function sorting(container,items,index,label){
   const actions=node('div',undefined,'description-order'),grip=button('⠿',()=>{});grip.title='Glisser pour déplacer, ou utiliser les flèches';grip.setAttribute('aria-label','Déplacer '+label);grip.style.touchAction='none';
@@ -49,7 +49,7 @@ window.LinksDescriptions=(()=>{
    if(binding.reference_url)row.append(node('p','Référence fournie : '+binding.reference_url,'description-reference'));
    row.append(button('Retirer cette association',()=>{owner.links.splice(index,1);changed();render()}));box.append(row);
   });
-  box.append(button('Ajouter un lien permanent',()=>{owner.links.push({id:crypto.randomUUID(),label:'',reference_url:'',link_id:'',source_id:''});changed();render()}));return box;
+  box.append(button('Ajouter un lien permanent',()=>{owner.links.push({id:window.LinksUUID(),label:'',reference_url:'',link_id:'',source_id:''});changed();render()}));return box;
  }
  function sectionEditor(item,items,index,merchant=false){
   const details=node('details',undefined,merchant?'description-merchant':'description-section');details.open=openItems.has(item.id);details.dataset.sectionId=item.id;

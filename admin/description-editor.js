@@ -13,7 +13,7 @@ window.LinksDescriptionEditor=(()=>{'use strict';
  }
  class Editor{
   constructor(document,instance){
-   this.doc=clone(document);this.instance=instance;this.writer=crypto.randomUUID();this.generation=0;this.ack=0;this.pending=null;this.pendingGeneration=0;this.saving=false;this.blocked=false;this.history=[];this.future=[];this.selection={start:0,end:0};this.recoveryOrigin=null;this.mode='analysis';this.ratio=65;this.message='Enregistré';this.warning='';this.composing=false;
+   this.doc=clone(document);this.instance=instance;this.writer=window.LinksUUID();this.generation=0;this.ack=0;this.pending=null;this.pendingGeneration=0;this.saving=false;this.blocked=false;this.history=[];this.future=[];this.selection={start:0,end:0};this.recoveryOrigin=null;this.mode='analysis';this.ratio=65;this.message='Enregistré';this.warning='';this.composing=false;
    this.analysis=new window.LinksDescriptionAnalysis.Panel(this,request);
    this.workflow=new window.LinksDescriptionWorkflow.Controller(this,request);
   }
@@ -52,7 +52,7 @@ window.LinksDescriptionEditor=(()=>{'use strict';
   async save(){
    clearTimeout(this.timer);if(this.saving||this.blocked||this.copyPending||this.composing||!this.dirty())return;
    if(!navigator.onLine){this.message='Hors ligne — copie locale conservée';this.persist();this.paint();return}
-   if(!this.pending){this.pending={...fields(this.doc),expected_revision:this.doc.revision,mutation_id:crypto.randomUUID()};this.pendingGeneration=this.generation}
+   if(!this.pending){this.pending={...fields(this.doc),expected_revision:this.doc.revision,mutation_id:window.LinksUUID()};this.pendingGeneration=this.generation}
    const operation=clone(this.pending),generation=this.pendingGeneration;this.saving=true;this.persist();this.paint();
    const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),15000);
    try{
@@ -72,12 +72,12 @@ window.LinksDescriptionEditor=(()=>{'use strict';
    if(this.saving)return;
    if(!confirm('Enregistrer votre texte dans un nouveau brouillon, en conservant la version serveur actuelle ?'))return;
    const oldKey=this.key(),oldId=this.doc.id;
-   if(!this.copyPending)this.copyPending={operation:{...fields(this.doc),title:S.slice(this.doc.title,0,140)+' — copie',expected_revision:this.doc.revision,mutation_id:crypto.randomUUID()},generation:this.generation,title:this.doc.title};
+   if(!this.copyPending)this.copyPending={operation:{...fields(this.doc),title:S.slice(this.doc.title,0,140)+' — copie',expected_revision:this.doc.revision,mutation_id:window.LinksUUID()},generation:this.generation,title:this.doc.title};
    const {operation,generation,title}=this.copyPending;
    this.saving=true;this.persist();this.paint();const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),15000);
    try{
     const saved=await request('drafts/'+oldId+'/fork',operation,controller.signal);states.delete(oldId);this.doc.id=saved.id;this.doc.revision=saved.revision;this.doc.updated_at=saved.updated_at;if(this.doc.title===title)this.doc.title=saved.title;this.doc.last_mutation=saved.last_mutation;states.set(saved.id,this);
-    this.ack=generation;this.pending=null;this.copyPending=null;this.blocked=false;this.message='Copie enregistrée';this.writer=crypto.randomUUID();
+    this.ack=generation;this.pending=null;this.copyPending=null;this.blocked=false;this.message='Copie enregistrée';this.writer=window.LinksUUID();
     try{localStorage.removeItem(oldKey)}catch{}this.forgetRecovery();
     this.onFork?.(saved.id);if(this.title?.isConnected)this.title.value=this.doc.title;
     if(this.dirty()){this.persist();this.timer=setTimeout(()=>this.save(),0)}
@@ -87,7 +87,7 @@ window.LinksDescriptionEditor=(()=>{'use strict';
   async reload(){
    if(!confirm('Ouvrir la version serveur ? Votre saisie non enregistrée restera disponible dans les récupérations locales.'))return;
    if(this.saving)return;clearTimeout(this.timer);this.persist();const generation=this.generation;this.saving=true;this.paint();
-   try{const response=await request('drafts/'+this.doc.id);if(this.generation!==generation){this.message='Votre saisie a changé pendant le chargement ; elle est conservée';return}this.doc=response.document;this.writer=crypto.randomUUID();this.generation=0;this.ack=0;this.pending=null;this.copyPending=null;this.blocked=false;this.history=[];this.future=[];this.recoveryOrigin=null;this.selection={start:0,end:0};this.message='Version serveur chargée';this.mount(this.host,this.onFork)}catch(error){this.message=error.message}finally{this.saving=false;this.paint();if(this.dirty()&&!this.blocked)this.timer=setTimeout(()=>this.save(),700)}
+   try{const response=await request('drafts/'+this.doc.id);if(this.generation!==generation){this.message='Votre saisie a changé pendant le chargement ; elle est conservée';return}this.doc=response.document;this.writer=window.LinksUUID();this.generation=0;this.ack=0;this.pending=null;this.copyPending=null;this.blocked=false;this.history=[];this.future=[];this.recoveryOrigin=null;this.selection={start:0,end:0};this.message='Version serveur chargée';this.mount(this.host,this.onFork)}catch(error){this.message=error.message}finally{this.saving=false;this.paint();if(this.dirty()&&!this.blocked)this.timer=setTimeout(()=>this.save(),700)}
   }
   recover(key,value){
    if(this.saving)return;
@@ -95,7 +95,7 @@ window.LinksDescriptionEditor=(()=>{'use strict';
    const expectedIds=this.doc.template_snapshot.sections.map(s=>s.id).sort().join('|');
    if(typeof value.fields.title!=='string'||value.fields.sections.map(s=>s.id).sort().join('|')!==expectedIds){this.message='Cette récupération est incompatible ; son texte reste consultable.';this.paint();return}
    // Keep the current unsaved copy as a separate recovery before switching.
-   if(this.dirty()){this.persist();this.writer=crypto.randomUUID()}
+   if(this.dirty()){this.persist();this.writer=window.LinksUUID()}
    this.remember();Object.assign(this.doc,clone(value.fields));this.selection=value.selection||{start:0,end:0};this.recoveryOrigin=key;this.recoveryValue=JSON.stringify(value);
    const acknowledged=value.pending?.mutation_id===this.doc.last_mutation?.id;
    this.blocked=value.baseRevision!==this.doc.revision&&!acknowledged;
@@ -176,8 +176,26 @@ window.LinksDescriptionEditor=(()=>{'use strict';
   }
  }
  async function mount(host,id,onFork){
-  host.textContent='Chargement du brouillon…';const token=crypto.randomUUID();host.dataset.editorRequest=token;
-  try{let state=states.get(id);if(!state){const response=await request('drafts/'+id);state=states.get(id)||new Editor(response.document,response.instance_id);states.set(id,state)}if(host.isConnected&&host.dataset.editorRequest===token)state.mount(host,onFork)}catch(error){if(host.isConnected&&host.dataset.editorRequest===token)host.replaceChildren(node('p',error.message),action('Réessayer',()=>mount(host,id,onFork)))}
+  // Request ownership needs identity only, not a persistent UUID or Web Crypto.
+  const token={};host.editorRequest=token;host.editorOwner=null;let timeout;
+  const current=()=>host.isConnected&&host.editorRequest===token;
+  try{
+   host.textContent='Chargement du brouillon…';let state=states.get(id);
+   if(!state){
+    const controller=new AbortController();
+    const deadline=new Promise((resolve,reject)=>{timeout=setTimeout(()=>{reject(new Error('Le serveur ne répond pas. Réessayez dans quelques instants.'));controller.abort()},15000)});
+    const response=await Promise.race([request('drafts/'+id,undefined,controller.signal),deadline]);
+    if(!current())return;
+    state=states.get(id)||new Editor(response.document,response.instance_id);states.set(id,state);
+   }
+   if(current())state.mount(host,onFork);
+  }catch(error){
+   if(current()){
+    host.editorOwner=null;
+    const message=node('p','Impossible de charger le brouillon. '+(error?.message||'Une erreur inattendue est survenue.'));
+    message.setAttribute('role','alert');host.replaceChildren(message,action('Réessayer',()=>mount(host,id,onFork)));
+   }
+  }finally{clearTimeout(timeout)}
  }
  window.addEventListener('beforeunload',event=>{let pending=false;for(const state of states.values()){state.persist();if(state.dirty()||state.saving)pending=true}if(pending){event.preventDefault();event.returnValue=''}});
  window.addEventListener('pagehide',()=>{for(const state of states.values())state.persist()});

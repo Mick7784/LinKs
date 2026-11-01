@@ -29,6 +29,8 @@ s.serve_forever()`],{cwd:__dirname,env:{...process.env,PYTHONIOENCODING:'utf-8',
   const original=await create('Rédaction principale'),second=await create('Autre brouillon');
   browser=await chromium.launch({headless:true,...(process.env.CHROMIUM_PATH?{executablePath:process.env.CHROMIUM_PATH}:{})});
   const context=await browser.newContext({viewport:{width:1920,height:1080},reducedMotion:'reduce'}),page=await context.newPage(),errors=[],external=[];
+  // Exercise the HTTP/older-browser UUID fallback throughout persistence and recovery.
+  await context.addInitScript(()=>Object.defineProperty(crypto,'randomUUID',{value:undefined,configurable:true}));
   await context.route('**/*',route=>{if(!route.request().url().startsWith(origin)){external.push(route.request().url());return route.abort()}return route.continue()});
   context.on('page',p=>p.on('pageerror',e=>errors.push(e.message)));page.on('pageerror',e=>errors.push(e.message));
   async function open(p,title){await p.goto(origin);await p.locator('[data-tab=descriptions]').click();await p.locator('#descriptions').getByRole('button',{name:'Descriptions',exact:true}).click();await p.locator('.description-draft-list article').filter({has:p.getByText(title,{exact:true})}).getByRole('button',{name:'Ouvrir',exact:true}).click();await p.getByLabel('Texte de la description',{exact:true}).waitFor()}
