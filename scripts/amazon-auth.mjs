@@ -1,6 +1,6 @@
 // Server-only preparation for an Amazon Associates portal adapter. No portal
 // navigation is enabled until the access method and permission are verified.
-import {createHmac} from 'node:crypto';
+import {createHmac,randomUUID} from 'node:crypto';
 import {loadSession,saveSession,deleteSession} from './affiliation-worker.mjs';
 
 const SESSION_ACCOUNT='amazon-portal';
@@ -67,29 +67,48 @@ function mfaCode(secret){
 }
 
 // Responses contain state and short-lived OTP only, never the TOTP seed.
-export async function amazonMfaAction(action,data={},env=process.env){
-  if(action==='status')return {active:Boolean(await activeMfaSecret()||env.AMAZON_MFA_SECRET),pending:Boolean(await mfaRecord(true)),environment:Boolean(env.AMAZON_MFA_SECRET)};
+let mfaQueue=Promise.resolve();
+export function amazonMfaAction(action,data={},env=process.env){
+  const operation=mfaQueue.then(()=>mfaAction(action,data,env));
+  mfaQueue=operation.catch(()=>{});
+  return operation;
+}
+async function sourceState(env){
+  const stored=await activeMfaSecret(),external=env.AMAZON_MFA_SECRET?.replace(/[\s-]/g,'').toUpperCase()||null;
+  const conflict=Boolean(stored&&external&&stored!==external);
+  return {stored,external,conflict};
+}
+async function mfaAction(action,data,env){
+  const {stored,external,conflict}=await sourceState(env);
+  if(action==='status')return {active:!conflict&&Boolean(stored||external),pending:Boolean(await mfaRecord(true)),environment:Boolean(external),conflict,source:conflict?'conflict':external?'environment':stored?'links':'none'};
+  if(external)throw new Error('Retirez d’abord AMAZON_MFA_SECRET pour gérer la clé dans LinKs.');
   if(action==='preview'){
     const secret=typeof data.secret==='string'?data.secret.replace(/[\s-]/g,'').toUpperCase():'';
     if(secret.length!==52)throw new Error('La clé MFA Amazon doit contenir exactement 52 caractères Base32.');
     decodeBase32(secret);
-    await saveSession(MFA_ACCOUNT,{secret},true);
-    return {pending:true,...mfaCode(secret)};
+    const version=randomUUID();
+    await saveSession(MFA_ACCOUNT,{secret,version},true);
+    return {pending:true,version,...mfaCode(secret)};
   }
   if(action==='code'){
     const record=await mfaRecord(true);
     if(!record?.secret)throw new Error('Aucune clé MFA en attente de confirmation.');
-    return {pending:true,...mfaCode(record.secret)};
+    if(!record.version){record.version=randomUUID();await saveSession(MFA_ACCOUNT,record,true)}
+    if(data.version&&data.version!==record.version)throw new Error('La clé en attente a changé dans un autre onglet. Rechargez la configuration.');
+    return {pending:true,version:record.version,...mfaCode(record.secret)};
   }
   if(action==='confirm'){
     if(data.confirmed!==true)throw new Error('Confirmez d’abord l’activation sur le site Amazon.');
     const record=await mfaRecord(true);
     if(!record?.secret)throw new Error('Aucune clé MFA en attente de confirmation.');
+    if(!data.version||data.version!==record.version)throw new Error('La clé en attente a changé dans un autre onglet. Rechargez la configuration.');
     await saveSession(MFA_ACCOUNT,record);
     await deleteSession(MFA_ACCOUNT,true);
     return {active:true,pending:false,environment:Boolean(env.AMAZON_MFA_SECRET)};
   }
   if(action==='cancel'){
+    const pending=await mfaRecord(true);
+    if(!data.version||data.version!==pending?.version)throw new Error('La clé en attente a changé dans un autre onglet. Rechargez la configuration.');
     await deleteSession(MFA_ACCOUNT,true);
     return {pending:false,active:Boolean(await activeMfaSecret()||env.AMAZON_MFA_SECRET),environment:Boolean(env.AMAZON_MFA_SECRET)};
   }
@@ -106,6 +125,8 @@ export async function amazonMfaAction(action,data={},env=process.env){
 // an additional security check. One normal sign-in attempt is allowed; neither
 // a rejected login nor an extra check is retried or bypassed.
 export async function ensureAmazonSession(adapter,env=process.env){
+  const source=await sourceState(env);
+  if(source.conflict)throw new Error('Conflit MFA : les clés environnement et LinKs diffèrent. Retirez AMAZON_MFA_SECRET pour utiliser LinKs.');
   const saved=await loadAmazonSession();
   if(saved){
     let status;
@@ -115,7 +136,7 @@ export async function ensureAmazonSession(adapter,env=process.env){
   }
   const credentials=amazonCredentials(env);
   if(!credentials)throw new Error('Connexion Amazon requise. Identifiants serveur absents.');
-  const mfaSecret=await activeMfaSecret()||credentials.mfaSecret;
+  const mfaSecret=source.external||source.stored;
   let result;
   try{result=await adapter.signIn({login:credentials.login,password:credentials.password,
     totp:()=>mfaSecret?amazonTotp(mfaSecret):null})}

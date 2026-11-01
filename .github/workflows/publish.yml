@@ -66,6 +66,8 @@ jobs:
           python3 scripts/storage_test.py
           python3 scripts/images_test.py
           python3 scripts/analytics_test.py
+          node --test scripts/amazon-auth.test.mjs
+          NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/amazon-mfa-browser-test.mjs
           python3 scripts/affiliation_test.py
           npm ci --ignore-scripts
           node node_modules/playwright-core/cli.js install --with-deps firefox

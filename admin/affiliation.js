@@ -111,9 +111,11 @@
    const version=renderVersion,form=$('aff-mfa-form'),state=$('aff-mfa-state'),box=$('aff-mfa-code-box'),manage=$('aff-mfa-manage');
    const live=()=>version===renderVersion&&account===id&&tab==='connection'&&state.isConnected;
    const call=(action,data={})=>request('amazon/mfa/'+action,{account:id,...data});
-   let expires=0,refreshing=false;
+   let expires=0,refreshing=false,pendingVersion=null;
    const setCode=result=>{
      if(!live())return;
+     if(pendingVersion!==result.version){$('aff-mfa-confirm-check').checked=false;$('aff-mfa-confirm').disabled=true}
+     pendingVersion=result.version;
      $('aff-mfa-code').textContent=result.code;
      expires=Date.now()+result.remainingMs;
      box.hidden=false;form.hidden=true;manage.hidden=true;
@@ -124,13 +126,14 @@
        $('aff-mfa-countdown').textContent='Nouveau code dans '+left+' s';
        if(left===0&&!refreshing){
          refreshing=true;
-         try{setCode(await call('code'))}catch(error){if(live()){box.hidden=true;state.textContent=error.message}}
+         try{setCode(await call('code',{version:pendingVersion}))}catch(error){if(live()){box.hidden=true;state.textContent=error.message}}
          finally{refreshing=false}
        }
      },250);
    };
    const loadState=async()=>{
      const result=await call('status');if(!live())return;
+     if(result.environment){box.hidden=true;form.hidden=true;manage.hidden=true;state.textContent=result.conflict?'Conflit MFA : les clés environnement et LinKs diffèrent. Utilisation bloquée. Retirez AMAZON_MFA_SECRET du serveur pour utiliser la clé LinKs.':'MFA géré par AMAZON_MFA_SECRET dans l’environnement. Retirez cette variable pour gérer le MFA dans LinKs.';return}
      if(result.pending){state.textContent='Clé en attente de validation sur Amazon.';setCode(await call('code'));return}
      state.textContent=result.active?(result.environment?'Clé MFA configurée sur le serveur. Retirez AMAZON_MFA_SECRET du serveur pour la supprimer ici.':'Clé MFA activée et conservée chiffrée sur le serveur.'):'Aucune clé MFA enregistrée.';
      box.hidden=true;form.hidden=result.active;manage.hidden=!result.active;
@@ -145,8 +148,8 @@
    };
    $('aff-mfa-copy').onclick=async()=>{try{await navigator.clipboard.writeText($('aff-mfa-code').textContent);say('Code copié.')}catch{say('Copie impossible ; saisissez le code affiché.',true)}};
    $('aff-mfa-confirm-check').onchange=event=>{$('aff-mfa-confirm').disabled=!event.target.checked};
-   $('aff-mfa-confirm').onclick=async()=>{try{await call('confirm',{confirmed:true});if(live()){clearInterval(mfaTimer);$('aff-mfa-code').textContent='';await loadState();say('Activation MFA confirmée dans LinKs.')}}catch(error){if(live())state.textContent=error.message}};
-   $('aff-mfa-cancel').onclick=async()=>{try{await call('cancel');if(live()){clearInterval(mfaTimer);$('aff-mfa-code').textContent='';await loadState()}}catch(error){if(live())state.textContent=error.message}};
+   $('aff-mfa-confirm').onclick=async()=>{try{await call('confirm',{confirmed:true,version:pendingVersion});if(live()){clearInterval(mfaTimer);$('aff-mfa-code').textContent='';await loadState();say('Activation MFA confirmée dans LinKs.')}}catch(error){if(live())state.textContent=error.message}};
+   $('aff-mfa-cancel').onclick=async()=>{try{await call('cancel',{version:pendingVersion});if(live()){clearInterval(mfaTimer);$('aff-mfa-code').textContent='';await loadState()}}catch(error){if(live())state.textContent=error.message}};
    $('aff-mfa-replace').onclick=()=>{form.hidden=false;manage.hidden=true;state.textContent='La clé actuelle reste active jusqu’à la confirmation de sa remplaçante.'};
    $('aff-mfa-remove').onclick=async()=>{if(!confirm('Supprimer la clé MFA enregistrée dans LinKs ?'))return;try{await call('remove');if(live()){clearInterval(mfaTimer);$('aff-mfa-code').textContent='';await loadState();say('Clé MFA supprimée de LinKs.')}}catch(error){if(live())state.textContent=error.message}};
    loadState().catch(error=>{if(live())state.textContent=error.message});

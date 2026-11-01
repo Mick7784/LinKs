@@ -58,7 +58,7 @@ async function action(name,data){
     const {amazonMfaAction}=await import('./amazon-auth.mjs');
     try{return await amazonMfaAction(name.slice('amazon/mfa/'.length),data)}
     catch(error){
-      const safe=/^(La clé MFA Amazon|AMAZON_MFA_SECRET doit|Aucune clé MFA|Confirmez d’abord|Retirez d’abord|Clé MFA chiffrée illisible|Action MFA Amazon inconnue)/.test(error.message);
+      const safe=/^(La clé en attente|La clé MFA Amazon|AMAZON_MFA_SECRET doit|Aucune clé MFA|Confirmez d’abord|Retirez d’abord|Clé MFA chiffrée illisible|Action MFA Amazon inconnue)/.test(error.message);
       throw new PortalError(safe?error.message:'Configuration MFA Amazon indisponible.','amazon_mfa');
     }
   }

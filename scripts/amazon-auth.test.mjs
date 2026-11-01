@@ -64,17 +64,33 @@ test('MFA seed is encrypted, never returned, confirmed locally, replaceable and 
   assert.match(routed.code,/^\d{6}$/);
   assert.equal(JSON.stringify(routed).includes(secret),false);
   await assert.rejects(amazonMfaAction('confirm',{},{}),/Confirmez/);
-  const confirmed=await amazonMfaAction('confirm',{confirmed:true},{});
+  const confirmed=await amazonMfaAction('confirm',{confirmed:true,version:first.version},{});
   assert.deepEqual(confirmed,{active:true,pending:false,environment:false});
   assert.equal(JSON.stringify(confirmed).includes(secret),false);
   assert.equal((await readFile(join(directory,'amazon-mfa.session'))).includes(Buffer.from(secret)),false);
   assert.equal((await amazonMfaAction('status',{},{})).active,true);
   const replacement='A'.repeat(52);
-  await amazonMfaAction('preview',{secret:replacement},{});
+  const next=await amazonMfaAction('preview',{secret:replacement},{});
   assert.equal((await amazonMfaAction('status',{},{})).active,true);
-  await amazonMfaAction('cancel',{},{});
+  await amazonMfaAction('cancel',{version:next.version},{});
   assert.equal((await amazonMfaAction('status',{},{})).active,true);
   await assert.rejects(amazonMfaAction('remove',{},env),/Retirez/);
   await amazonMfaAction('remove',{},{});
-  assert.deepEqual(await amazonMfaAction('status',{},{}),{active:false,pending:false,environment:false});
+  assert.deepEqual(await amazonMfaAction('status',{},{}),{active:false,pending:false,environment:false,conflict:false,source:'none'});
+});
+
+test('concurrent pending versions and conflicting sources fail closed',async()=>{
+ const key='A'.repeat(52),other='GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZA';
+ const [first,second]=await Promise.all([amazonMfaAction('preview',{secret:key},{}),amazonMfaAction('preview',{secret:other},{})]);
+ await assert.rejects(amazonMfaAction('confirm',{confirmed:true,version:first.version},{}),/autre onglet/);
+ await assert.rejects(amazonMfaAction('code',{version:first.version},{}),/autre onglet/);
+ await amazonMfaAction('confirm',{confirmed:true,version:second.version},{});
+ const configuration={...env,AMAZON_MFA_SECRET:key};
+ const status=await amazonMfaAction('status',{},configuration);
+ assert.equal(status.conflict,true);assert.equal(status.active,false);
+ await assert.rejects(ensureAmazonSession({},configuration),/Conflit MFA/);
+ await assert.rejects(amazonMfaAction('preview',{secret:key},configuration),/Retirez/);
+ assert.equal((await amazonMfaAction('status',{},{})).source,'links');
+ assert.equal((await amazonMfaAction('status',{}, {...configuration,AMAZON_MFA_SECRET:other})).source,'environment');
+ await amazonMfaAction('remove',{},{});
 });
