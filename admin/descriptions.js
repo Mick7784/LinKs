@@ -2,7 +2,7 @@
 window.LinksDescriptions=(()=>{
  const root=document.getElementById('descriptions'),clone=value=>structuredClone(value);
  let templates=[],drafts=[],catalogue={items:[],partners:[]},model=null,dirty=false,loaded=false,busy=false,tab='templates',editRevision=0,currentDraftId=null;
- const openItems=new Set(['support']);
+ const openItems=new Set();
  const node=(tag,text,className)=>{const el=document.createElement(tag);if(text!==undefined)el.textContent=text;if(className)el.className=className;return el};
  const request=(path,data)=>api('/api/descriptions/'+path,data===undefined?{}:{method:'POST',body:JSON.stringify(data)});
  function message(text,error=false){const target=root.querySelector('[data-description-status]');if(target){target.textContent=text;target.classList.toggle('error',error)}}
@@ -21,7 +21,7 @@ window.LinksDescriptions=(()=>{
   input.value=object[key]||'';input.addEventListener('change',()=>{object[key]=input.value;changed();onChange?.()});return wrap;
  }
  function check(label,object,key){const wrap=node('label',undefined,'description-check'),input=node('input');input.type='checkbox';input.checked=object[key];input.addEventListener('change',()=>{object[key]=input.checked;changed()});wrap.append(input,node('span',label));return wrap}
- function freshSection(merchant=false){return {id:crypto.randomUUID(),name:merchant?'Nouvelle boutique':'Nouvelle section',heading:'',text:'',after_text:'',hide_if_empty:merchant,links:[],...(merchant?{partner_id:''}:{mode:'manual',merchants:[]})}}
+ function freshSection(merchant=false){return {id:window.LinksUUID(),name:merchant?'Nouvelle boutique':'Nouvelle section',heading:'',text:'',after_text:'',hide_if_empty:merchant,links:[],...(merchant?{partner_id:''}:{mode:'manual',merchants:[]})}}
  function move(items,index,destination){if(busy||destination<0||destination>=items.length||index===destination)return;const item=items.splice(index,1)[0];items.splice(destination,0,item);changed();render();root.querySelector(`[data-section-id="${CSS.escape(item.id)}"] > summary button`)?.focus()}
  function sorting(container,items,index,label){
   const actions=node('div',undefined,'description-order'),grip=button('⠿',()=>{});grip.title='Glisser pour déplacer, ou utiliser les flèches';grip.setAttribute('aria-label','Déplacer '+label);grip.style.touchAction='none';
@@ -49,7 +49,7 @@ window.LinksDescriptions=(()=>{
    if(binding.reference_url)row.append(node('p','Référence fournie : '+binding.reference_url,'description-reference'));
    row.append(button('Retirer cette association',()=>{owner.links.splice(index,1);changed();render()}));box.append(row);
   });
-  box.append(button('Ajouter un lien permanent',()=>{owner.links.push({id:crypto.randomUUID(),label:'',reference_url:'',link_id:'',source_id:''});changed();render()}));return box;
+  box.append(button('Ajouter un lien permanent',()=>{owner.links.push({id:window.LinksUUID(),label:'',reference_url:'',link_id:'',source_id:''});changed();render()}));return box;
  }
  function sectionEditor(item,items,index,merchant=false){
   const details=node('details',undefined,merchant?'description-merchant':'description-section');details.open=openItems.has(item.id);details.dataset.sectionId=item.id;
@@ -71,7 +71,13 @@ window.LinksDescriptions=(()=>{
   if(snapshot!==JSON.stringify(model))return; // Never display a response for an obsolete edit.
   const host=root.querySelector('[data-template-preview]');if(!host)return;host.replaceChildren();
   if(result.problems.length){const list=node('ul',undefined,'description-problems');for(const p of result.problems)list.append(node('li',(p.label||p.id)+' — '+p.message));host.append(list)}
-  host.append(node('pre',result.text||'Le modèle ne contient pas encore de texte.','description-text'));
+  const text=node('pre',undefined,'description-text');
+  // Styling URLs must not shorten, normalize or otherwise change the description.
+  const content=result.text||'';let offset=0;
+  for(const match of content.matchAll(/https?:\/\/[^\s<>]+/g)){
+   text.append(document.createTextNode(content.slice(offset,match.index)),node('span',match[0],'description-preview-url'));offset=match.index+match[0].length;
+  }
+  text.append(document.createTextNode(content.slice(offset)));host.append(text);
  }
  async function refresh(){[templates,drafts,catalogue]=await Promise.all([request('templates').then(x=>x.items),request('drafts').then(x=>x.items),request('catalogue')])}
  function canDiscard(){return !dirty||confirm('Abandonner les modifications non enregistrées de ce modèle ?')}
@@ -97,7 +103,7 @@ window.LinksDescriptions=(()=>{
   const layout=node('div',undefined,'description-template-layout'),sections=node('div'),side=node('aside',undefined,'description-template-preview');
   model.sections.forEach((s,i)=>sections.append(sectionEditor(s,model.sections,i)));
   sections.append(button('Ajouter une section',()=>{const item=freshSection();model.sections.push(item);openItems.add(item.id);changed();render()}));
-  const output=node('div');output.dataset.templatePreview='';side.append(node('h2','Aperçu du modèle'),button('Actualiser l’aperçu',preview),output);layout.append(sections,side);root.append(layout);
+  const output=node('div');output.dataset.templatePreview='';side.append(node('h2','Aperçu YouTube — description dépliée'),node('p','Référence ordinateur : bloc de 996 px, texte de 972 px, Roboto 14 px. L’aperçu se réduit sur petit écran. YouTube peut adapter la largeur et la présentation des liens.','description-preview-help'),button('Actualiser l’aperçu',preview),output);layout.append(sections,side);root.append(layout);
  }
  function renderDrafts(){
   const toolbar=node('div',undefined,'description-toolbar'),selector=node('select');selector.setAttribute('aria-label','Modèle du nouveau brouillon');for(const t of templates)selector.add(new Option(t.name,t.id));

@@ -3,6 +3,7 @@
 Connectors supply a complete observation, not a ledger of invented daily gains.
 Provider dates remain local wall dates when their timezone is not documented.
 """
+import amazon_affiliation as amazon
 import json
 import os
 import re
@@ -102,7 +103,7 @@ def validate(payload):
 
 def ingest(db, identity, payload, source='portal'):
     rows = validate(payload)
-    account(db, identity)
+    if account(db, identity)['platform_id']!='domadoo': raise ValueError('Ce moteur de transactions complètes est réservé à Domadoo.')
     observed = stamp()
     old = {r['provider_id']:dict(r) for r in db.execute('SELECT * FROM aff_transactions WHERE account_id=?',(identity,))}
     fields = ('occurred_at','order_cents','commission_cents','currency','status','present')
@@ -170,11 +171,28 @@ def period(query):
     if start and end and start>end: raise ValueError('Période inversée.')
     return start,end
 
+def loss_day(value):
+    return datetime.fromisoformat(value.replace('Z','+00:00')).astimezone(ZoneInfo('Europe/Paris')).date().isoformat() if value else None
+
+
+def transaction_source(db):
+    # Derive the first disappearance from the existing immutable history: no migration
+    # or synthetic dates for old backups. One row per account/provider ID, even after
+    # repeated absences or reappearance. status and commission retain the last observation.
+    db.create_function('aff_loss_day', 1, loss_day)
+    return """(SELECT t.*, l.first_missing_at FROM aff_transactions t LEFT JOIN
+      (SELECT account_id,provider_id,MIN(observed_at) first_missing_at FROM aff_revisions
+       WHERE json_extract(after_json,'$.present')=0 GROUP BY account_id,provider_id) l
+      ON l.account_id=t.account_id AND l.provider_id=t.provider_id)"""
+
+
 def report(db, query):
     start,end = period(query); identity=query.get('account','')
     accounts=[dict(r) for r in db.execute('SELECT a.*,p.name partner,f.name platform,f.available FROM aff_accounts a JOIN aff_partners p ON p.id=a.partner_id JOIN aff_platforms f ON f.id=a.platform_id ORDER BY a.created_at,a.id')]
     for item in accounts:
         last=db.execute('SELECT * FROM aff_snapshots WHERE account_id=? ORDER BY id DESC LIMIT 1',(item['id'],)).fetchone()
+        item['mode']='csv' if item['platform_id']=='amazon' else 'portal'
+        if item['platform_id']=='amazon': item['available']=1
         item['snapshot']={**dict(last),'summary':json.loads(last['summary'])} if last else None
         item['running']=bool(db.execute("SELECT 1 FROM aff_runs WHERE account_id=? AND status='running'",(item['id'],)).fetchone())
     selected=[a for a in accounts if not identity or a['id']==identity]
@@ -185,27 +203,35 @@ def report(db, query):
     if end: clause+=' AND substr(occurred_at,1,10)<=?'; args.append(end)
     aggregate=[dict(r) for r in db.execute('SELECT account_id,status,SUM(commission_cents) cents,COUNT(*) sales FROM aff_transactions WHERE '+clause+' GROUP BY account_id,status',args)]
     daily=[dict(r) for r in db.execute('SELECT substr(occurred_at,1,10) day,status,SUM(commission_cents) cents FROM aff_transactions WHERE '+clause+' GROUP BY day,status ORDER BY day',args)]
-    return {'accounts':accounts,'platforms':[dict(r) for r in db.execute('SELECT * FROM aff_platforms')],
+    loss_clause='present=0'; loss_args=[]
+    if identity: loss_clause+=' AND account_id=?'; loss_args.append(identity)
+    if start: loss_clause+=' AND aff_loss_day(first_missing_at)>=?'; loss_args.append(start)
+    if end: loss_clause+=' AND aff_loss_day(first_missing_at)<=?'; loss_args.append(end)
+    losses=[dict(r) for r in db.execute('SELECT account_id,COUNT(*) sales,SUM(commission_cents) cents FROM '+transaction_source(db)+' WHERE '+loss_clause+' GROUP BY account_id',loss_args)]
+    amazon_reports=[{'account_id':a['id'],**amazon.report(db,a['id'],start,end)} for a in selected if a['platform_id']=='amazon']
+    return {'amazon':amazon_reports,'losses':losses,'accounts':accounts,'platforms':[{**dict(r),'available':1 if r['id']=='amazon' else r['available']} for r in db.execute('SELECT * FROM aff_platforms')],
             'aggregate':aggregate,'daily':daily,'has_data':any(a['snapshot'] for a in selected),
             'coverage':{'ready':sum(bool(a['snapshot']) for a in selected),'total':len(selected)},'currency':'EUR'}
 
 def transactions(db, query):
     identity=query.get('account','domadoo'); account(db,identity)
     start,end=period(query); clause='account_id=?'; args=[identity]
-    if start: clause+=' AND substr(occurred_at,1,10)>=?'; args.append(start)
-    if end: clause+=' AND substr(occurred_at,1,10)<=?'; args.append(end)
+    source=transaction_source(db)
+    period_day="CASE WHEN present=0 THEN aff_loss_day(first_missing_at) ELSE substr(occurred_at,1,10) END"
+    if start: clause+=' AND '+period_day+'>=?'; args.append(start)
+    if end: clause+=' AND '+period_day+'<=?'; args.append(end)
     status=query.get('status','')
     if status:
-        if status not in {'approved','not_approved','missing'}: raise ValueError('Statut invalide.')
-        if status=='missing': clause+=' AND present=0'
+        if status not in {'approved','not_approved','missing','lost'}: raise ValueError('Statut invalide.')
+        if status in {'missing','lost'}: clause+=' AND present=0'
         else: clause+=' AND present=1 AND status=?'; args.append(status)
     search=query.get('search','').strip().removeprefix('#')
     if len(search)>80: raise ValueError('Recherche trop longue.')
     if search: clause+=" AND instr(provider_id,?)>0"; args.append(search)
     page=max(1,int(query.get('page','1'))); size=20
-    count=db.execute('SELECT COUNT(*) FROM aff_transactions WHERE '+clause,args).fetchone()[0]
+    count=db.execute('SELECT COUNT(*) FROM '+source+' WHERE '+clause,args).fetchone()[0]
     page=min(page,max(1,(count+size-1)//size))
-    items=[dict(r) for r in db.execute('SELECT * FROM aff_transactions WHERE '+clause+' ORDER BY occurred_at DESC,provider_id DESC LIMIT ? OFFSET ?',args+[size,(page-1)*size])]
+    items=[dict(r) for r in db.execute('SELECT * FROM '+source+' WHERE '+clause+' ORDER BY '+period_day+' DESC,occurred_at DESC,provider_id DESC LIMIT ? OFFSET ?',args+[size,(page-1)*size])]
     snapshot=db.execute('SELECT MAX(id) FROM aff_snapshots WHERE account_id=?',(identity,)).fetchone()[0]
     return {'items':items,'total':count,'page':page,'pages':max(1,(count+size-1)//size),'snapshot_id':snapshot}
 
@@ -288,8 +314,10 @@ def restore_backup(db, bundle):
         for row in checked.execute('SELECT * FROM aff_transactions'):
             money(row['commission_cents']);money(row['order_cents']);datetime.fromisoformat(row['occurred_at'])
             if row['status'] not in {'approved','not_approved'} or row['currency']!='EUR' or row['present'] not in (0,1): raise ValueError('Vente sauvegardée invalide.')
-        for row in checked.execute('SELECT summary FROM aff_snapshots'):
+        for row in checked.execute('SELECT s.summary,a.platform_id FROM aff_snapshots s JOIN aff_accounts a ON a.id=s.account_id'):
             summary=json.loads(row['summary'])
+            if row['platform_id']=='amazon':
+                amazon.validate_saved(summary.get('amazon'));continue
             validate({'complete':True,'currency':'EUR','summary':{k:v for k,v in summary.items() if k!='vouchers'},'pages':1,'transactions':[],'vouchers':summary.get('vouchers',[])})
         if list(checked.execute('PRAGMA foreign_key_check')): raise ValueError('Référence Affiliation manquante.')
     except (sqlite3.Error,TypeError,KeyError,ValueError) as exc:
@@ -333,6 +361,21 @@ def get(connect, action, query):
 
 def post(connect, action, data):
     identity=data.get('account',data.get('id','domadoo'))
+    if action.startswith('amazon/'):
+        with connect() as db:
+            if account(db,identity)['platform_id']!='amazon':raise ValueError('Compte Amazon requis.')
+        if action.startswith('amazon/mfa/'):
+            return worker(action,{'account':identity,'secret':data.get('secret'),'confirmed':data.get('confirmed'),'version':data.get('version')})
+        if action=='amazon/inspect':
+            headers,rows=amazon.inspect_csv(data);return {'headers':headers,'sample':rows[:3],'rows':len(rows)}
+        if action=='amazon/preview':return amazon.normalize(data)
+        if action=='amazon/import':
+            with connect() as db:
+                db.execute('BEGIN IMMEDIATE')
+                return amazon.ingest(db,identity,data,stamp())
+        if action=='amazon/list-reports':return {'reports':amazon.list_reports(identity)[0]}
+        if action=='amazon/get-report':return amazon.retrieve_report(identity,data.get('filename'),data.get('reportType'))
+        raise ValueError('Action Amazon inconnue.')
     if action=='sync': return start_sync(connect,identity,data.get('accounts'))
     with connect() as db:
         if action=='accounts': return add_account(db,data)

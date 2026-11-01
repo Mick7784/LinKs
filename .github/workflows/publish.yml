@@ -58,6 +58,7 @@ jobs:
           python3 scripts/description_analysis_test.py
           python3 scripts/description_search_test.py
           python3 scripts/description_workflow_test.py
+          node --test scripts/uuid.test.cjs scripts/description-editor-loading.test.cjs
           node --test scripts/description-sections.test.cjs
           node --test scripts/description-analysis.test.cjs
           node --test scripts/description-search.test.cjs
@@ -65,6 +66,8 @@ jobs:
           python3 scripts/storage_test.py
           python3 scripts/images_test.py
           python3 scripts/analytics_test.py
+          node --test scripts/amazon-auth.test.mjs
+          NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/amazon-mfa-browser-test.mjs
           python3 scripts/affiliation_test.py
           npm ci --ignore-scripts
           node node_modules/playwright-core/cli.js install --with-deps firefox
