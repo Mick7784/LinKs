@@ -54,6 +54,14 @@ async function loginState(){
 async function action(name,data){
   if(!/^(domadoo|[a-f0-9]{32})$/.test(data.account||''))throw new PortalError('Compte invalide.');
   if(busy)throw new PortalError('Navigateur occupé par une synchronisation.');
+  if(name==='amazon/collect'){
+    if(login)throw new PortalError('Terminez la connexion humaine en cours.');
+    busy=true;
+    try{const {collectAmazon}=await import('./amazon-collector.mjs');return await collectAmazon(data)}
+    catch(error){const {AmazonCollectionError}=await import('./amazon-collector.mjs');throw new PortalError(error instanceof AmazonCollectionError?error.message:'Collecte Amazon interrompue.',error.code||'amazon_collection')}
+    finally{busy=false}
+  }
+  if(name==='amazon/disconnect'){await deleteSession('amazon-portal');return {ok:true}}
   if(name.startsWith('amazon/mfa/')){
     const {amazonMfaAction}=await import('./amazon-auth.mjs');
     try{return await amazonMfaAction(name.slice('amazon/mfa/'.length),data)}

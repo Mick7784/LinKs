@@ -192,7 +192,10 @@ def report(db, query):
     for item in accounts:
         last=db.execute('SELECT * FROM aff_snapshots WHERE account_id=? ORDER BY id DESC LIMIT 1',(item['id'],)).fetchone()
         item['mode']='csv' if item['platform_id']=='amazon' else 'portal'
-        if item['platform_id']=='amazon': item['available']=1
+        if item['platform_id']=='amazon':
+            item['available']=1
+            last_portal=db.execute("SELECT finished_at FROM aff_runs WHERE account_id=? AND status='success' ORDER BY id DESC LIMIT 1",(item['id'],)).fetchone()
+            item['portal_last_success']=last_portal['finished_at'] if last_portal else None
         item['snapshot']={**dict(last),'summary':json.loads(last['summary'])} if last else None
         item['running']=bool(db.execute("SELECT 1 FROM aff_runs WHERE account_id=? AND status='running'",(item['id'],)).fetchone())
     selected=[a for a in accounts if not identity or a['id']==identity]
@@ -283,6 +286,39 @@ def start_sync(connect, identity, identities=None):
         LOCK.release(); raise
     return {'ok':True,'run':run}
 
+def start_amazon_sync(connect, identity, data):
+    try:
+        day=date.fromisoformat(data.get('day','')).isoformat()
+    except (ValueError,TypeError):raise ValueError('Choisissez une journée Amazon valide.') from None
+    tag=data.get('tracking_id','')
+    if not isinstance(tag,str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,100}',tag) or tag=='all':
+        raise ValueError('Indiquez un Tracking ID Amazon attendu pour vérifier le compte.')
+    if not LOCK.acquire(blocking=False):raise ValueError('Une synchronisation est déjà en cours.')
+    try:
+        with connect() as db:
+            started=stamp()
+            run=db.execute("INSERT INTO aff_runs(account_id,started_at,status) VALUES(?,?,'running')",(identity,started)).lastrowid
+            db.execute('UPDATE aff_accounts SET last_attempt=? WHERE id=?',(started,identity))
+        def collect():
+            try:
+                payload=worker('amazon/collect',{'account':identity,'day':day},timeout=600)
+                with connect() as db:
+                    db.execute('BEGIN IMMEDIATE')
+                    results=amazon.ingest_portal_batch(db,identity,payload,day,tag,stamp())
+                    db.execute("UPDATE aff_accounts SET session_state='connected',last_error=NULL WHERE id=?",(identity,))
+                    db.execute("UPDATE aff_runs SET status='success',finished_at=?,rows=?,pages=3 WHERE id=?",(stamp(),sum(r['rows'] for r in results),run))
+            except Exception as exc:
+                message=str(exc) if isinstance(exc,ValueError) else 'Collecte Amazon interrompue. Historique conservé.'
+                with connect() as db:
+                    db.execute("UPDATE aff_runs SET status='failed',finished_at=?,message=? WHERE id=?",(stamp(),message,run))
+                    db.execute("UPDATE aff_accounts SET last_error=?,session_state='reconnect' WHERE id=?",(message,identity))
+            finally:LOCK.release()
+        threading.Thread(target=collect,daemon=True).start()
+    except Exception:
+        LOCK.release();raise
+    return {'ok':True,'run':run}
+
+
 def recover(db):
     db.execute("UPDATE aff_accounts SET last_error='Collecte interrompue par le redémarrage. Dernier relevé conservé.' WHERE id IN (SELECT account_id FROM aff_runs WHERE status='running')")
     db.execute("UPDATE aff_runs SET status='failed',finished_at=?,message='Service redémarré.' WHERE status='running'",(stamp(),))
@@ -366,6 +402,15 @@ def post(connect, action, data):
             if account(db,identity)['platform_id']!='amazon':raise ValueError('Compte Amazon requis.')
         if action.startswith('amazon/mfa/'):
             return worker(action,{'account':identity,'secret':data.get('secret'),'confirmed':data.get('confirmed'),'version':data.get('version')})
+        if action=='amazon/sync':return start_amazon_sync(connect,identity,data)
+        if action=='amazon/disconnect':
+            if not LOCK.acquire(blocking=False):raise ValueError('Une synchronisation est déjà en cours.')
+            try:
+                result=worker(action,{'account':identity})
+                with connect() as db:db.execute("UPDATE aff_accounts SET session_state='disconnected' WHERE platform_id='amazon'")
+                return result
+            finally:LOCK.release()
+        if action=='amazon/archive':return amazon.inspect_archive(data)
         if action=='amazon/inspect':
             headers,rows=amazon.inspect_csv(data);return {'headers':headers,'sample':rows[:3],'rows':len(rows)}
         if action=='amazon/preview':return amazon.normalize(data)
