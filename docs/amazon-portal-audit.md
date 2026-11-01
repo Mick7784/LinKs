@@ -1,3 +1,5 @@
+> État courant : voir « Implémentation locale du parcours manuel » en fin de document. Les sections précédentes retracent les audits antérieurs.
+
 # Audit du connecteur portail Amazon — chantier local
 
 Base : tag V1.4.7, commit 6c50cdacb1fda6194671ff6e2b72441b01801162.
@@ -106,3 +108,29 @@ Le futur adaptateur recevra une configuration de compte, période, vues et mappi
 ### Vérifications limitées à cette étape
 
 Deux nouveaux tests ciblés réussis : rotation de session sans reconnexion, maintien de l’état précédent sur erreur, et six états diagnostiques sur pages synthétiques dans Chromium. Un diagnostic public réel a observé login_required/HTTP 200. Aucun test authentifié, aucune demande de rapport, aucune collecte quotidienne activée. Le moteur ZIP/CSV et les calculs statistiques n’ont pas été modifiés.
+
+
+## Implémentation locale du parcours manuel — 1 novembre 2026
+
+Cette étape remplace le diagnostic passif par `amazon/collect` dans le worker navigateur, lancé en tâche de fond par `amazon/sync`. Aucun identifiant réel n’est disponible dans cet environnement. Aucune réussite de connexion/collecte réelle n’est revendiquée. Les modalités contractuelles spécifiques au téléchargement automatisé privé restent non confirmées ; l’activation TOTP n’en constitue pas une autorisation. Le développement avance à la demande explicite de l’utilisateur, sans collecte planifiée.
+
+### Fonctionnement développé
+
+- Navigateur Playwright existant (Firefox/Chromium), identifiants exclusivement serveur, clé TOTP active via le mécanisme existant (conflit de sources bloquant), une seule tentative par étape email/mot de passe/OTP. Formulaires POST et destinations contrôlés avant saisie ; CAPTCHA, refus et étapes supplémentaires arrêtent le parcours. Aucun journal, capture d’écran ou réponse API ne contient les secrets.
+- Session chiffrée existante réutilisée, associée au compte LinKs et au moteur navigateur ; rotation enregistrée après vérification puis après téléchargement. Session expirée : connexion normale, sans boucle de tentatives. Bouton pour oublier la session globale Amazon sans toucher au MFA. Aucun cookie exporté au navigateur utilisateur.
+- Adaptateur d’export strict pour une journée, tous les Tracking IDs, trois vues : Catégories, Produits liés, Tracking ID. Attente d’un événement de téléchargement jusqu’à 120 secondes par export, arrêt global au bout de huit minutes. CSV/ZIP limité à 1 Mo par fichier, traité en mémoire par le moteur existant. Aucun endpoint privé reconstitué ni récupération d’un ancien travail d’export.
+- Batch atomique : validation des trois fichiers et du Tracking ID attendu, catégories comme référence, deux autres vues complémentaires. Réimports idempotents, corrections historisées, refus des chevauchements incompatibles avec les imports précédents. Les dates manquantes du rapport Tracking ID ne créent pas une courbe quotidienne. Aucune perte de transaction déduite.
+- Interface : journée, Tracking ID témoin, synchronisation manuelle, dernière collecte réussie distincte du dernier import CSV, erreur et nouvelle tentative. La session n’est pas présentée comme actuellement connectée sur la seule foi d’un ancien succès. Horaire configurable déjà conservé, ordonnanceur Amazon toujours désactivé. Aucun changement SQLite de schéma, ni calcul Domadoo.
+
+### Limites à valider sur le compte réel
+
+Les contrôles accessibles du dialogue d’export n’ont **pas été observés sur le compte** : noms des boutons, champs de dates HTML `date`, liste de type de rapport et sélection de tous les Tracking IDs sont un contrat d’adaptateur testé sur fixtures, pas une description prétendument vérifiée du portail. Si Amazon propose un calendrier différent, un travail asynchrone dans une liste distincte, un téléchargement signé sur un autre hôte ou d’autres noms de contrôles, l’adaptateur s’arrête ; il faudra l’adapter à des observations réelles avant de déclarer la collecte opérationnelle. Les quatre autres types d’exports ne sont pas interprétés automatiquement. Les rapports vides sont refusés plutôt qu’assimilés à une journée à zéro. Un Tracking ID témoin absent d’une journée impose l’import manuel.
+
+La résolution d’un contrôle sur le navigateur personnel peut ne pas débloquer le navigateur serveur : aucun transfert automatique de cookies ni interface de prise en main Amazon n’est implémenté. Il faut alors poursuivre par l’import CSV. La validation réelle doit établir : connexion et OTP, reprise après redémarrage, expiration de session, génération et téléchargement de chaque vue sur une journée connue, égalité avec les exports manuels, réimport sans doublon. Seulement ensuite envisager l’activation quotidienne (non proposée dans cette étape).
+
+### Vérifications ciblées
+
+- `amazon_collection_test.py` : trois tests (idempotence et vues non additives ; période/tag/format/collecte partielle refusés ; rollback après échec tardif).
+- `amazon-collector.test.mjs` : trois tests Playwright avec formulaires et téléchargements interceptés (email/mot de passe/OTP ; arrêt CAPTCHA ; dates, périmètre et trois téléchargements).
+- `amazon-collection-browser-test.cjs` : parcours interface + serveur/base temporaires, worker substitué par un refus explicite, sélection conservée et bouton réactivé, aucune fausse réussite.
+- Aucun test ne constitue une validation Amazon réelle. Pas de CI complète, publication ni déploiement.

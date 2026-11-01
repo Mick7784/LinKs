@@ -1,5 +1,4 @@
-// Server-only preparation for an Amazon Associates portal adapter. No portal
-// navigation is enabled until the access method and permission are verified.
+// Server-only credentials, MFA and encrypted sessions for the portal adapter.
 import {createHmac,randomUUID} from 'node:crypto';
 import {loadSession,saveSession,deleteSession} from './affiliation-worker.mjs';
 
@@ -121,7 +120,7 @@ async function mfaAction(action,data,env){
   throw new Error('Action MFA Amazon inconnue.');
 }
 
-// The future portal adapter must distinguish an ordinary expired session from
+// The portal adapter must distinguish an ordinary expired session from
 // an additional security check. One normal sign-in attempt is allowed; neither
 // a rejected login nor an extra check is retried or bypassed.
 export async function ensureAmazonSession(adapter,env=process.env){

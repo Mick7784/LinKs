@@ -251,3 +251,40 @@ def retrieve_report(identity,filename,report_type):
         inspect_csv({'csv':text})
         return {'csv':text}
     except Exception:raise ValueError('Rapport non exploitable en CSV UTF-8 (1 Mo maximum). Utilisez un export CSV du portail.') from None
+
+
+def ingest_portal_batch(db, identity, payload, day, expected_tag, observed):
+    """Fail closed, atomic batch through the existing versioned importer."""
+    if payload.get('complete') is not True or payload.get('day') != day:
+        raise ValueError('Collecte Amazon incomplète ou période différente. Aucun import.')
+    files=payload.get('files')
+    if not isinstance(files,list) or len(files)!=3 or {f.get('view') for f in files}!={'category','linked_product','tracking_id'}:
+        raise ValueError('Les trois vues Amazon attendues ne sont pas disponibles.')
+    prepared=[]
+    for file in files:
+        text=file.get('csv')
+        if file.get('archive'):
+            members=inspect_archive(file)['files']
+            if len(members)!=1:raise ValueError('Un seul CSV attendu par export Amazon.')
+            text=members[0]['csv']
+        headers,_=inspect_csv({'csv':text})
+        mapping={'clicks':'clics','ordered_items':'articles commandés','shipped_items':'articles expédiés','commission_cents':'revenus totaux'}
+        if file['view']=='tracking_id':mapping['tracking_id']='Numéro de suivi'
+        else:
+            mapping['date']='Date'
+            mapping['title']='catégorie' if file['view']=='category' else 'titre du produit'
+            if file['view']=='linked_product':mapping['asin']='ASIN'
+        if not set(mapping.values())<=set(headers):raise ValueError('Colonnes Amazon non reconnues. Import manuel nécessaire.')
+        data=dict(csv=text,mapping=mapping,kind='performance',view=file['view'],contribution='totals' if file['view']=='category' else 'detail',start=day,end=day,scope='all',single_day=file['view']=='tracking_id',date_format='mdy',decimal='dot',confirmed=True)
+        value=normalize(data)
+        if not value['rows']:raise ValueError('Rapport Amazon vide : couverture à vérifier manuellement.')
+        if file['view']=='tracking_id' and expected_tag not in {r['tracking_id'] for r in value['rows']}:
+            raise ValueError('Tracking ID attendu absent : compte ou périmètre Amazon à vérifier. Aucun import.')
+        prepared.append(data)
+    db.execute('SAVEPOINT amazon_portal_batch')
+    try:
+        results=[ingest(db,identity,data,observed) for data in prepared]
+        db.execute('RELEASE amazon_portal_batch')
+        return results
+    except Exception:
+        db.execute('ROLLBACK TO amazon_portal_batch');db.execute('RELEASE amazon_portal_batch');raise
