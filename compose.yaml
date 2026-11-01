@@ -11,6 +11,9 @@ services:
       ADMIN_ORIGIN: ${ADMIN_ORIGIN:-}
       DOMADOO_LOGIN: ${DOMADOO_LOGIN:-}
       DOMADOO_PASSWORD: ${DOMADOO_PASSWORD:-}
+      AMAZON_LOGIN: ${AMAZON_LOGIN:-}
+      AMAZON_PASSWORD: ${AMAZON_PASSWORD:-}
+      AMAZON_MFA_SECRET: ${AMAZON_MFA_SECRET:-}
     volumes:
       - links-data:/data
     init: true

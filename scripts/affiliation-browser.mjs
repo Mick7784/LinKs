@@ -59,7 +59,7 @@ export async function browserContext(saved,human=false,{engine=browserEngine(),t
   const options=engine==='chromium'?{executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',args:['--disable-dev-shm-usage']}:
     {firefoxUserPrefs:{'signon.rememberSignons':false,'browser.formfill.enable':false}};
   let browser;
-  const browserEnv=Object.fromEntries(Object.entries(process.env).filter(([key])=>!['DOMADOO_LOGIN','DOMADOO_PASSWORD'].includes(key)));
+  const browserEnv=Object.fromEntries(Object.entries(process.env).filter(([key])=>!['DOMADOO_LOGIN','DOMADOO_PASSWORD','AMAZON_LOGIN','AMAZON_PASSWORD','AMAZON_MFA_SECRET'].includes(key)));
   try{browser=await require('playwright-core')[engine].launch({headless:true,timeout:20000,env:browserEnv,...options})}
   catch{throw new PortalError(`Démarrage ${engine} impossible. Vérifier l’image officielle et la mémoire disponible. Aucun accès au portail tenté.`,'browser_launch')}
   try{

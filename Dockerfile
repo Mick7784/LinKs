@@ -26,7 +26,7 @@ COPY --from=config /app/site/ /usr/share/nginx/html/
 COPY scripts/video-api.mjs scripts/start.mjs /app/
 COPY scripts/analytics.py scripts/url_inspection.py scripts/tracked_batch.py scripts/tracked_links.py scripts/affiliate_partners.py scripts/short_urls.py scripts/instance.py scripts/youtube.py scripts/themes.py scripts/images.py scripts/storage.py links.json VERSION /app/
 COPY scripts/pulse_manager.py scripts/descriptions.py scripts/description_analysis.py scripts/description_search.py scripts/description_workflow.py scripts/description_default.json /app/
-COPY scripts/amazon_affiliation.py scripts/affiliation.py scripts/affiliation-worker.mjs scripts/affiliation-browser.mjs scripts/domadoo.mjs scripts/domadoo-auth.mjs /app/
+COPY scripts/amazon_affiliation.py scripts/affiliation.py scripts/affiliation-worker.mjs scripts/affiliation-browser.mjs scripts/domadoo.mjs scripts/domadoo-auth.mjs scripts/amazon-auth.mjs /app/
 COPY admin/ /app/admin/
 USER nginx
 EXPOSE 8080 8081

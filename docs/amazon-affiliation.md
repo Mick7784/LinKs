@@ -42,7 +42,7 @@ AMAZON_CREATORS_<ID_DU_COMPTE_LINKS_EN_MAJUSCULES>_CREDENTIAL_SECRET
 AMAZON_CREATORS_<ID_DU_COMPTE_LINKS_EN_MAJUSCULES>_VERSION
 ```
 
-Configurer ces secrets exclusivement dans l’environnement privé du service serveur, jamais dans Git, le navigateur ou un export. Versions EU prises en charge : 2.2 (OAuth Cognito) et 3.2 (Login with Amazon), selon les endpoints et scopes du SDK officiel. Aucun mot de passe du portail Amazon n’est demandé. Aucun secret ni jeton n’entre dans SQLite ou les sauvegardes ; le code ne journalise pas les réponses brutes et renvoie des erreurs génériques.
+Configurer ces secrets exclusivement dans l’environnement privé du service serveur, jamais dans Git, le navigateur ou un export. Versions EU prises en charge : 2.2 (OAuth Cognito) et 3.2 (Login with Amazon), selon les endpoints et scopes du SDK officiel. Ce mode API ne demande aucun mot de passe du portail Amazon. Aucun secret ni jeton n’entre dans SQLite ou les sauvegardes ; le code ne journalise pas les réponses brutes et renvoie des erreurs génériques.
 
 Dans le détail Amazon → Import et accès API, « Vérifier les rapports disponibles » appelle ListReports côté serveur. « Préparer l’import » appelle GetReport pour un fichier effectivement retourné par ListReports, puis lit le CSV côté serveur. L’URL signée n’est jamais transmise à l’interface. Le téléchargement est limité aux URL HTTPS S3 Amazon standard, sans redirection, et à 1 Mo. Les archives ZIP, autres formats ou destinations non reconnues sont refusés ; utiliser alors le CSV téléchargé manuellement depuis le portail. La lecture API prépare l’import mais ne valide pas automatiquement les chiffres.
 
@@ -55,6 +55,14 @@ Dans le détail Amazon → Import et accès API, « Vérifier les rapports dispo
 La synchronisation automatique Amazon **n’est pas implémentée/activée** dans cette étape : programmer des téléchargements sans connaître leur contenu, couverture et droits donnerait des statistiques trompeuses. Le diagnostic manuel et l’import confirmé sont utilisables dès configuration de l’accès correspondant. Le CSV local ne nécessite aucun secret API.
 
 La récupération autorisée actuellement vérifiée depuis le portail est le téléchargement manuel des rapports. Aucune automatisation du portail n’est ajoutée sans confirmation des modalités d’accès autorisées. Les connecteurs Reolink, Sanyipace, Awin et Impact restent disponibles comme futurs comptes, sans changement de comportement.
+
+## Préparation locale de l'authentification au portail
+
+Docker Compose accepte facultativement `AMAZON_LOGIN`, `AMAZON_PASSWORD` et `AMAZON_MFA_SECRET` depuis un fichier `.env` local ou l'environnement privé du serveur. Copier `.env.example` vers `.env` puis renseigner les valeurs uniquement sur le serveur. `.env` et ses variantes sont ignorés par Git. Ces trois variables sont transmises uniquement au worker d'affiliation ; le processus web et les navigateurs lancés par le worker ne les reçoivent pas.
+
+Le module serveur `amazon-auth.mjs` prépare un code TOTP à six chiffres conforme à RFC 6238 depuis la clé Base32, réutilise le chiffrement AES-256-GCM des sessions d'affiliation dans un fichier Amazon distinct et prévoit la réutilisation d'une session puis une seule reconnexion normale si elle a expiré. Une vérification supplémentaire ou une connexion non confirmée arrête ce flux. Aucune interface, API ou journal n'expose les identifiants ou codes. L'absence de cette configuration n'empêche pas le démarrage et ne change ni l'import CSV ni Domadoo.
+
+**État réel :** aucun adaptateur de navigation du portail Amazon n'est activé. Les trois variables ne déclenchent donc aucune connexion ni synchronisation à elles seules. La [FAQ officielle des rapports français](https://partenaires.amazon.fr/help/topic/reports/faq) documente les téléchargements manuels CSV/TXT, XLSX et XML, sans procédure d'automatisation avec identifiant/mot de passe. Les [politiques du programme français](https://partenaires.amazon.fr/help/operating/policies) encadrent les robots et logiciels automatisés, mais ne fournissent pas ici d'autorisation explicite pour la collecte automatisée des rapports privés. La possibilité technique d'une connexion normale avec MFA et les éventuels contrôles supplémentaires doivent être vérifiés sur un compte réel. La voie API Creators reste distincte et prioritaire ; si elle ne donne pas accès aux revenus, demander à Amazon les modalités autorisées de collecte du portail avant d'activer cet adaptateur. Aucun contrôle supplémentaire ne sera contourné.
 
 ## Vérifications ciblées
 

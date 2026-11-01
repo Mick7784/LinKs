@@ -25,6 +25,9 @@ affiliation=spawn(process.execPath,["/app/affiliation-worker.mjs"],{stdio:"inher
 // never forwarded to nginx, analytics, the public API or browser subprocesses.
 delete process.env.DOMADOO_LOGIN;
 delete process.env.DOMADOO_PASSWORD;
+delete process.env.AMAZON_LOGIN;
+delete process.env.AMAZON_PASSWORD;
+delete process.env.AMAZON_MFA_SECRET;
 affiliation.on("error",()=>stop(1));
 affiliation.on("exit",()=>{if(!stopping)stop(1)});
 // Content/admin are always available; analytics.enabled controls collection only.
