@@ -1,4 +1,8 @@
 """Amazon Associates FR report observations, never inferred individual sales/losses."""
+import base64
+import binascii
+import stat
+import zipfile
 import csv
 import hashlib
 import io
@@ -13,6 +17,39 @@ from urllib.request import Request, HTTPRedirectHandler, build_opener
 LIMIT = 1024 * 1024
 FIELDS = ('date','tracking_id','asin','title','provider_status','transaction_id','orders','ordered_items','shipped_items','commission_cents','payment_cents')
 METRICS = {'orders':('orders','ordered_items'), 'earnings':('shipped_items','commission_cents'), 'payments':('payment_cents',)}
+
+
+
+VIEWS = {'legacy', 'category', 'linked_product', 'tracking_id', 'daily_trends'}
+
+def inspect_archive(data):
+    """Read bounded text members in memory. Never extract paths or import totals."""
+    encoded=data.get('archive')
+    if not isinstance(encoded,str) or len(encoded)>((LIMIT+2)//3)*4:
+        raise ValueError('Archive ZIP limitée à 1 Mo.')
+    try:
+        raw=base64.b64decode(encoded,validate=True)
+        if len(raw)>LIMIT: raise ValueError()
+        with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+            members=archive.infolist()
+            if not 1<=len(members)<=16: raise ValueError()
+            total=0;files=[];names=set()
+            for entry in members:
+                name=entry.filename
+                if name.startswith(('/', '\\')) or '\\' in name or ':' in name or '..' in name.split('/') or stat.S_ISLNK(entry.external_attr>>16): raise ValueError()
+                if entry.is_dir(): continue
+                if name in names or entry.flag_bits&1 or not name.lower().endswith(('.csv','.txt')): raise ValueError()
+                names.add(name);total+=entry.file_size
+                if total>LIMIT or entry.file_size>LIMIT or entry.compress_type not in (zipfile.ZIP_STORED,zipfile.ZIP_DEFLATED): raise ValueError()
+                with archive.open(entry) as stream: payload=stream.read(LIMIT+1)
+                if len(payload)!=entry.file_size: raise ValueError()
+                text=payload.decode('utf-8-sig')
+                if '\x00' in text: raise ValueError()
+                files.append({'name':name,'csv':text})
+            if not files: raise ValueError()
+            return {'files':files,'imported':False}
+    except (ValueError,binascii.Error,zipfile.BadZipFile,RuntimeError,NotImplementedError,OSError,UnicodeError):
+        raise ValueError('ZIP invalide : CSV/TXT UTF-8 uniquement, 16 entrées et 1 Mo décompressé maximum, sans chiffrement ni chemins dangereux.') from None
 
 
 def inspect_csv(data):
@@ -36,6 +73,8 @@ def inspect_csv(data):
 
 def normalize(data):
     headers,rows=inspect_csv(data)
+    view=data.get('view','legacy')
+    if view not in VIEWS: raise ValueError('Vue Amazon inconnue.')
     kind=data.get('kind'); mapping=data.get('mapping',{})
     if kind not in METRICS or not isinstance(mapping,dict) or set(mapping)-set(FIELDS): raise ValueError('Type ou colonnes invalides.')
     if not mapping.get('date') or not any(mapping.get(k) for k in METRICS[kind]): raise ValueError('Associez la date et au moins un indicateur du type de rapport choisi.')
@@ -70,7 +109,7 @@ def normalize(data):
             if any(len(item[k])>500 for k in ('tracking_id','asin','title','provider_status','transaction_id')): raise ValueError()
         except (ValueError,InvalidOperation): raise ValueError('Date, quantité, montant EUR ou Tracking ID invalide. Aucun import effectué.') from None
         result.append(item)
-    return {'version':1,'kind':kind,'start':start,'end':end,'scope':scope,'currency':'EUR','rows':result}
+    return {'version':1,**({'view':view} if view!='legacy' else {}),'kind':kind,'start':start,'end':end,'scope':scope,'currency':'EUR','rows':result}
 
 
 def active_reports(db,identity):
@@ -83,7 +122,8 @@ def active_reports(db,identity):
 
 
 def validate_saved(value):
-    if not isinstance(value,dict) or set(value)!={'version','kind','start','end','scope','currency','rows','digest'} or value['version']!=1 or value['currency']!='EUR':raise ValueError('Rapport Amazon sauvegardé invalide.')
+    if not isinstance(value,dict) or set(value)-{'view'}!={'version','kind','start','end','scope','currency','rows','digest'} or value['version']!=1 or value['currency']!='EUR':raise ValueError('Rapport Amazon sauvegardé invalide.')
+    if value.get('view','legacy') not in VIEWS: raise ValueError('Vue Amazon sauvegardée invalide.')
     if value['kind'] not in METRICS or not isinstance(value['rows'],list) or len(value['rows'])>10000:raise ValueError('Rapport Amazon sauvegardé invalide.')
     if date.fromisoformat(value['start'])>date.fromisoformat(value['end']) or not re.fullmatch(r'(all|[A-Za-z0-9_-]{1,100})',value['scope']):raise ValueError('Périmètre Amazon invalide.')
     for row in value['rows']:
@@ -104,6 +144,8 @@ def ingest(db,identity,data,observed):
     digest=hashlib.sha256(canonical.encode()).hexdigest()
     for previous in active_reports(db,identity):
         same=all(previous[k]==value[k] for k in ('kind','start','end','scope'))
+        if same and previous.get('view','legacy')!=value.get('view','legacy'):
+            raise ValueError('Une autre vue couvre déjà ces indicateurs et cette période. Ne cumulez pas Catégories, Produits liés, Tracking IDs et Tendances quotidiennes ; conservez la même vue de référence.')
         if same and previous.get('digest')==digest:return {'ok':True,'duplicate':True,'rows':len(value['rows'])}
         overlap=previous['start']<=value['end'] and value['start']<=previous['end']
         shared=previous['scope']==value['scope'] or 'all' in (previous['scope'],value['scope'])

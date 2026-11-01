@@ -366,6 +366,7 @@ def post(connect, action, data):
             if account(db,identity)['platform_id']!='amazon':raise ValueError('Compte Amazon requis.')
         if action.startswith('amazon/mfa/'):
             return worker(action,{'account':identity,'secret':data.get('secret'),'confirmed':data.get('confirmed'),'version':data.get('version')})
+        if action=='amazon/archive':return amazon.inspect_archive(data)
         if action=='amazon/inspect':
             headers,rows=amazon.inspect_csv(data);return {'headers':headers,'sample':rows[:3],'rows':len(rows)}
         if action=='amazon/preview':return amazon.normalize(data)

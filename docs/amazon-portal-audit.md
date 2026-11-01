@@ -5,7 +5,7 @@ Branche : feat/amazon-portal-connector.
 
 ## Accès et éléments manquants
 
-L’utilisateur déclare disposer d’une confirmation Amazon autorisant l’automatisation ; son texte et ses restrictions restent à examiner. Aucune interdiction générale de lire les rapports privés n’est déduite des clauses visant les clics artificiels ou le contenu publicitaire. Les pages publiques ne suffisent cependant pas à confirmer le périmètre d’accès automatisé.
+Précision utilisateur : Amazon a validé la clé MFA TOTP de 52 caractères, pas l’automatisation du portail. La configuration MFA est terminée ; aucune autorisation spécifique de collecte automatisée n’a été reçue. Aucune interdiction générale de lire les rapports privés n’est déduite des clauses visant les clics artificiels ou le contenu publicitaire. Les pages publiques ne suffisent cependant pas à confirmer le périmètre d’accès automatisé.
 
 Sources consultées :
 - https://partenaires.amazon.fr/help/operating/policies : règles de participation et licence, portée à distinguer des rapports privés.
@@ -40,3 +40,17 @@ Développé : présentation honnête de l’accès non vérifié, bouton Synchro
 Vérifié : syntaxe JavaScript et cohérence du diff ; inspection du chemin serveur qui refuse enabled=true pour Amazon. Aucun test ne démontre un accès réel au portail.
 
 Non développé ou non validé : adaptateur navigateur Amazon, téléchargement authentifié, correspondance des rapports du compte, synchronisation financière automatique. Ces éléments dépendent des modalités d’accès et du parcours réel à examiner. Aucune PR, CI, release ou publication de cette branche.
+
+## Avancement : archives et vues de rapports
+
+Les trois archives Category-01nov2026-114521.zip, Linked-Product-01nov2026-114521.zip et Tracking-Id-01nov2026-114521.zip sont annoncées par l’utilisateur comme couvrant le 31/10/2026. Elles ne sont pas présentes dans Documents/Codex ni dans les pièces jointes accessibles à cette étape. Les colonnes Date des vues Catégories et Produits liés sont signalées par l’utilisateur et restent à examiner ; la date du nom de fichier ne devient jamais la date des statistiques.
+
+Développé : lecture ZIP côté serveur en mémoire (CSV/TXT UTF-8, 16 entrées, 1 Mo compressé et décompressé, refus des chemins dangereux, liens symboliques, fichiers chiffrés, doublons et archives imbriquées). L’interface permet de choisir un membre, d’inspecter ses colonnes et de passer par le moteur existant de préparation/confirmation/import. Aucune somme automatique des membres.
+
+La vue est identifiée explicitement : Catégories, Produits liés, Tracking IDs ou Tendances quotidiennes. Une autre vue du même indicateur et périmètre ne peut plus remplacer silencieusement une vue déjà importée. Les chevauchements restent refusés par le moteur existant. Les vues complémentaires doivent être analysées séparément ; leur conservation simultanée hors totaux et la sélection d’une référence par indicateur restent à développer après examen des fichiers réels. Les anciens imports sans vue sont conservés. Les nouveaux exports de sauvegarde avec vue nécessitent cette version du moteur pour leur restauration.
+
+Tendances quotidiennes est prévu comme vue explicite ; les dates sont celles des colonnes associées manuellement. Les clics peuvent être lus dans l’aperçu brut mais ne sont pas encore intégrés aux statistiques. Ne pas déduire des commandes distinctes à partir du nombre d’articles. Aucun calcul de pertes.
+
+Accès étudiés : téléchargement manuel documenté par la FAQ française ; Creators API officielle avec diagnostic ListReports/GetReport existant, dont les droits de reporting financier France restent à vérifier sur le compte. La validation MFA ne démontre ni ces droits API ni l’autorisation de robotiser le portail. Aucun formulaire de connexion Amazon automatisé, téléchargement authentifié ou planification quotidienne activé.
+
+Vérifications nouvelles uniquement : quatre tests synthétiques réussis (ZIP et limites, non-cumul entre vues, sauvegarde/restauration, dates et compatibilité des imports anciens) et syntaxe JavaScript. Aucune archive réelle ni compte Amazon testé.
