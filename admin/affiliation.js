@@ -1,6 +1,8 @@
 "use strict";
 (()=>{
- const host=$('affiliation');let model=null,account='',tab='overview',page=1,search='',status='',start='',end='',timer=null,loginTimer=null,loginAccount='',renderVersion=0,initialRange=true;
+ const host=$('affiliation');let model=null,account='',tab='overview',page=1,search='',status='',timer=null,loginTimer=null,loginAccount='',renderVersion=0,initialRange=true;
+ // Editing the controls never changes the range used by requests.
+ let selectedRange={period:'30',start:'',end:''},appliedRange=null;
  const euro=v=>v===null||v===undefined?'—':new Intl.NumberFormat('fr-FR',{style:'currency',currency:'EUR'}).format(v/100);
  const number=v=>v===null||v===undefined?'—':fmt.format(v);
  const at=v=>v?new Intl.DateTimeFormat('fr-FR',{dateStyle:'short',timeStyle:'short',timeZone:adminTimezone}).format(new Date(v)):'Jamais';
@@ -12,8 +14,17 @@
  const badgeText=a=>!a.available?'Connecteur à venir':a.running?'Synchronisation…':({connected:'Session enregistrée',reconnect:'À reconnecter',disconnected:'À connecter'}[a.session_state]||'À connecter');
  const badge=a=>`<span data-aff-account="${esc(a.id)}" class="aff-badge ${a.available&&a.session_state==='connected'?'aff-good':''}">${badgeText(a)}</span>`;
  const kpi=(label,value,help,tone='cyan')=>`<article class="aff-card aff-${tone}"><span>${esc(label)}</span><strong>${esc(value)}</strong><small>${esc(help)}</small></article>`;
- function range(){return new URLSearchParams({account,start,end})}
- function month(){const d=new Intl.DateTimeFormat('sv-SE',{timeZone:adminTimezone}).format(new Date());start=d.slice(0,7)+'-01';end=d}
+ function range(){return new URLSearchParams({account,start:appliedRange.start,end:appliedRange.end})}
+ function selectPeriod(period){
+   const today=new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Paris',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+   if(period==='all')selectedRange={period,start:'',end:''};
+   else if(period==='month')selectedRange={period,start:today.slice(0,7)+'-01',end:today};
+   else if(period==='30'){
+     // Subtract calendar days from the Paris date, independently of DST and the device zone.
+     const first=new Date(today+'T00:00:00Z');first.setUTCDate(first.getUTCDate()-29);
+     selectedRange={period,start:first.toISOString().slice(0,10),end:today};
+   }else selectedRange={...selectedRange,period:'custom'};
+ }
  function chart(rows){
    if(!rows.length)return '<p class="aff-empty">Aucune vente observée pour cette période.</p>';
    const monthly=new Set(rows.map(r=>r.day)).size>60,groups=new Map();
@@ -23,7 +34,7 @@
  }
  async function load({poll=false}={}){
    const version=++loadVersion;clearTimeout(timer);
-   if(initialRange){month();initialRange=false;}
+   if(initialRange){selectPeriod('30');appliedRange={...selectedRange};initialRange=false;}
    try{
      const next=await request('overview?'+range());if(version!==loadVersion)return;
      const snapshots=m=>JSON.stringify(m?.accounts.map(a=>[a.id,a.snapshot?.id]));
@@ -62,9 +73,10 @@
    if(!tabs.some(t=>t[0]===tab))tab='overview';
    host.innerHTML=`<div class="section-head"><div><p class="aff-eyebrow">ANALYSER · AFFILIATION</p><h1>${esc(label)} ${current?badge(current):''}</h1><p>${current?esc(current.label)+' · '+esc(current.platform):'Vos revenus et l’état de vos partenaires.'}</p></div><div class="aff-actions">${current?'<button data-aff="global">Tous les partenaires</button>':'<button data-aff="partners">Gérer les partenaires</button>'}<button class="primary" data-aff="sync" ${current&&!current.available?'disabled':''}>${current?'Synchroniser':'Synchroniser les comptes connectés'}</button></div></div>
     <nav class="aff-tabs" aria-label="Rubriques affiliation">${tabs.map(([id,title])=>`<button data-aff-tab="${id}" ${tab===id?'aria-current="page" class="active"':''}>${title}</button>`).join('')}</nav>
-    <div class="aff-filters" ${!['overview','sales'].includes(tab)?'hidden':''}><label>Période<select id="aff-period"><option value="custom">Dates sélectionnées</option><option value="month">Ce mois</option><option value="30">30 derniers jours</option><option value="all">Tout l’historique observé</option></select></label><label>Du<input id="aff-start" type="date" value="${esc(start)}"></label><label>Au<input id="aff-end" type="date" value="${esc(end)}"></label><button data-aff="range">Appliquer</button><small>Dates des ventes · fuseau du portail non documenté</small></div>
+    <div class="aff-filters" ${!['overview','sales'].includes(tab)?'hidden':''}><label>Période<select id="aff-period"><option value="custom">Dates sélectionnées</option><option value="month">Ce mois</option><option value="30">30 derniers jours</option><option value="all">Tout l’historique observé</option></select></label><label>Du<input id="aff-start" type="date" value="${esc(selectedRange.start)}"></label><label>Au<input id="aff-end" type="date" value="${esc(selectedRange.end)}"></label><button data-aff="range">Appliquer</button><small>Dates des ventes · fuseau du portail non documenté</small></div>
     <div id="aff-sync-notice">${syncNotice()}</div>
     <div id="aff-content"></div><dialog id="aff-dialog" aria-labelledby="aff-dialog-title"></dialog>`;
+   $('aff-period').value=selectedRange.period;
    renderContent();refreshSyncState();
  }
  function renderContent(){
@@ -97,7 +109,7 @@
    const ring=positive?`<svg class="aff-donut" viewBox="0 0 120 120" role="img" aria-label="Répartition des commissions approuvées positives">${values.map((v,i)=>{const portion=Math.max(0,v.cents)/positive*100,part=`<circle class="aff-slice aff-slice-${i%4}" cx="60" cy="60" r="45" pathLength="100" stroke-dasharray="${portion} ${100-portion}" stroke-dashoffset="${-offset}"/>`;offset+=portion;return part}).join('')}</svg>`:'';
    return `<div class="aff-distribution">${ring}<dl class="aff-facts">${values.map(v=>`<div><dt>${esc(v.name)}</dt><dd>${v.known?euro(v.cents):'—'}</dd></div>`).join('')}</dl></div><small>Commissions approuvées de la période. Le cercle représente les montants positifs ; les corrections négatives restent dans les totaux.</small>`;
  }
- function salesQuery(){return new URLSearchParams({account,start,end,page:String(page),search,status})}
+ function salesQuery(){const query=range();query.set('page',String(page));query.set('search',search);query.set('status',status);return query}
  async function loadSales(){const ticket=++salesVersion,v=renderVersion,id=account;try{const result=await request('transactions?'+salesQuery());if(ticket!==salesVersion||! $('aff-sales-table')||account!==id||v!==renderVersion)return;page=result.page;
    $('aff-sales-table').innerHTML=`<div class="aff-table-wrap"><table><thead><tr><th>ID</th><th>Date du portail</th><th>Commande</th><th>Commission</th><th>Statut</th><th>Historique</th></tr></thead><tbody>${result.items.map(r=>`<tr><td>#${esc(r.provider_id)}</td><td>${esc(r.occurred_at)}</td><td>${euro(r.order_cents)}</td><td>${euro(r.commission_cents)}</td><td><span class="aff-badge ${r.present&&r.status==='approved'?'aff-good':''}">${!r.present?'Absente du relevé':r.status==='approved'?'Approuvée':'Non approuvée'}</span></td><td><button data-aff="history" data-id="${esc(r.provider_id)}">Voir</button></td></tr>`).join('')||'<tr><td colspan="6">Aucune vente pour cette sélection.</td></tr>'}</tbody></table></div><div class="aff-pagination"><span>${number(result.total)} ventes · page ${result.page} / ${result.pages}</span><button data-aff="previous" ${page===1?'disabled':''}>Précédente</button><button data-aff="next" ${page===result.pages?'disabled':''}>Suivante</button></div>`;
    }catch(e){say(e.message,true)}
@@ -127,7 +139,16 @@
  }
  async function loginInput(data){await loginAction('login/input',data)}
  host.addEventListener('cancel',e=>{if(e.target.id==='aff-dialog'){e.preventDefault();closeDialog()}},true);
- host.addEventListener('change',e=>{if(e.target.id!=='aff-period')return;const v=e.target.value;if(v==='month')month();else if(v==='all'){start='';end=''}else if(v==='30'){const now=new Date();end=new Intl.DateTimeFormat('sv-SE',{timeZone:adminTimezone}).format(now);now.setUTCDate(now.getUTCDate()-29);start=new Intl.DateTimeFormat('sv-SE',{timeZone:adminTimezone}).format(now)}else return;page=1;load()});
+ function editDates(e){
+   if(!['aff-start','aff-end'].includes(e.target.id))return;
+   selectedRange={period:'custom',start:$('aff-start').value,end:$('aff-end').value};
+   $('aff-period').value='custom';
+ }
+ host.addEventListener('input',editDates);
+ host.addEventListener('change',e=>{
+   if(e.target.id!=='aff-period'){editDates(e);return}
+   selectPeriod(e.target.value);$('aff-start').value=selectedRange.start;$('aff-end').value=selectedRange.end;
+ });
  host.addEventListener('click',async e=>{
    const button=e.target.closest('button');if(!button)return;
    if(button.dataset.affTab){tab=button.dataset.affTab;render();return}
@@ -138,7 +159,13 @@
      if(action==='partners'){account='';tab='partners';await load()}
      if(action==='open'){account=button.dataset.id;tab=selected()?.snapshot?'overview':'settings';page=1;await load()}
      if(action==='settings'){tab='settings';render()}
-     if(action==='range'){start=$('aff-start').value;end=$('aff-end').value;page=1;await load()}
+     if(action==='range'){
+       const from=$('aff-start'),to=$('aff-end');
+       if(!from.reportValidity()||!to.reportValidity())return;
+       if(from.value&&to.value&&from.value>to.value)throw new Error('La date « Du » doit précéder ou être égale à la date « Au ».');
+       selectedRange={period:$('aff-period').value,start:from.value,end:to.value};
+       appliedRange={...selectedRange};page=1;salesVersion++;await load();
+     }
      if(action==='previous'||action==='next'){page+=action==='next'?1:-1;await loadSales()}
      if(action==='sync'){
        if(syncStarting||model.accounts.some(a=>a.running))return;
