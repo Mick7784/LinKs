@@ -37,8 +37,10 @@ s.serve_forever()`],{cwd:__dirname,env:{...process.env,PYTHONIOENCODING:'utf-8',
   await page.getByText('site-21',{exact:false}).first().waitFor();
   const report=await api('overview?account='+account.id);
   assert.equal(report.amazon[0].totals.commission_cents,1234);assert.equal(report.amazon[0].totals.shipped_items,2);assert.equal(report.amazon[0].totals.orders,null);assert.deepEqual(report.losses,[]);
-  await page.getByRole('button',{name:'Tous les partenaires',exact:true}).click();await page.locator('.aff-card').filter({hasText:/^Commissions Amazon/}).waitFor();
-  assert.match(await page.locator('.aff-card').filter({hasText:'Commissions observées'}).innerText(),/12,34/);
-  assert.deepEqual(errors,[]);console.log('PASS Amazon CSV: mapping, confirmation, private API, detailed/global totals, Tracking IDs, unknown orders and no inferred losses.');
+  await page.getByRole('button',{name:'Tous les partenaires',exact:true}).click();await page.locator('[data-overview-total]').waitFor();
+  assert.equal(await page.locator('[data-overview-total]').innerText(),'N/D');
+  await page.getByText('Couverture et exclusions',{exact:true}).click();
+  assert.match(await page.locator('.aff-overview-coverage').innerText(),/Statut des commissions Amazon non comparable/);
+  assert.deepEqual(errors,[]);console.log('PASS Amazon CSV: mapping, confirmation, private API, detailed totals and explicit global exclusion, Tracking IDs, unknown orders and no inferred losses.');
  }finally{if(browser)await browser.close();if(server){server.kill();if(server.exitCode===null)await new Promise(r=>server.once('exit',r))}rmSync(temp,{recursive:true,force:true})}
 })().catch(error=>{console.error(error);process.exitCode=1});

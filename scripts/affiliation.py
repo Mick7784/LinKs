@@ -4,6 +4,7 @@ Connectors supply a complete observation, not a ledger of invented daily gains.
 Provider dates remain local wall dates when their timezone is not documented.
 """
 import amazon_affiliation as amazon
+import affiliation_overview
 import json
 import os
 import re
@@ -220,7 +221,8 @@ def report(db, query):
     if end: loss_clause+=' AND aff_loss_day(first_missing_at)<=?'; loss_args.append(end)
     losses=[dict(r) for r in db.execute('SELECT account_id,COUNT(*) sales,SUM(commission_cents) cents FROM '+transaction_source(db)+' WHERE '+loss_clause+' GROUP BY account_id',loss_args)]
     amazon_reports=[{'account_id':a['id'],**amazon.report(db,a['id'],start,end)} for a in selected if a['platform_id']=='amazon']
-    return {'amazon':amazon_reports,'losses':losses,'accounts':accounts,'platforms':[{**dict(r),'available':1 if r['id']=='amazon' else r['available']} for r in db.execute('SELECT * FROM aff_platforms')],
+    return {**({'overview':affiliation_overview.build(db, accounts, start, end)} if not identity else {}),
+            'amazon':amazon_reports,'losses':losses,'accounts':accounts,'platforms':[{**dict(r),'available':1 if r['id']=='amazon' else r['available']} for r in db.execute('SELECT * FROM aff_platforms')],
             'aggregate':aggregate,'daily':daily,'has_data':any(a['snapshot'] for a in selected),
             'coverage':{'ready':sum(bool(a['snapshot']) for a in selected),'total':len(selected)},'currency':'EUR'}
 

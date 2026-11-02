@@ -69,6 +69,8 @@ jobs:
           node --test scripts/amazon-auth.test.mjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/amazon-mfa-browser-test.mjs
           python3 scripts/affiliation_test.py
+          python3 scripts/affiliation_overview_test.py
+          node --test scripts/amazon-status.test.mjs
           npm ci --ignore-scripts
           node node_modules/playwright-core/cli.js install --with-deps firefox
           python3 scripts/amazon_affiliation_test.py
@@ -78,6 +80,8 @@ jobs:
           python3 scripts/amazon_collection_test.py
           CHROMIUM_PATH=$(NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node -e 'console.log(require("playwright").chromium.executablePath())') node --test scripts/amazon-collector.test.mjs scripts/amazon-portal.test.mjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/amazon-statistics-browser-test.cjs
+          NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/amazon-affiliation-browser-test.cjs
+          NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/affiliation-overview-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/amazon-collection-browser-test.cjs
           CHROMIUM_PATH=$(NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node -e 'console.log(require("playwright").chromium.executablePath())') node --test scripts/domadoo.test.mjs
           CHROMIUM_PATH=$(NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node -e 'console.log(require("playwright").chromium.executablePath())') node --test scripts/affiliation-login.test.mjs

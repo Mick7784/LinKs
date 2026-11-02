@@ -58,6 +58,7 @@
  }
  function syncNotice(){
    const current=selected(),snap=current?.snapshot;
+   if(!current)return '';
    if(current?.platform_id==='amazon')return `<p class="aff-freshness">Dernier import : ${esc(at(current.last_success))} · rapports Amazon France, couverture limitée aux fichiers importés. Aucune surveillance des pertes par transaction.</p>`;
    return current?`<p class="aff-freshness">Dernier relevé complet : <strong>${esc(at(current.last_success))}</strong>${snap?' · '+number(snap.row_count)+' ventes · '+number(snap.pages)+' pages · '+(snap.source==='portal'?'Portail Domadoo':'Import manuel'):''}</p>${current.last_error?`<p class="aff-alert" role="status">${esc(current.last_error)} Le dernier relevé valide reste affiché.</p>`:''}`:`<p class="aff-freshness">${model.coverage.ready} / ${model.coverage.total} comptes disposent d’un relevé. Les totaux portent uniquement sur ces comptes.</p>`;
  }
@@ -76,14 +77,16 @@
    const tabs=[['overview','Vue d’ensemble'],...(current?[['sales',current.platform_id==='amazon'?'Rapports Amazon':'Ventes et commissions'],['payments','Paiements'],...(current.platform_id==='amazon'?[['connection','Connexion']]:[]),['settings',current.platform_id==='amazon'?'Import et accès API':'Connexion et synchronisation']]:[['partners','Mes partenaires']])];
    if(!tabs.some(t=>t[0]===tab))tab='overview';
    host.innerHTML=`<div class="section-head"><div><p class="aff-eyebrow">ANALYSER · AFFILIATION</p><h1>${esc(label)} ${current?badge(current):''}</h1><p>${current?esc(current.label)+' · '+esc(current.platform):'Vos revenus et l’état de vos partenaires.'}</p></div><div class="aff-actions">${current?'<button data-aff="global">Tous les partenaires</button>':'<button data-aff="partners">Gérer les partenaires</button>'}${current?.platform_id==='amazon'?'<button class="primary" data-aff="amazon-import">Importer un rapport CSV</button>':`<button class="primary" data-aff="sync" ${current&&!current.available?'disabled':''}>${current?'Synchroniser':'Synchroniser les comptes connectés'}</button>`}</div></div>
-    <nav class="aff-tabs" aria-label="Rubriques affiliation">${tabs.map(([id,title])=>`<button data-aff-tab="${id}" ${tab===id?'aria-current="page" class="active"':''}>${title}</button>`).join('')}</nav>
-    <div class="aff-filters" ${!['overview','sales',...(current?.platform_id==='amazon'?['payments']:[])].includes(tab)?'hidden':''}><label>Période<select id="aff-period"><option value="custom">Dates sélectionnées</option><option value="month">Ce mois</option><option value="30">30 derniers jours</option><option value="all">Tout l’historique observé</option></select></label><label>Du<input id="aff-start" type="date" value="${esc(selectedRange.start)}"></label><label>Au<input id="aff-end" type="date" value="${esc(selectedRange.end)}"></label><button data-aff="range">Appliquer</button><small>${current?.platform_id==='amazon'?'Dates fournies par le rapport Amazon':'Ventes : date du portail · pertes : première disparition (Europe/Paris)'}</small></div>
+    <nav class="aff-tabs aff-partner-tabs" aria-label="Partenaires affiliation"><button data-aff="global" ${!current&&tab==='overview'?'aria-current="page" class="active"':''}>${current?'Vue d’ensemble générale':'Vue d’ensemble'}</button>${model.accounts.map(a=>`<button data-aff="partner" data-id="${esc(a.id)}" ${account===a.id?'aria-current="page" class="active"':''}>${esc(a.partner)}${model.accounts.filter(b=>b.partner_id===a.partner_id).length>1?' · '+esc(a.label):''}</button>`).join('')}</nav>
+    <nav class="aff-tabs" aria-label="Rubriques affiliation" ${current?'':'hidden'}>${tabs.map(([id,title])=>`<button data-aff-tab="${id}" ${tab===id?'aria-current="page" class="active"':''}>${title}</button>`).join('')}</nav>
+    <div class="aff-filters" ${!['overview','sales',...(current?.platform_id==='amazon'?['payments']:[])].includes(tab)?'hidden':''}><label>Période<select id="aff-period"><option value="custom">Dates sélectionnées</option><option value="month">Ce mois</option><option value="30">30 derniers jours</option><option value="all">Tout l’historique observé</option></select></label><label>Du<input id="aff-start" type="date" value="${esc(selectedRange.start)}"></label><label>Au<input id="aff-end" type="date" value="${esc(selectedRange.end)}"></label><button data-aff="range">Appliquer</button><small>${!current?'Jours civils · Europe/Paris':current.platform_id==='amazon'?'Dates fournies par le rapport Amazon':'Ventes : date du portail · pertes : première disparition (Europe/Paris)'}</small></div>
     <div id="aff-sync-notice">${syncNotice()}</div>
     <div id="aff-content"></div><dialog id="aff-dialog" aria-labelledby="aff-dialog-title"></dialog>`;
    $('aff-period').value=selectedRange.period;
    renderContent();refreshSyncState();
  }
  function renderContent(){
+   if(!selected()&&tab==='overview'){window.LinksAffiliationOverview.render($('aff-content'),model.overview);return}
    const current=selected(),rows=model.aggregate,has=model.has_data,summary=current?.snapshot?.summary;
    if(current?.platform_id==='amazon'){renderAmazon(current);return}
    const amazonReports=model.amazon||[],amazonCents=amazonReports.reduce((n,r)=>n+(r.totals.commission_cents||0),0);
@@ -303,6 +306,7 @@
      if(action==='reload')await load();
      if(action==='global'){account='';tab='overview';await load()}
      if(action==='partners'){account='';tab='partners';await load()}
+     if(action==='partner'){account=button.dataset.id;tab='overview';page=1;await load()}
      if(action==='open'){account=button.dataset.id;tab=selected()?.snapshot?'overview':'settings';page=1;await load()}
      if(action==='settings'){tab='settings';render()}
      if(action==='range'){
