@@ -1,5 +1,36 @@
 # Changelog
 
+## V1.4.9
+
+# V1.4.9 — Vue d'ensemble Affiliation et suivi Amazon
+
+### Vue d'ensemble Affiliation
+
+- Onglets partenaires avec défilement, filtres de période appliqués explicitement et conservation des pages de gestion existantes.
+- Un total de commissions approuvées, deux tendances et une couverture explicite des données et partenaires retenus.
+- Histogramme quotidien gradué en euros, sélection à la souris ou au clavier et comparaison facultative avec la période précédente ou l'année N-1.
+- Deux répartitions indépendantes : détail du jour sélectionné et répartition de toute la période. Les totaux se rapprochent avec les barres et le KPI.
+- Corrections négatives conservées, jours inconnus distincts des zéros, états partiels et historiques insuffisants signalés.
+
+### Corrections Amazon
+
+- Consultations du statut MFA et de la progression disponibles pendant la collecte.
+- Synchronisation en cours, erreur historique et résultat de la dernière tentative affichés séparément.
+- Génération asynchrone des exports : sélection de la période et des rapports, format CSV, attente de disponibilité et rejet des anciens exports non liés à la demande.
+- Diagnostic de l'étape précise en cas d'échec, sessions chiffrées et import transactionnel conservés.
+
+### Données et compatibilité
+
+Le KPI consolidé retient les commissions EUR actuellement approuvées chez Domadoo, attribuées à la date de vente du portail. Ce n'est pas un solde retirable ni un historique des dates d'approbation.
+
+Amazon reste explicitement exclu de ce KPI : ses rapports ne prouvent pas un statut équivalent à « approuvé ». Les montants et rapports Amazon restent disponibles dans sa page, sans double comptage de vues complémentaires. Les partenaires sans données comparables ne sont pas comptés comme zéro.
+
+Les tendances exigent le même périmètre de comptes et des journées complètes ; une journée provisoire, une base nulle ou un historique insuffisant donne N/D. Le 29 février n'est pas remplacé par le 28. La vue journalière accepte jusqu'à 3 660 jours.
+
+Le connecteur Amazon reste expérimental : les tests utilisent des données et pages contrôlées, sans validation d'une collecte réussie sur le compte marchand réel. L'import manuel reste disponible ; aucun contrôle supplémentaire n'est contourné.
+
+Aucune migration SQLite, aucune modification des liens affiliés et aucun déploiement automatique sur le VPS.
+
 ## V1.4.8
 
 # V1.4.8 — Amazon Partenaires : exports et synchronisation manuelle expérimentale
