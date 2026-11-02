@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
-import {normalSignIn,requestReports,allowedAmazonNavigation} from './amazon-collector.mjs';
+import {normalSignIn,requestReports,allowedAmazonNavigation,parisGenerationMinute} from './amazon-collector.mjs';
 const {chromium}=createRequire(import.meta.url)('playwright-core');
 const launch=()=>chromium.launch({headless:true,executablePath:process.env.CHROMIUM_PATH});
 test('ordinary email/password/TOTP sequence reaches report page without extra login',async()=>{
@@ -27,18 +27,32 @@ test('CAPTCHA stops before sending credentials; unsafe destinations rejected',as
  for(const url of ['http://www.amazon.fr/ap/signin','https://evil.test/home','https://www.amazon.fr/ap/cvf','https://partenaires.amazon.fr/homeevil'])assert.equal(allowedAmazonNavigation(url),false);
  }finally{await browser.close()}
 });
-test('bounded downloads are requested for the chosen date and all tracking IDs',async()=>{
- const browser=await launch();let exports=0;
- try{
-  const page=await browser.newPage({acceptDownloads:true});
-  await page.route('**/*',route=>{
-   if(route.request().url().includes('/home/download')){exports++;return route.fulfill({headers:{'content-type':'text/csv','content-disposition':'attachment; filename="report.csv"'},body:'Date,clics\n10-31-2026,2\n'})}
-   return route.fulfill({contentType:'text/html; charset=utf-8',body:`<button onclick="document.querySelector('dialog').showModal()">Télécharger rapports</button><dialog><label>Du<input type="date"></label><label>Au<input type="date"></label><label for="type">Type de rapport</label><select id="type"><option>Catégories</option><option>Produits liés</option><option>Tracking ID</option></select><label for="tracking">Tracking ID</label><select id="tracking"><option value="single">Un</option><option value="all">Tous</option></select><button onclick="location.href='/home/download'">Générer</button><button onclick="document.querySelector('dialog').close()">Fermer</button></dialog>`});
-  });
-  await page.goto('https://partenaires.amazon.fr/home/reports');
-  const files=await requestReports(page,'2026-10-31');assert.equal(files.length,3);assert.equal(exports,3);assert.equal(files[0].csv,'Date,clics\n10-31-2026,2\n');
+const reportHtml=(generate=true)=>`<button>Télécharger rapports</button><label for="period">Période</label><select id="period"><option value="month">Ce mois</option><option value="custom">Personnalisée</option></select><label>Du<input type="date"></label><label>Au<input type="date"></label><label><input type="checkbox">Category</label><label><input type="checkbox">Linked-Product</label><label><input type="checkbox">Tracking-Id</label><label><input type="radio" name="format" checked>XLSX</label><label><input type="radio" name="format">CSV</label><button onclick="${generate?"setTimeout(()=>document.querySelector('tbody').insertAdjacentHTML('beforeend',window.newRows),100)":"void 0"}">Générer des rapports</button><table><tbody>${rows('10:00 31/10/2026','old')}</tbody></table><script>window.newRows=${JSON.stringify(rows(generatedNow(),'new'))}</script>`;
+function generatedNow(){const m=parisGenerationMinute().match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}:\d{2})/);return `${m[4]} ${m[3]}/${m[2]}/${m[1]}`}
+function rows(time,batch){return ['Category','Linked-Product','Tracking-Id'].map(type=>`<tr><td>${type}</td><td>CSV</td><td>${time}</td><td><a href="/home/export?type=${type}&batch=${batch}">Télécharger</a></td></tr>`).join('')}
+async function reportPage(browser,generate=true){
+ const page=await browser.newPage({acceptDownloads:true});const requests=[];
+ await page.route('**/*',route=>{
+  const url=new URL(route.request().url());
+  if(url.pathname==='/home/export'){requests.push(url.searchParams.get('batch'));return route.fulfill({headers:{'content-type':'text/csv','content-disposition':`attachment; filename="${url.searchParams.get('type')}-01nov2026-120000.csv"`},body:'Date,clics\n10-31-2026,2\n'})}
+  return route.fulfill({contentType:'text/html; charset=utf-8',body:reportHtml(generate)});
+ });
+ await page.goto('https://partenaires.amazon.fr/home/reports');return {page,requests};
+}
+test('checkboxes, CSV and async generation download only the new batch',async()=>{
+ const browser=await launch();try{
+  const {page,requests}=await reportPage(browser),stages=[];
+  const files=await requestReports(page,'2026-10-31',{progress:s=>stages.push(s),pollMs:25,waitMs:3000});
+  assert.equal(files.length,3);assert.deepEqual(requests,['new','new','new']);
+  assert.equal(await page.getByLabel('CSV',{exact:true}).isChecked(),true);
   assert.equal(await page.getByLabel('Du',{exact:true}).inputValue(),'2026-10-31');
-  assert.equal(await page.getByLabel('Tracking ID',{exact:true}).inputValue(),'all');
+  assert.deepEqual(stages,['reports','period','selection','generation','waiting','download']);
  }finally{await browser.close()}
 });
-
+test('old available reports never satisfy a new generation',async()=>{
+ const browser=await launch();try{
+  const {page,requests}=await reportPage(browser,false);
+  await assert.rejects(requestReports(page,'2026-10-31',{pollMs:20,waitMs:100}),{code:'amazon_generation_timeout'});
+  assert.equal(requests.length,0);
+ }finally{await browser.close()}
+});

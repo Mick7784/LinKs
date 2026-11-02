@@ -38,12 +38,13 @@
    if(initialRange){selectPeriod('30');appliedRange={...selectedRange};initialRange=false;}
    try{
      const next=await request('overview?'+range());if(version!==loadVersion)return;
-     const snapshots=m=>JSON.stringify(m?.accounts.map(a=>[a.id,a.snapshot?.id,...(a.platform_id==='amazon'?[a.running,a.last_error,a.session_state]:[])]));
+     const snapshots=m=>JSON.stringify(m?.accounts.map(a=>[a.id,a.snapshot?.id,...(a.platform_id==='amazon'?[a.running,a.last_error,a.session_state,a.portal_run,a.portal_progress]:[])]));
      const changed=snapshots(model)!==snapshots(next);model=next;pollError=false;
      if(!poll)render();
      else{
        refreshSyncState();
-       if(tab==='settings')loadRuns();
+       if(tab==='connection'&&selected()?.platform_id==='amazon')updateAmazonPortalState(selected());
+       else if(tab==='settings')loadRuns();
        else if(changed&&tab==='sales')loadSales();
        else if(changed)renderContent();
      }
@@ -57,6 +58,7 @@
  }
  function syncNotice(){
    const current=selected(),snap=current?.snapshot;
+   if(!current)return '';
    if(current?.platform_id==='amazon')return `<p class="aff-freshness">Dernier import : ${esc(at(current.last_success))} · rapports Amazon France, couverture limitée aux fichiers importés. Aucune surveillance des pertes par transaction.</p>`;
    return current?`<p class="aff-freshness">Dernier relevé complet : <strong>${esc(at(current.last_success))}</strong>${snap?' · '+number(snap.row_count)+' ventes · '+number(snap.pages)+' pages · '+(snap.source==='portal'?'Portail Domadoo':'Import manuel'):''}</p>${current.last_error?`<p class="aff-alert" role="status">${esc(current.last_error)} Le dernier relevé valide reste affiché.</p>`:''}`:`<p class="aff-freshness">${model.coverage.ready} / ${model.coverage.total} comptes disposent d’un relevé. Les totaux portent uniquement sur ces comptes.</p>`;
  }
@@ -75,14 +77,16 @@
    const tabs=[['overview','Vue d’ensemble'],...(current?[['sales',current.platform_id==='amazon'?'Rapports Amazon':'Ventes et commissions'],['payments','Paiements'],...(current.platform_id==='amazon'?[['connection','Connexion']]:[]),['settings',current.platform_id==='amazon'?'Import et accès API':'Connexion et synchronisation']]:[['partners','Mes partenaires']])];
    if(!tabs.some(t=>t[0]===tab))tab='overview';
    host.innerHTML=`<div class="section-head"><div><p class="aff-eyebrow">ANALYSER · AFFILIATION</p><h1>${esc(label)} ${current?badge(current):''}</h1><p>${current?esc(current.label)+' · '+esc(current.platform):'Vos revenus et l’état de vos partenaires.'}</p></div><div class="aff-actions">${current?'<button data-aff="global">Tous les partenaires</button>':'<button data-aff="partners">Gérer les partenaires</button>'}${current?.platform_id==='amazon'?'<button class="primary" data-aff="amazon-import">Importer un rapport CSV</button>':`<button class="primary" data-aff="sync" ${current&&!current.available?'disabled':''}>${current?'Synchroniser':'Synchroniser les comptes connectés'}</button>`}</div></div>
-    <nav class="aff-tabs" aria-label="Rubriques affiliation">${tabs.map(([id,title])=>`<button data-aff-tab="${id}" ${tab===id?'aria-current="page" class="active"':''}>${title}</button>`).join('')}</nav>
-    <div class="aff-filters" ${!['overview','sales',...(current?.platform_id==='amazon'?['payments']:[])].includes(tab)?'hidden':''}><label>Période<select id="aff-period"><option value="custom">Dates sélectionnées</option><option value="month">Ce mois</option><option value="30">30 derniers jours</option><option value="all">Tout l’historique observé</option></select></label><label>Du<input id="aff-start" type="date" value="${esc(selectedRange.start)}"></label><label>Au<input id="aff-end" type="date" value="${esc(selectedRange.end)}"></label><button data-aff="range">Appliquer</button><small>${current?.platform_id==='amazon'?'Dates fournies par le rapport Amazon':'Ventes : date du portail · pertes : première disparition (Europe/Paris)'}</small></div>
+    <nav class="aff-tabs aff-partner-tabs" aria-label="Partenaires affiliation"><button data-aff="global" ${!current&&tab==='overview'?'aria-current="page" class="active"':''}>${current?'Vue d’ensemble générale':'Vue d’ensemble'}</button>${model.accounts.map(a=>`<button data-aff="partner" data-id="${esc(a.id)}" ${account===a.id?'aria-current="page" class="active"':''}>${esc(a.partner)}${model.accounts.filter(b=>b.partner_id===a.partner_id).length>1?' · '+esc(a.label):''}</button>`).join('')}</nav>
+    <nav class="aff-tabs" aria-label="Rubriques affiliation" ${current?'':'hidden'}>${tabs.map(([id,title])=>`<button data-aff-tab="${id}" ${tab===id?'aria-current="page" class="active"':''}>${title}</button>`).join('')}</nav>
+    <div class="aff-filters" ${!['overview','sales',...(current?.platform_id==='amazon'?['payments']:[])].includes(tab)?'hidden':''}><label>Période<select id="aff-period"><option value="custom">Dates sélectionnées</option><option value="month">Ce mois</option><option value="30">30 derniers jours</option><option value="all">Tout l’historique observé</option></select></label><label>Du<input id="aff-start" type="date" value="${esc(selectedRange.start)}"></label><label>Au<input id="aff-end" type="date" value="${esc(selectedRange.end)}"></label><button data-aff="range">Appliquer</button><small>${!current?'Jours civils · Europe/Paris':current.platform_id==='amazon'?'Dates fournies par le rapport Amazon':'Ventes : date du portail · pertes : première disparition (Europe/Paris)'}</small></div>
     <div id="aff-sync-notice">${syncNotice()}</div>
     <div id="aff-content"></div><dialog id="aff-dialog" aria-labelledby="aff-dialog-title"></dialog>`;
    $('aff-period').value=selectedRange.period;
    renderContent();refreshSyncState();
  }
  function renderContent(){
+   if(!selected()&&tab==='overview'){window.LinksAffiliationOverview.render($('aff-content'),model.overview);return}
    const current=selected(),rows=model.aggregate,has=model.has_data,summary=current?.snapshot?.summary;
    if(current?.platform_id==='amazon'){renderAmazon(current);return}
    const amazonReports=model.amazon||[],amazonCents=amazonReports.reduce((n,r)=>n+(r.totals.commission_cents||0),0);
@@ -107,6 +111,16 @@
       <section class="panel"><h2>Synchronisation quotidienne</h2><form id="aff-settings-form"><label class="aff-checkbox"><input type="checkbox" id="aff-enabled" ${current.enabled?'checked':''} ${!current.available?'disabled':''}>Activer la collecte quotidienne</label><p class="field-help">À activer après vérification des conditions d’utilisation du portail. CAPTCHA et double vérification demandent votre intervention.</p><div class="aff-filters"><label>Heure locale<select id="aff-hour">${Array.from({length:24},(_,h)=>`<option value="${h}" ${h===current.hour?'selected':''}>${String(h).padStart(2,'0')}:00</option>`).join('')}</select></label><label>Fuseau horaire<input id="aff-zone" value="${esc(current.zone)}" required maxlength="60"></label></div><button class="primary">Enregistrer</button></form><p>Lecture complète de l’historique, une seule collecte à la fois. Le dernier relevé valide est conservé en cas d’échec.</p></section></div><section class="panel"><h2>Historique des synchronisations</h2><div id="aff-runs">Chargement…</div></section>`;
      $('aff-settings-form').onsubmit=async e=>{e.preventDefault();try{await request('settings',{id:account,enabled:$('aff-enabled').checked,hour:Number($('aff-hour').value),zone:$('aff-zone').value});say('Synchronisation enregistrée.');await load()}catch(error){say(error.message,true)}};loadRuns();
    }
+ }
+ function updateAmazonPortalState(current){
+   const run=current.portal_run,status=run?.status||'idle',state=host.querySelector('[data-portal-state]');if(!state)return;
+   const progress=current.portal_progress?.message||'En attente du navigateur.';
+   state.textContent=status==='running'?'Synchronisation en cours — '+progress:status==='success'?'Dernière synchronisation réussie':status==='failed'?'Dernière tentative échouée':'Aucune synchronisation effectuée';
+   const error=host.querySelector('[data-portal-error]');error.textContent=status==='failed'?(run.message||'Collecte interrompue.') :'';error.hidden=status!=='failed';
+   const historical=host.querySelector('[data-portal-history]'),previous=current.portal_previous_error;
+   historical.textContent=previous?'Dernière erreur historique ('+at(previous.finished_at)+') : '+previous.message:'';historical.hidden=!previous;
+   host.querySelector('[data-portal-last-success]').textContent=at(current.portal_last_success);
+   for(const el of host.querySelectorAll('[data-portal-sync],[data-portal-disconnect],[data-portal-day],[data-portal-tag]'))el.disabled=status==='running';
  }
  function setupAmazonMfa(id){
    const version=renderVersion,form=$('aff-mfa-form'),state=$('aff-mfa-state'),box=$('aff-mfa-code-box'),manage=$('aff-mfa-manage');
@@ -163,7 +177,7 @@
    if(tab==='connection'){
      content.innerHTML+='<section class="panel aff-mfa"><h2>Connexion Amazon Partenaires</h2><p>Configurez AMAZON_LOGIN et AMAZON_PASSWORD sur le serveur. Pour activer la double vérification, saisissez ici la clé TOTP de 52 caractères fournie par Amazon. Saisissez le code affiché sur le site Amazon, puis confirmez ici que l’activation est terminée.</p><p class="field-help">LinKs ne valide pas la clé auprès d’Amazon. La synchronisation manuelle utilise le navigateur serveur et s’arrête si Amazon demande un contrôle supplémentaire. Le parcours doit encore être validé sur votre compte réel.</p><p id="aff-mfa-state" role="status">Chargement de la configuration MFA…</p><form id="aff-mfa-form" hidden><label>Clé secrète TOTP Amazon<input id="aff-mfa-secret" type="password" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="80" required placeholder="52 caractères Base32"></label><button class="primary">Afficher le code</button></form><div id="aff-mfa-code-box" hidden><p>Code à saisir chez Amazon :</p><div class="aff-mfa-code-row"><strong id="aff-mfa-code" aria-live="polite"></strong><button id="aff-mfa-copy" type="button">Copier</button></div><p id="aff-mfa-countdown" role="status"></p><label class="aff-checkbox"><input id="aff-mfa-confirm-check" type="checkbox">J’ai activé cette clé sur le site Amazon</label><div class="aff-actions"><button id="aff-mfa-confirm" class="primary" disabled>Confirmer l’activation</button><button id="aff-mfa-cancel">Annuler cette clé</button></div></div><div id="aff-mfa-manage" class="aff-actions" hidden><button id="aff-mfa-replace">Remplacer la clé</button><button id="aff-mfa-remove">Supprimer la clé</button></div></section>';
      const portal=document.createElement('section');portal.className='panel';
-     portal.innerHTML=`<h2>Synchronisation du portail</h2><p role="status"><strong>${current.running?"Synchronisation en cours…":current.session_state==="connected"?"Dernière collecte confirmée (session à revérifier)":"Connexion à vérifier"}</strong></p><p>Collecte manuelle expérimentale : trois vues sur une seule journée, tous Tracking IDs. En cas de contrôle supplémentaire, terminez-le sur Amazon puis réessayez ; sa résolution peut ne pas être transférable au navigateur serveur. L’import CSV reste disponible.</p><dl class="aff-facts"><div><dt>Dernière synchronisation du portail réussie</dt><dd>${esc(at(current.portal_last_success))}</dd></div><div><dt>Dernier import de rapport</dt><dd>${esc(at(current.last_success))}</dd></div></dl><p role="alert">${esc(current.last_error||"")}</p><div class="aff-filters"><label>Journée à récupérer<input data-portal-day type="date" required></label><label>Tracking ID attendu dans le compte<input data-portal-tag maxlength="100" placeholder="exemple-21"></label><button data-portal-sync ${current.running?"disabled":""}>Synchroniser</button><button data-portal-disconnect ${current.running?"disabled":""}>Oublier la session Amazon</button></div><button data-aff="amazon-import">Importer un rapport CSV</button><h3>Horaire souhaité</h3><p>Enregistrez l’horaire pour une future collecte. La synchronisation quotidienne reste désactivée.</p><form class="aff-filters"><label>Heure locale<select name="hour">${Array.from({length:24},(_,h)=>`<option value="${h}" ${h===current.hour?'selected':''}>${String(h).padStart(2,'0')}:00</option>`).join('')}</select></label><label>Fuseau horaire<input name="zone" required maxlength="60" value="${esc(current.zone)}"></label><button>Enregistrer l’horaire</button></form><p class="field-help" role="status" data-portal-message></p>`;
+     portal.innerHTML=`<h2>Synchronisation du portail</h2><p role="status"><strong data-portal-state></strong></p><p>Collecte manuelle expérimentale : trois vues sur une seule journée, tous Tracking IDs. En cas de contrôle supplémentaire, terminez-le sur Amazon puis réessayez ; sa résolution peut ne pas être transférable au navigateur serveur. L’import CSV reste disponible.</p><dl class="aff-facts"><div><dt>Dernière synchronisation du portail réussie</dt><dd data-portal-last-success>${esc(at(current.portal_last_success))}</dd></div><div><dt>Dernier import de rapport</dt><dd>${esc(at(current.last_success))}</dd></div></dl><p role="alert" data-portal-error hidden></p><p class="field-help" data-portal-history hidden></p><div class="aff-filters"><label>Journée à récupérer<input data-portal-day type="date" required></label><label>Tracking ID attendu dans le compte<input data-portal-tag maxlength="100" placeholder="exemple-21"></label><button data-portal-sync ${current.running?"disabled":""}>Synchroniser</button><button data-portal-disconnect ${current.running?"disabled":""}>Oublier la session Amazon</button></div><button data-aff="amazon-import">Importer un rapport CSV</button><h3>Horaire souhaité</h3><p>Enregistrez l’horaire pour une future collecte. La synchronisation quotidienne reste désactivée.</p><form class="aff-filters"><label>Heure locale<select name="hour">${Array.from({length:24},(_,h)=>`<option value="${h}" ${h===current.hour?'selected':''}>${String(h).padStart(2,'0')}:00</option>`).join('')}</select></label><label>Fuseau horaire<input name="zone" required maxlength="60" value="${esc(current.zone)}"></label><button>Enregistrer l’horaire</button></form><p class="field-help" role="status" data-portal-message></p>`;
      content.append(portal);
      const selection=amazonSelections.get(current.id)||{day:'',tracking_id:''};
      for(const [selector,key] of [['[data-portal-day]','day'],['[data-portal-tag]','tracking_id']]){
@@ -180,7 +194,7 @@
        try{await request('settings',{id:current.id,enabled:false,hour:Number(form.elements.hour.value),zone:form.elements.zone.value});current.hour=Number(form.elements.hour.value);current.zone=form.elements.zone.value;message.textContent='Horaire enregistré. La collecte quotidienne reste désactivée.'}
        catch(error){message.textContent=error.message}finally{button.disabled=false}
      };
-     setupAmazonMfa(current.id);return;
+     updateAmazonPortalState(current);setupAmazonMfa(current.id);return;
    }
    if(tab==='settings'){
      content.innerHTML+='<section class="panel"><h2>Amazon Partenaires France</h2><p>Importez un CSV UTF-8 exporté du portail Partenaires. Vérifiez les colonnes, la période et les Tracking IDs avant validation. Les réimports du même périmètre sont historisés ; les chevauchements sont refusés.</p><button data-aff="amazon-import">Importer un rapport CSV</button><h3>Creators API</h3><p>Les identifiants sont configurés exclusivement côté serveur. Ce diagnostic vérifie les rapports réellement accessibles ; il ne garantit pas l’accès aux commissions France. La collecte automatique reste désactivée tant que le format et la couverture de votre compte ne sont pas validés.</p><button id="aff-amazon-probe">Vérifier les rapports disponibles</button><div id="aff-amazon-files" role="status"></div></section>';
@@ -292,6 +306,7 @@
      if(action==='reload')await load();
      if(action==='global'){account='';tab='overview';await load()}
      if(action==='partners'){account='';tab='partners';await load()}
+     if(action==='partner'){account=button.dataset.id;tab='overview';page=1;await load()}
      if(action==='open'){account=button.dataset.id;tab=selected()?.snapshot?'overview':'settings';page=1;await load()}
      if(action==='settings'){tab='settings';render()}
      if(action==='range'){

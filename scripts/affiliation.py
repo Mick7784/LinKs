@@ -4,6 +4,7 @@ Connectors supply a complete observation, not a ledger of invented daily gains.
 Provider dates remain local wall dates when their timezone is not documented.
 """
 import amazon_affiliation as amazon
+import affiliation_overview
 import json
 import os
 import re
@@ -196,6 +197,14 @@ def report(db, query):
             item['available']=1
             last_portal=db.execute("SELECT finished_at FROM aff_runs WHERE account_id=? AND status='success' ORDER BY id DESC LIMIT 1",(item['id'],)).fetchone()
             item['portal_last_success']=last_portal['finished_at'] if last_portal else None
+            latest=db.execute('SELECT id,status,started_at,finished_at,message FROM aff_runs WHERE account_id=? ORDER BY id DESC LIMIT 1',(item['id'],)).fetchone()
+            previous_error=db.execute("SELECT id,finished_at,message FROM aff_runs WHERE account_id=? AND status='failed' ORDER BY id DESC LIMIT 1",(item['id'],)).fetchone()
+            item['portal_run']=dict(latest) if latest else None
+            item['portal_previous_error']=dict(previous_error) if previous_error and (not latest or previous_error['id']!=latest['id']) else None
+            if latest and latest['status']=='running':
+                try:item['portal_progress']=worker('amazon/status',{'account':item['id'],'run':latest['id']},timeout=2)
+                except ValueError:item['portal_progress']={'stage':'unavailable','message':'Suivi du navigateur momentanément indisponible ; collecte toujours en cours.'}
+
         item['snapshot']={**dict(last),'summary':json.loads(last['summary'])} if last else None
         item['running']=bool(db.execute("SELECT 1 FROM aff_runs WHERE account_id=? AND status='running'",(item['id'],)).fetchone())
     selected=[a for a in accounts if not identity or a['id']==identity]
@@ -212,7 +221,8 @@ def report(db, query):
     if end: loss_clause+=' AND aff_loss_day(first_missing_at)<=?'; loss_args.append(end)
     losses=[dict(r) for r in db.execute('SELECT account_id,COUNT(*) sales,SUM(commission_cents) cents FROM '+transaction_source(db)+' WHERE '+loss_clause+' GROUP BY account_id',loss_args)]
     amazon_reports=[{'account_id':a['id'],**amazon.report(db,a['id'],start,end)} for a in selected if a['platform_id']=='amazon']
-    return {'amazon':amazon_reports,'losses':losses,'accounts':accounts,'platforms':[{**dict(r),'available':1 if r['id']=='amazon' else r['available']} for r in db.execute('SELECT * FROM aff_platforms')],
+    return {**({'overview':affiliation_overview.build(db, accounts, start, end)} if not identity else {}),
+            'amazon':amazon_reports,'losses':losses,'accounts':accounts,'platforms':[{**dict(r),'available':1 if r['id']=='amazon' else r['available']} for r in db.execute('SELECT * FROM aff_platforms')],
             'aggregate':aggregate,'daily':daily,'has_data':any(a['snapshot'] for a in selected),
             'coverage':{'ready':sum(bool(a['snapshot']) for a in selected),'total':len(selected)},'currency':'EUR'}
 
@@ -298,10 +308,10 @@ def start_amazon_sync(connect, identity, data):
         with connect() as db:
             started=stamp()
             run=db.execute("INSERT INTO aff_runs(account_id,started_at,status) VALUES(?,?,'running')",(identity,started)).lastrowid
-            db.execute('UPDATE aff_accounts SET last_attempt=? WHERE id=?',(started,identity))
+            db.execute('UPDATE aff_accounts SET last_attempt=?,last_error=NULL WHERE id=?',(started,identity))
         def collect():
             try:
-                payload=worker('amazon/collect',{'account':identity,'day':day},timeout=600)
+                payload=worker('amazon/collect',{'account':identity,'day':day,'run':run},timeout=600)
                 with connect() as db:
                     db.execute('BEGIN IMMEDIATE')
                     results=amazon.ingest_portal_batch(db,identity,payload,day,tag,stamp())

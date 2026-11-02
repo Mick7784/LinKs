@@ -31,8 +31,9 @@ const forget=(account,pending=false)=>unlink(filename(account,pending)).catch(er
 export const deleteSession=forget;
 // A controller owns one browser. The factory parameter lets offline regression
 // tests exercise the real lifecycle without an external account or endpoint.
-export function createActions(openBrowser=browserContext){
+export function createActions(openBrowser=browserContext,amazonCollect=null){
 let login=null,busy=false;
+const amazonProgress=new Map();
 async function closeLogin({remember=true}={}){
   const active=login;login=null;
   if(active)try{
@@ -53,11 +54,22 @@ async function loginState(){
 }
 async function action(name,data){
   if(!/^(domadoo|[a-f0-9]{32})$/.test(data.account||''))throw new PortalError('Compte invalide.');
+  // Read-only status never acquires the browser lock. MFA mutations stay serialized.
+  if(['amazon/mfa/status','amazon/mfa/code'].includes(name)){
+    const {amazonMfaAction}=await import('./amazon-auth.mjs');
+    try{return await amazonMfaAction(name.slice('amazon/mfa/'.length),data)}
+    catch(error){throw new PortalError(/^(Aucune clé MFA|La clé en attente|Retirez d’abord)/.test(error.message)?error.message:'État MFA indisponible ; vérifiez la configuration chiffrée.','amazon_mfa')}
+  }
+  if(name==='amazon/status'){
+    const state=amazonProgress.get(data.account);
+    return state&&state.run===data.run?{...state}:{run:data.run,stage:'queued',message:'En attente du navigateur.'};
+  }
   if(busy)throw new PortalError('Navigateur occupé par une synchronisation.');
   if(name==='amazon/collect'){
     if(login)throw new PortalError('Terminez la connexion humaine en cours.');
     busy=true;
-    try{const {collectAmazon}=await import('./amazon-collector.mjs');return await collectAmazon(data)}
+    const progress=state=>amazonProgress.set(data.account,{run:data.run,...state});
+    try{const {collectAmazon}=await import('./amazon-collector.mjs');return await (amazonCollect||collectAmazon)(data,{progress})}
     catch(error){const {AmazonCollectionError}=await import('./amazon-collector.mjs');throw new PortalError(error instanceof AmazonCollectionError?error.message:'Collecte Amazon interrompue.',error.code||'amazon_collection')}
     finally{busy=false}
   }
@@ -138,26 +150,28 @@ async function action(name,data){
 }
 return {action,close:closeLogin,expire:async()=>{if(login&&Date.now()>login.expires)await closeLogin()}};
 }
-export function serve(){
+export function serve(controller=createActions(),port=3004){
   if(!token||token.length<32)throw new Error('Internal worker token required');
-  let inputBusy=false;const controller=createActions();
+  let inputBusy=false;
   const server=http.createServer(async(req,res)=>{
     res.setHeader('Content-Type','application/json');res.setHeader('Cache-Control','no-store');
     const supplied=Buffer.from(req.headers.authorization||''),expected=Buffer.from('Bearer '+token);
     if(req.method!=='POST'||supplied.length!==expected.length||!timingSafeEqual(supplied,expected)){res.writeHead(403);res.end('{}');return}
-    if(inputBusy){res.writeHead(409);res.end(JSON.stringify({error:'Navigateur occupé.'}));return}
-    inputBusy=true;
+    const readOnly=['/amazon/mfa/status','/amazon/mfa/code','/amazon/status'].includes(req.url);
+    if(inputBusy&&!readOnly){res.writeHead(409);res.end(JSON.stringify({error:'Navigateur occupé.'}));return}
+    if(!readOnly)inputBusy=true;
     let bytes=0,chunks=[];
     try{
       for await(const chunk of req){bytes+=chunk.length;if(bytes>8192)throw new PortalError('Commande trop longue.');chunks.push(chunk)}
       const data=JSON.parse(Buffer.concat(chunks).toString());
       const result=await controller.action(req.url.slice(1),data);res.end(JSON.stringify(result));
     }catch(error){res.writeHead(400);res.end(JSON.stringify({error:error instanceof PortalError?error.message:'Navigateur indisponible ou structure du portail modifiée. Dernier relevé conservé.',code:error instanceof PortalError?error.code:'browser_error'}))}
-    finally{inputBusy=false;chunks=[]}
+    finally{if(!readOnly)inputBusy=false;chunks=[]}
   });
   server.requestTimeout=35000;
   const cleanup=setInterval(()=>{if(!inputBusy){inputBusy=true;controller.expire().catch(()=>{}).finally(()=>{inputBusy=false})}},30000);cleanup.unref();
   process.on('SIGTERM',()=>{controller.close().finally(()=>process.exit(0))});
-  server.listen(3004,'127.0.0.1');return server;
+  server.on('close',()=>clearInterval(cleanup));
+  server.listen(port,'127.0.0.1');return server;
 }
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url))serve();

@@ -12,9 +12,9 @@ const {spawn,execFileSync}=require('node:child_process'),{mkdtempSync,rmSync}=re
    // Keep the browser outside the fixture month: the test must select its dates before expecting a chart.
    await page.clock.install({time:new Date('2031-02-15T12:00:00Z')});
    page.on('pageerror',e=>errors.push(e.message));await page.goto(origin);await page.click('[data-tab="affiliation"]');
-   await page.getByText('Vos revenus apparaîtront après la première synchronisation.').waitFor();
-   assert.equal(await page.locator('.aff-card strong').first().textContent(),'—');
-   await page.getByRole('button',{name:'Configurer Domadoo',exact:true}).click();await page.getByRole('heading',{name:'Synchronisation quotidienne'}).waitFor();
+   await page.locator('[data-overview-total]').waitFor();
+   assert.equal(await page.locator('.aff-card strong').first().textContent(),'N/D');
+   await page.getByRole('navigation',{name:'Partenaires affiliation'}).getByRole('button',{name:'Domadoo',exact:true}).click();await page.getByRole('navigation',{name:'Rubriques affiliation'}).getByRole('button',{name:'Connexion et synchronisation',exact:true}).click();await page.getByRole('heading',{name:'Synchronisation quotidienne'}).waitFor();
    assert.equal(await page.locator('#aff-enabled').isChecked(),false);
    // A running collection must refresh its status without rebuilding the page,
    // erasing a draft setting, stealing focus or closing an open dialog.
