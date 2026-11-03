@@ -105,12 +105,14 @@ def validate_template(data):
                    'mode': mode, 'hide_if_empty': flag(item, 'hide_if_empty'),
                    'links': links(item.get('links', [])), 'merchants': []}
         for merchant in sequence(item.get('merchants', []), 30):
+            merchant_kind=merchant.get('merchant',merchant.get('id') if merchant.get('id') in {'amazon','domadoo'} else '')
+            if merchant_kind not in {'','amazon','domadoo'}:raise ValueError('Marchand inconnu.')
             partner_id = text(merchant, 'partner_id', 80)
             if partner_id: ident(partner_id)
             section['merchants'].append({'id': unique(merchant), 'name': text(merchant, 'name', 160, True),
                 'heading': text(merchant, 'heading', 240), 'text': text(merchant, 'text', MAX_TEXT),
                 'after_text': text(merchant, 'after_text', MAX_TEXT),
-                'partner_id': partner_id, 'hide_if_empty': flag(merchant, 'hide_if_empty'),
+                'partner_id': partner_id, 'merchant':merchant_kind, 'hide_if_empty': flag(merchant, 'hide_if_empty'),
                 'links': links(merchant.get('links', []))})
         result['sections'].append(section)
     if len(packed(result)) > 500000:

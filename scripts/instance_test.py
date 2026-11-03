@@ -82,7 +82,7 @@ class InstanceTests(unittest.TestCase):
         with self.a.connection() as db:self.assertEqual(db.execute('SELECT COUNT(*) FROM counts').fetchone()[0],0)
     def test_rate_limit_without_ip_or_visitor_tracking(self):
         admin=self.server()
-        self.a.AUTH_ATTEMPTS[:]=[self.a.time.monotonic()]*20
+        self.a.AUTH_ATTEMPTS[:]=[(self.a.time.monotonic(),'setup','127.0.0.1')]*20
         self.assertEqual(self.request(admin+'/api/setup',{})[0],429)
         with self.a.connection() as db:self.assertFalse(any('ip' in row[1] for row in db.execute('PRAGMA table_info(admin_sessions)')))
     def test_backup_restore_all_tables_uploads_and_legacy_preservation(self):

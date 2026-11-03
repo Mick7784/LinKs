@@ -98,6 +98,12 @@ async function reportRows(page){
 }
 export async function requestReports(page,day,{progress=()=>{},guard=async()=>{},waitMs=120000,pollMs=1000}={}){
  progress('reports');await guard();
+  const scope=await unique(page.getByRole('combobox',{name:/^(Tracking[ -]?IDs?|Identifiants de suivi|Numéro de suivi)$/i}),'visible','Filtre Tracking IDs');
+  const all=scope.getByRole('option',{name:/^(All( tracking IDs)?|Tous( les (Tracking IDs|identifiants de suivi))?)$/i});
+  if(await all.count()!==1)stop('Sélection de tous les Tracking IDs non vérifiable.','amazon_scope_unverified');
+  const allValue=await all.getAttribute('value');
+  if(allValue===null)stop('Valeur du filtre Tracking IDs absente.','amazon_scope_unverified');
+  await scope.selectOption(allValue);
  await (await unique(page.getByRole('button',{name:/^Télécharger (des )?rapports$/i}))).click();
  const root=page; // Amazon's export panel and generated-report list need not be a modal.
  progress('period');const verifyPeriod=await selectReportPeriod(root,day);
@@ -109,7 +115,8 @@ export async function requestReports(page,day,{progress=()=>{},guard=async()=>{}
  const csv=root.getByRole('radio',{name:/^CSV$/i});
  if(await csv.count()===1)await csv.check();
  else await (await unique(root.getByRole('combobox',{name:/^Format$/i}))).selectOption({label:'CSV'});
- await verifyPeriod();await guard();
+  await verifyPeriod();await guard();
+  if(await scope.inputValue()!==allValue)stop('Le filtre Tracking IDs a changé.','amazon_scope_unverified');
  const requestedMinute=parisGenerationMinute();
  const before=new Set((await reportRows(page)).map(r=>r.type+'|'+r.generated));
  progress('generation');await (await unique(root.getByRole('button',{name:/^Générer des rapports$/i}),'visible','Bouton Générer des rapports')).click();
@@ -180,7 +187,7 @@ export async function collectAmazon({account,day},{progress=()=>{}}={}){
   advance('saving');
   await saveAmazonSession(await capture());
   advance('validation');
-  return {day,files,complete:true};
+  return {day,files,complete:true,scope:{value:'all',verified:true,method:'portal_tracking_filter'}};
  }catch(error){
   let known=error;for(let i=0;i<4&&known?.cause;i++){if(known instanceof AmazonCollectionError)break;known=known.cause}
   const code=known instanceof AmazonCollectionError?known.code:expired?'amazon_deadline':blocked?'amazon_navigation_blocked':error.name==='TimeoutError'?'amazon_timeout':'amazon_step_failed';

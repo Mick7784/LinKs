@@ -41,7 +41,7 @@ def inspect_archive(data):
             total=0;files=[];names=set()
             for entry in members:
                 name=entry.filename
-                if name.startswith(('/', '\\')) or '\\' in name or ':' in name or '..' in name.split('/') or stat.S_ISLNK(entry.external_attr>>16): raise ValueError()
+                if len(name)>1000 or name.startswith(('/', '\\')) or '\\' in name or ':' in name or '..' in name.split('/') or stat.S_ISLNK(entry.external_attr>>16): raise ValueError()
                 if entry.is_dir(): continue
                 if name in names or entry.flag_bits&1 or not name.lower().endswith(('.csv','.txt')): raise ValueError()
                 names.add(name);total+=entry.file_size
@@ -133,7 +133,7 @@ def active_reports(db,identity):
         value=json.loads(row['summary']).get('amazon')
         if value:
             latest={key:report for key,report in latest.items() if report['id'] not in value.get('supersedes',[])}
-            latest[(value['kind'],value['start'],value['end'],value['scope'],value.get('view','legacy'),value.get('contribution','totals'))]={'id':row['id'],'observed_at':row['observed_at'],**value}
+            latest[(value['kind'],value['start'],value['end'],value['scope'],value.get('view','legacy'),value.get('contribution','totals'),tuple(sorted(reference_metrics(value))))]={'id':row['id'],'observed_at':row['observed_at'],**value}
     return list(latest.values())
 
 
@@ -167,19 +167,24 @@ def ingest(db,identity,data,observed):
     value=normalize(data)
     canonical=json.dumps(value,sort_keys=True,ensure_ascii=False)
     digest=hashlib.sha256(canonical.encode()).hexdigest()
+    supersedes=[]
     for previous in active_reports(db,identity):
         same=all(previous[k]==value[k] for k in ('kind','start','end','scope'))
         same_view=previous.get('view','legacy')==value.get('view','legacy')
         same_usage=previous.get('contribution','totals')==value.get('contribution','totals')
-        if same and same_view and same_usage and previous.get('digest')==digest:return {'ok':True,'duplicate':True,'rows':len(value['rows'])}
+        if same and same_view and same_usage and (previous.get('digest')==digest or all(previous.get(k)==v for k,v in value.items())):return {'ok':True,'duplicate':True,'rows':len(value['rows'])}
         overlap=previous['start']<=value['end'] and value['start']<=previous['end']
         shared=previous['scope']==value['scope'] or 'all' in (previous['scope'],value['scope'])
         financial=previous.get('contribution','totals')=='totals' and value.get('contribution','totals')=='totals'
-        common=set(METRICS[previous['kind']]) & set(METRICS[value['kind']])
+        common=available_metrics(previous) & available_metrics(value)
         if overlap and shared and common and (financial or (same_usage and same_view)):
             if not (same and same_view and same_usage):
                 raise ValueError('Indicateurs et périodes chevauchants : utilisez une vue complémentaire pour éviter le double comptage. Une correction doit conserver la même vue et le même périmètre.')
-    value['digest']=digest
+            if not (reference_metrics(previous) if financial else available_metrics(previous))<=available_metrics(value):
+                raise ValueError('La correction CSV doit conserver les indicateurs existants. Utilisez le ZIP automatique pour une mise à jour partielle.')
+            supersedes.append(previous['id'])
+    if supersedes:value['supersedes']=supersedes
+    value['digest']=hashlib.sha256(json.dumps(value,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
     db.execute('INSERT INTO aff_snapshots(account_id,observed_at,summary,row_count,pages,source) VALUES(?,?,?,?,1,?)',
                (identity,observed,json.dumps({'amazon':value}),len(value['rows']),'amazon-csv'))
     db.execute('UPDATE aff_accounts SET last_success=?,last_error=NULL WHERE id=?',(observed,identity))
@@ -260,16 +265,14 @@ def auto_report(file,override):
     if any('€' in v for r in clean for k,v in r.items() if k.endswith('_cents')) or '€' in ','.join(headers): currencies.add('EUR')
     currencies={c.upper() for c in currencies}
     if currencies-{'EUR'}: raise ValueError('Devise non EUR ou devises mélangées : aucun import.')
-    currency='EUR' if currencies else override.get('currency')
+    currency='EUR' if currencies else str(override.get('currency','')).strip().upper()
     needed=[]
     if period is None:needed.extend(['start','end'])
     if not scope:needed.append('scope')
     if not currency:needed.append('currency')
     if needed:return None,{'name':file['name'],'fields':needed},[]
     if currency!='EUR':raise ValueError('Seuls les montants EUR sont pris en charge.')
-    name=field_key(file['name'])
-    view=('daily_trends' if 'dailytrend' in name else 'tracking_id' if 'trackingid' in name else 'linked_product' if 'linkedproduct' in name else 'category' if 'category' in name else
-          'category' if any(field_key(h) in {'category','categorie'} for h in headers) else 'linked_product' if 'asin' in recognized else 'tracking_id' if 'tracking_id' in recognized else 'legacy')
+    view=('category' if any(field_key(h) in {'category','categorie'} for h in headers) else 'linked_product' if 'asin' in recognized or any(field_key(h) in {'producttitle','titreduproduit','produit'} for h in headers) else 'tracking_id' if 'tracking_id' in recognized else 'daily_trends' if dated else 'legacy')
     metrics=set(recognized)&set(FIELDS[6:])
     kind=next((k for k in ('payments','orders','earnings','performance') if metrics<=set(METRICS[k])),None)
     if not kind: raise ValueError('Mélange de métriques incompatible avec les rapports connus.')
@@ -293,7 +296,11 @@ def auto_report(file,override):
 
 def reference_metrics(value):
     if value.get('contribution','totals')!='totals':return set()
-    return set(value.get('reference_metrics',METRICS[value['kind']]))
+    return set(value.get('reference_metrics',METRICS[value['kind']])) & available_metrics(value)
+
+
+def available_metrics(value):
+    return {key for key in METRICS[value['kind']] if any(r.get(key) is not None for r in value['rows'])}
 
 
 def metric_totals(rows):
@@ -374,7 +381,7 @@ def report(db,identity,start='',end=''):
         period=source.get('date_basis')=='confirmed_period'
         contained=(not start or source['start']>=start) and (not end or source['end']<=end)
         if period and not contained and (not start or source['end']>=start) and (not end or source['start']<=end):excluded.append(source['id'])
-        selected=[{**r,'clicks':r.get('clicks'),'kind':source['kind'],'view':source.get('view','legacy')} for r in source['rows'] if (contained if period else (not start or r['date']>=start) and (not end or r['date']<=end))]
+        selected=[{**r,'coverage':(source['start'],source['end']) if period else r['date'],'clicks':r.get('clicks'),'kind':source['kind'],'view':source.get('view','legacy')} for r in source['rows'] if (contained if period else (not start or r['date']>=start) and (not end or r['date']<=end))]
         if source.get('contribution','totals')=='totals':
             selected=[{**r,**{k:None for k in FIELDS[6:] if k not in reference_metrics(source)}} for r in selected]
             rows.extend(selected)
@@ -384,12 +391,34 @@ def report(db,identity,start='',end=''):
     def totals(items):
         return {key:sum(r.get(key) or 0 for r in items) if any(r.get(key) is not None for r in items) else None for key in FIELDS[6:]}
     daily=[{'date':day,**totals([r for r in dated if r['date']==day])} for day in sorted({r['date'] for r in dated})]
+    # Prefer details only on their actual day/tag/metric coverage.
     tracking_rows=[r for r in details if r['view']=='tracking_id']
-    if not tracking_rows:tracking_rows=[r for r in rows if r['view']=='tracking_id']
+    coverage={}
+    def interval(row):return row['coverage'] if isinstance(row['coverage'],tuple) else (row['date'],row['date'])
+    for r in tracking_rows:
+        for key in FIELDS[6:]:
+            if r.get(key) is not None:coverage.setdefault((r['tracking_id'],key),[]).append(interval(r))
+    for key,spans in coverage.items():
+        merged=[]
+        for start_day,end_day in sorted(spans):
+            if merged and start_day<=merged[-1][1]:merged[-1]=(merged[-1][0],max(end_day,merged[-1][1]))
+            else:merged.append((start_day,end_day))
+        coverage[key]=merged
+    tracking_partial=False
+    for row in rows:
+        if row['view']!='tracking_id':continue
+        value=dict(row);first,last=interval(row)
+        for key in FIELDS[6:]:
+            spans=coverage.get((row['tracking_id'],key),[])
+            if row.get(key) is not None and any(a<=last and first<=b for a,b in spans):
+                value[key]=None
+                # An undated aggregate cannot be subtracted or prorated to fill a gap.
+                if row['date'] is None and not any(a<=first and b>=last for a,b in spans):tracking_partial=True
+        tracking_rows.append(value)
     tracking=[{'tracking_id':tag,**totals([r for r in tracking_rows if r['tracking_id']==tag])} for tag in sorted({r['tracking_id'] for r in tracking_rows})]
-    return {'totals':totals(rows),'rows':rows,'daily':daily,'tracking':tracking,'undated_totals':totals(undated),'excluded_period_reports':excluded,
+    return {'totals':totals(rows),'rows':rows,'daily':daily,'tracking':tracking,'tracking_partial':tracking_partial,'undated_totals':totals(undated),'excluded_period_reports':excluded,
             'daily_limitation':'Seules les dates présentes dans les lignes des rapports de référence alimentent l’évolution. Les jours absents ne valent pas zéro. Les dates confirmées manuellement sont exclues.',
-            'tracking_limitation':'Vue Tracking IDs séparée, jamais ajoutée aux totaux. Sa couverture peut différer de celle du rapport de référence.',
+            'tracking_limitation':'Vue Tracking IDs séparée, jamais ajoutée aux totaux. '+('Couverture partielle : un total non daté chevauchant ne peut pas être réparti.' if tracking_partial else 'Sa couverture peut différer de celle du rapport de référence.'),
             'reports':[{**{k:r[k] for k in ('id','kind','start','end','scope','observed_at')},'view':r.get('view','legacy'),'contribution':r.get('contribution','totals')} for r in reports],
             'loss_tracking':False,'limitation':'Rapports agrégés ou limités dans le temps : aucune perte par transaction calculée.'}
 
@@ -457,6 +486,8 @@ def ingest_portal_batch(db, identity, payload, day, expected_tag, observed):
     """Fail closed, atomic batch through the existing versioned importer."""
     if payload.get('complete') is not True or payload.get('day') != day:
         raise ValueError('Collecte Amazon incomplète ou période différente. Aucun import.')
+    if payload.get('scope')!={'value':'all','verified':True,'method':'portal_tracking_filter'}:
+        raise ValueError('Périmètre tous les Tracking IDs non vérifié. Dernier relevé conservé.')
     files=payload.get('files')
     if not isinstance(files,list) or len(files)!=3 or {f.get('view') for f in files}!={'category','linked_product','tracking_id'}:
         raise ValueError('Les trois vues Amazon attendues ne sont pas disponibles.')
@@ -481,6 +512,9 @@ def ingest_portal_batch(db, identity, payload, day, expected_tag, observed):
         if file['view']=='tracking_id' and expected_tag not in {r['tracking_id'] for r in value['rows']}:
             raise ValueError('Tracking ID attendu absent : compte ou périmètre Amazon à vérifier. Aucun import.')
         prepared.append(data)
+    totals=[metric_totals(normalize(data)['rows']) for data in prepared]
+    if any(len({t[key] for t in totals if t[key] is not None})>1 for key in FIELDS[6:]):
+        raise ValueError('Les trois vues Amazon divergent. Dernier relevé conservé.')
     db.execute('SAVEPOINT amazon_portal_batch')
     try:
         results=[ingest(db,identity,data,observed) for data in prepared]

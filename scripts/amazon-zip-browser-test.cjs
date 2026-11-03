@@ -33,7 +33,7 @@ s.serve_forever()`],{cwd:__dirname,env:{...process.env,PYTHONIOENCODING:'utf-8',
   page.setDefaultTimeout(10000);
   const zip=files=>{const r=spawnSync(process.env.PYTHON_PATH||'python3',['-X','utf8','-B','-c',"import sys,json,io,zipfile; b=io.BytesIO(); z=zipfile.ZipFile(b,'w'); [z.writestr(zipfile.ZipInfo(k,date_time=(2026,1,1,0,0,0)),v) for k,v in json.load(sys.stdin).items()]; z.close(); sys.stdout.buffer.write(b.getvalue())"],{input:JSON.stringify(files)});assert.equal(r.status,0,r.stderr.toString());return r.stdout};
   const category=amount=>`Période: 2026-10-30 → 2026-10-31\nScope: all\nCurrency: EUR\nCatégorie;Clics;Articles commandés;Articles expédiés;Revenus totaux\nMaison;20;4;3;${amount}\n`;
-  const upload=async files=>{await page.locator('#amz-zip').setInputFiles({name:'reports.zip',mimeType:'application/zip',buffer:zip(files)});};
+  const upload=async files=>{await page.locator('#amz-zip').setInputFiles({name:'reports.zip',mimeType:'application/zip',buffer:zip(files)});await page.locator('#amz-send').click();};
   const open=()=>page.getByRole('button',{name:'Importer un ZIP Amazon',exact:true}).first().click();
   await open();
   const files={'Category.csv':category('51,87'),'Tracking-Id.csv':category('51,87').replace('Catégorie','Tracking ID').replace('Maison','synthetic-21')};
@@ -57,17 +57,21 @@ s.serve_forever()`],{cwd:__dirname,env:{...process.env,PYTHONIOENCODING:'utf-8',
   await page.getByRole('heading',{name:'Import terminé',exact:true}).waitFor();
   assert.equal((await api('overview?account='+account.id)).amazon[0].totals.commission_cents,5200);
   await upload({'Category.csv':category('99,00').replace('2026-10-30','2026-10-29')});
-  await page.getByText(/Chevauchement incompatible avec le rapport/).waitFor();
+  await page.getByRole('heading',{name:'Archive conservée à vérifier',exact:true}).waitFor();
   assert.equal((await api('overview?account='+account.id)).amazon[0].totals.commission_cents,5200);
   await upload({'Unknown.csv':'Catégorie;Revenus totaux\nMaison;1,00\n'});
-  await page.locator('#amz-coverage').waitFor({state:'visible'});
-  assert.equal(await page.locator('#amz-coverage input').count(),4);
-  for(const [key,value] of Object.entries({start:'2026-11-01',end:'2026-11-01',scope:'all',currency:'EUR'}))await page.locator(`#amz-coverage [data-field=${key}]`).fill(value);
-  await page.locator('#amz-coverage button').click();await page.getByRole('heading',{name:'Import terminé',exact:true}).waitFor();
+  await page.getByRole('heading',{name:'Archive conservée à vérifier',exact:true}).waitFor();
+  assert.equal(await page.locator('#amz-coverage input').count(),0);
+  const pendingReport=(await api('overview?account='+account.id)).amazon[0];
+  assert.equal(pendingReport.totals.commission_cents,5200);
+  assert.equal(pendingReport.pending.length,2);
+  const saved=await api('amazon/pending-archive',{account:account.id,id:pendingReport.pending[0].id});
+  assert(saved.archive.length>0);
   await page.locator('#aff-dialog [data-aff=close]').click();
   await open();
   const drop=zip({'Category.csv':category('52,00'),'Tracking-Id.csv':files['Tracking-Id.csv'].replace('51,87','52,00')});
   await page.locator('#amz-drop').evaluate((element,bytes)=>{const transfer=new DataTransfer();transfer.items.add(new File([new Uint8Array(bytes)],'reports.zip',{type:'application/zip'}));element.dispatchEvent(new DragEvent('drop',{bubbles:true,dataTransfer:transfer}))},[...drop]);
+  await page.locator('#amz-send').click();
   await page.getByText('Archive déjà importée : aucun doublon, aucune ancienne version réactivée.',{exact:true}).waitFor();
   // A response to a closed import must not mutate a replacement manual dialog.
   let release;const gate=new Promise(resolve=>release=resolve);

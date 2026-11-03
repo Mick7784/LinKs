@@ -5,7 +5,7 @@ import amazon_affiliation as amazon
 DAY='2026-10-31'
 def batch():
     common='clics,articles commandés,articles expédiés,revenus totaux'
-    return dict(day=DAY,complete=True,files=[
+    return dict(day=DAY,complete=True,scope={'value':'all','verified':True,'method':'portal_tracking_filter'},files=[
         dict(view='category',csv='Date,catégorie,'+common+'\n10-31-2026,Test,2,1,1,1.25\n'),
         dict(view='linked_product',csv='Date,titre du produit,ASIN,'+common+'\n10-31-2026,Test,B000,2,1,1,1.25\n'),
         dict(view='tracking_id',csv='Numéro de suivi,'+common+'\ntest-21,2,1,1,1.25\n')])

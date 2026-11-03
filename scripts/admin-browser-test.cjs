@@ -35,7 +35,7 @@ const { join, resolve } = require('node:path');
   // A browser that refuses storage must still support theme selection.
   const noStorage=await browser.newContext();await noStorage.addInitScript(()=>{Storage.prototype.getItem=()=>{throw Error('blocked')};Storage.prototype.setItem=()=>{throw Error('blocked')}});
   const fallback=await noStorage.newPage();await fallback.goto(origin);await fallback.selectOption('#theme-select','dark');assert.equal(await fallback.locator('html').getAttribute('data-theme'),'dark');await noStorage.close();
-  const nav=async id=>{if(await page.locator('#menu-toggle').isVisible())await page.locator('#menu-toggle').click();const endpoint={dashboard:'/api/stats',content:'/api/content',buttons:'/api/buttons',archives:'/api/content?archived=1',settings:'/api/settings'}[id];await page.locator(`[data-tab="${id}"]`).click();if(id==='dashboard')await page.evaluate(()=>loadStats());await page.waitForSelector(`#${id}.active`)};
+  const nav=async id=>{if(await page.locator('#menu-toggle').isVisible())await page.locator('#menu-toggle').click();await page.locator(`[data-tab="${id}"]`).click();if(id==='dashboard')await page.evaluate(()=>loadStats());await page.waitForSelector(`#${id}.active`);if(['campaigns','permanent-links'].includes(id))await page.waitForFunction(()=>document.querySelector('#campaigns-list')?.getAttribute('aria-busy')==='false')};
   const overflow=async()=>assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Horizontal overflow');
   for(const width of [1440,1024,768,390,320]){
    await page.setViewportSize({width,height:1000});

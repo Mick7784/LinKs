@@ -1,6 +1,7 @@
 """Small SQLite content manager and aggregate analytics service."""
 import base64, binascii, copy, json, mimetypes, os, re, secrets, sqlite3, threading, uuid, sys, time, shutil
 from contextlib import contextmanager, closing
+from functools import wraps
 from datetime import date, datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -37,6 +38,35 @@ DATA_DIR=Path(DB).parent
 STATIC=ROOT/"site" if (ROOT/"site").exists() else Path("/usr/share/nginx/html")
 AUTH_ATTEMPTS=[]
 AUTH_LOCK=threading.Lock()
+
+def after_transactions(method):
+    """Flush one response only after all handler transaction contexts have exited."""
+    @wraps(method)
+    def run(self):
+        self.pending_response=None;self.defer_response=True
+        try:
+            method(self)
+        except (sqlite3.Error,OSError):
+            self.json(503,{'error':'Enregistrement indisponible. Réessayez après vérification.'})
+        except Exception:
+            self.pending_response=None
+            raise
+        finally:
+            self.defer_response=False
+        if self.pending_response is not None:
+            response=self.pending_response;self.pending_response=None
+            self.send(*response)
+    return run
+
+def auth_attempt_allowed(path,client):
+    bucket='login' if path=='/api/auth/login' else 'setup'
+    with AUTH_LOCK:
+        now=time.monotonic()
+        AUTH_ATTEMPTS[:]=[x for x in AUTH_ATTEMPTS if x[0]>now-300]
+        group=[x for x in AUTH_ATTEMPTS if x[1]==bucket]
+        if len(group)>=200 or sum(x[2]==client for x in group)>=20:return False
+        AUTH_ATTEMPTS.append((now,bucket,client))
+    return True
 TYPES={"classic","promo","featured"}; ICONS={"youtube","instagram","tiktok","discord","mail","website","cart","home","amazon","facebook","x","linkedin","github","threads","twitch","telegram","whatsapp","pinterest","reddit","snapchat","network","contact","link"}
 BADGES={"","Promo","Nouveau","Partenaire","Bon plan"}
 ICONS.update({'phone','video','podcast','blog','download','calendar','location','homeassistant','email','tag'})
@@ -255,6 +285,8 @@ def report(start,end,source=""):
         if source:metric_where+=" AND source=?";metric_params.append(source)
         copies=[];campaign_metrics=[]
         for metric in db.execute("SELECT * FROM counts WHERE "+metric_where,metric_params):
+            metric=dict(metric)
+            if metric['kind']=='click':metric['link']=aliases.get(metric['link'],metric['link'])
             if metric["kind"]=="promo_code_copy":
                 snapshot=json.loads(metric["link"])
                 copies.append({"day":metric["day"],"source":metric["source"],"total":metric["total"],**snapshot})
@@ -867,7 +899,7 @@ def restore_backup(data,preview=False):
                             if column['notnull'] or column['pk']:raise ValueError('Valeur obligatoire absente')
                         elif column['type']=='INTEGER':
                             if type(value) is not int or not 0<=value<2**53:raise ValueError('Compteur ou position invalide')
-                        elif not isinstance(value,str) or len(value)>16384:raise ValueError('Texte invalide')
+                        elif not isinstance(value,str) or len(value)>(200000 if table=='settings' and row.get('key')=='analytics.source_rules' else 16384):raise ValueError('Texte invalide')
                     if table=='affiliate_partners':
                         if not re.fullmatch(r'[a-f0-9]{32}',row['id']):raise ValueError('Identifiant de partenaire invalide')
                         if (row['id']==uuid.uuid5(uuid.NAMESPACE_URL,'links:affiliate-partner:sanyipace').hex
@@ -1242,10 +1274,12 @@ def pulse_stats(period=7):
             """SELECT day,COALESCE(SUM(total),0) AS total FROM counts
                WHERE day BETWEEN ? AND ? AND kind IN ('click','story','tracked')
                GROUP BY day""",(first.isoformat(),today.isoformat()))}
-        story_clicks=db.execute("""SELECT COALESCE(SUM(total),0) FROM counts
-               WHERE day BETWEEN ? AND ? AND kind='story'""",
-               (first.isoformat(),today.isoformat())).fetchone()[0]
         instagram_ids=tracked_links.platform_source_ids(db,'instagram')
+        instagram_sources={'instagram'}|{'tracked:'+ident for ident in instagram_ids}
+        if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='tracking_source_keys'").fetchone():
+            instagram_sources.update(r['key'] for r in db.execute('SELECT key,source_id FROM tracking_source_keys') if r['source_id'] in instagram_ids)
+        story_clicks=db.execute("SELECT COALESCE(SUM(total),0) FROM counts WHERE day BETWEEN ? AND ? AND kind='story' AND source IN ("+','.join('?' for _ in instagram_sources)+")",
+            (first.isoformat(),today.isoformat(),*sorted(instagram_sources))).fetchone()[0]
         independent_story_clicks=db.execute("""SELECT COALESCE(SUM(c.total),0)
                FROM counts c JOIN tracked_tokens t ON substr(c.link,9,length(t.token))=t.token
                JOIN tracking_sources s ON t.source_id=s.id
@@ -1484,18 +1518,20 @@ class Handler(BaseHTTPRequestHandler):
         with connection() as db:origin=os.environ.get('ADMIN_ORIGIN') or instance.get(db,'site.url')
         return instance.cookie_header(token,secure=origin.startswith('https://'),clear=not token)
     def auth_reply(self,token):
-        body=b'{"ok":true}';self.send_response(200);self.send_header('Content-Type','application/json');self.send_header('Cache-Control','no-store');self.send_header('Set-Cookie',self.auth_cookie(token));self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body)
+        cookie=self.auth_cookie(token)
+        body=b'{"ok":true}';self.send_response(200);self.send_header('Content-Type','application/json');self.send_header('Cache-Control','no-store');self.send_header('Set-Cookie',cookie);self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body)
     def auth_post(self):
         path=urlsplit(self.path).path
         if path not in {'/api/setup','/api/setup/check','/api/auth/login','/api/auth/logout','/api/auth/access'}:return not self.authorized(mutation=True)
         if not self.request_safe():self.json(403,{'error':'Origine de requête invalide.'});return True
         try:
             data=self.body(16384)
+            if path in {'/api/setup','/api/setup/check'}:
+                with connection() as db:
+                    if instance.get(db,'app.setup_completed')=='true':raise ValueError('Configuration déjà terminée.')
             if path in {'/api/setup','/api/setup/check','/api/auth/login'}:
-                with AUTH_LOCK:
-                    now=time.monotonic();AUTH_ATTEMPTS[:]=[x for x in AUTH_ATTEMPTS if x>now-300]
-                    if len(AUTH_ATTEMPTS)>=20:self.json(429,{'error':'Trop de tentatives. Réessayer dans quelques minutes.'});return True
-                    AUTH_ATTEMPTS.append(now)
+                if not auth_attempt_allowed(path,self.client_address[0]):
+                    self.json(429,{'error':'Trop de tentatives. Réessayer dans quelques minutes.'});return True
             with connection() as db:
                 db.execute('BEGIN IMMEDIATE')
                 ready=instance.get(db,'app.setup_completed')=='true'
@@ -1564,6 +1600,9 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self,*_):pass
     def setup(self):super().setup();self.connection.settimeout(15)
     def send(self,status,body=b"",mime="application/json; charset=utf-8"):
+        if getattr(self,'defer_response',False):
+            self.pending_response=(status,body,mime)
+            return
         # Drain bounded request bodies before closing, including early rejection.
         # Otherwise Windows may reset the socket before the client reads the response.
         if getattr(self,'command','') in {'POST','PUT'} and not getattr(self,'body_read',False):
@@ -1674,6 +1713,7 @@ class Handler(BaseHTTPRequestHandler):
         if url.path in {"/uuid.js","/description-workflow.js","/description-search.js","/description-analysis.js","/description-sections.js","/description-editor.js","/descriptions.js","/descriptions.css","/affiliation.js","/affiliation-overview.js","/affiliation.css","/collection.js","/partner-report.js","/source-platforms.js","/daily-report.js","/charts.js","/navigation.js","/page-editor.js","/page-editor.css","/page-editor-preview.css","/appearance.js","/appearance.css","/shortcuts.js","/uploads.js","/storage.js","/settings.js","/tracking.js","/title-batch.js","/link-batch.js","/theme-init.js"}:return self.file(ADMIN/url.path[1:])
         files={"/":("index.html","text/html;charset=utf-8"),"/app.js":("app.js","application/javascript"),"/dates.js":("dates.js","application/javascript"),"/calendar.js":("calendar.js","application/javascript"),"/style.css":("style.css","text/css")}
         return self.file(ADMIN/files[url.path][0],files[url.path][1]) if url.path in files else self.send(404)
+    @after_transactions
     def do_POST(self):
         if urlsplit(self.path).path.startswith("/api/pulse/"):
             return self.pulse_bridge_post()
@@ -1813,6 +1853,7 @@ class Handler(BaseHTTPRequestHandler):
         except tracked_links.DuplicateDestination as exc:return self.json(409,{"error":str(exc),"duplicates":exc.matches})
         except (ValueError,TypeError,json.JSONDecodeError,binascii.Error,sqlite3.IntegrityError) as exc:return self.json(400,{"error":str(exc) or "Requête invalide"})
         except (OSError,sqlite3.OperationalError):return self.json(503,{"error":"Stockage indisponible. Les données n’ont pas été remplacées."})
+    @after_transactions
     def do_PUT(self):
         if self.server.admin and not self.authorized(mutation=True):return
         if not self.server.admin:return self.send(404)
@@ -1841,6 +1882,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(404)
         except tracked_links.DuplicateDestination as exc:return self.json(409,{"error":str(exc),"duplicates":exc.matches})
         except (ValueError,TypeError,json.JSONDecodeError) as exc:return self.json(400,{"error":str(exc) or "Requête invalide"})
+    @after_transactions
     def do_DELETE(self):
         if self.server.admin and not self.authorized(mutation=True):return
         if not self.server.admin:return self.send(404)

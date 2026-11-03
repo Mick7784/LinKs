@@ -200,7 +200,7 @@ class PulseBridgeTests(unittest.TestCase):
         self.assertEqual(month['total'],17)
         self.assertEqual(month['last7'],week['last7'])
         self.assertEqual(month['today'],2)
-        self.assertEqual(month['stories'],10)
+        self.assertEqual(month['stories'],0)  # The synthetic 'site' source is not Instagram.
         self.assertEqual(len(month['days']),30)
         self.assertEqual(month['days'][0]['date'],(today-timedelta(days=29)).isoformat())
         self.assertEqual(month['days'][1]['clicks'],0)

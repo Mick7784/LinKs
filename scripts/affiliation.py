@@ -4,6 +4,7 @@ Connectors supply a complete observation, not a ledger of invented daily gains.
 Provider dates remain local wall dates when their timezone is not documented.
 """
 import amazon_affiliation as amazon
+import amazon_imports
 import affiliation_overview
 import json
 import os
@@ -191,7 +192,7 @@ def report(db, query):
     start,end = period(query); identity=query.get('account','')
     accounts=[dict(r) for r in db.execute('SELECT a.*,p.name partner,f.name platform,f.available FROM aff_accounts a JOIN aff_partners p ON p.id=a.partner_id JOIN aff_platforms f ON f.id=a.platform_id ORDER BY a.created_at,a.id')]
     for item in accounts:
-        last=db.execute('SELECT * FROM aff_snapshots WHERE account_id=? ORDER BY id DESC LIMIT 1',(item['id'],)).fetchone()
+        last=db.execute("SELECT * FROM aff_snapshots WHERE account_id=? AND source!='amazon-pending' ORDER BY id DESC LIMIT 1",(item['id'],)).fetchone()
         item['mode']='csv' if item['platform_id']=='amazon' else 'portal'
         if item['platform_id']=='amazon':
             item['available']=1
@@ -220,7 +221,7 @@ def report(db, query):
     if start: loss_clause+=' AND aff_loss_day(first_missing_at)>=?'; loss_args.append(start)
     if end: loss_clause+=' AND aff_loss_day(first_missing_at)<=?'; loss_args.append(end)
     losses=[dict(r) for r in db.execute('SELECT account_id,COUNT(*) sales,SUM(commission_cents) cents FROM '+transaction_source(db)+' WHERE '+loss_clause+' GROUP BY account_id',loss_args)]
-    amazon_reports=[{'account_id':a['id'],**amazon.report(db,a['id'],start,end)} for a in selected if a['platform_id']=='amazon']
+    amazon_reports=[{'account_id':a['id'],**amazon.report(db,a['id'],start,end),'pending':amazon_imports.pending_reports(db,a['id'])} for a in selected if a['platform_id']=='amazon']
     return {**({'overview':affiliation_overview.build(db, accounts, start, end)} if not identity else {}),
             'amazon':amazon_reports,'losses':losses,'accounts':accounts,'platforms':[{**dict(r),'available':1 if r['id']=='amazon' else r['available']} for r in db.execute('SELECT * FROM aff_platforms')],
             'aggregate':aggregate,'daily':daily,'has_data':any(a['snapshot'] for a in selected),
@@ -363,7 +364,9 @@ def restore_backup(db, bundle):
         for row in checked.execute('SELECT s.summary,a.platform_id FROM aff_snapshots s JOIN aff_accounts a ON a.id=s.account_id'):
             summary=json.loads(row['summary'])
             if row['platform_id']=='amazon':
-                amazon.validate_saved(summary.get('amazon'));continue
+                if 'amazon_pending' in summary:amazon_imports.validate_pending(summary['amazon_pending'])
+                else:amazon.validate_saved(summary.get('amazon'))
+                continue
             validate({'complete':True,'currency':'EUR','summary':{k:v for k,v in summary.items() if k!='vouchers'},'pages':1,'transactions':[],'vouchers':summary.get('vouchers',[])})
         if list(checked.execute('PRAGMA foreign_key_check')): raise ValueError('Référence Affiliation manquante.')
     except (sqlite3.Error,TypeError,KeyError,ValueError) as exc:
@@ -420,11 +423,17 @@ def post(connect, action, data):
                 with connect() as db:db.execute("UPDATE aff_accounts SET session_state='disconnected' WHERE platform_id='amazon'")
                 return result
             finally:LOCK.release()
+        if action=='amazon/pending-archive':
+            with connect() as db:
+                row=db.execute("SELECT summary FROM aff_snapshots WHERE id=? AND account_id=? AND source='amazon-pending'",(data.get('id'),identity)).fetchone()
+                if not row:raise ValueError('Archive introuvable.')
+                value=json.loads(row['summary'])['amazon_pending']
+                return {k:value[k] for k in ('filename','archive')}
         if action=='amazon/archive':return amazon.inspect_archive(data)
         if action=='amazon/import-zip':
             with connect() as db:
                 db.execute('BEGIN IMMEDIATE')
-                return amazon.ingest_archive(db,identity,data,stamp())
+                return amazon_imports.ingest(db,identity,data,stamp())
         if action=='amazon/inspect':
             headers,rows=amazon.inspect_csv(data);return {'headers':headers,'sample':rows[:3],'rows':len(rows)}
         if action=='amazon/preview':return amazon.normalize(data)

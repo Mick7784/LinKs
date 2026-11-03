@@ -51,9 +51,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          npm install --prefix "$RUNNER_TEMP/story-browser" playwright
+          npm install --prefix "$RUNNER_TEMP/story-browser" "playwright@$(node -p 'require("./package.json").dependencies["playwright-core"]')"
           "$RUNNER_TEMP/story-browser/node_modules/.bin/playwright" install --with-deps chromium
-          python3 -m pip install Pillow
+          python3 -m pip install -r requirements-test.txt
           python3 scripts/descriptions_test.py
           python3 scripts/description_analysis_test.py
           python3 scripts/description_search_test.py
@@ -78,6 +78,9 @@ jobs:
           python3 scripts/amazon_report_views_test.py
           python3 scripts/amazon_statistics_test.py
           python3 scripts/amazon_zip_test.py
+          python3 -m unittest discover -s scripts -p amazon_automatic_test.py
+          python3 -m unittest discover -s scripts -p global_audit_test.py
+          node --test scripts/affiliation-loading.test.cjs
           python3 scripts/amazon_collection_test.py
           CHROMIUM_PATH=$(NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node -e 'console.log(require("playwright").chromium.executablePath())') node --test scripts/amazon-collector.test.mjs scripts/amazon-portal.test.mjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/amazon-statistics-browser-test.cjs

@@ -33,20 +33,22 @@
    const items=[...groups],values=items.flatMap(([,v])=>[v.approved,v.not_approved]),max=Math.max(1,...values),min=Math.min(0,...values),y=v=>160-(v-min)/(max-min)*140,zero=y(0),width=600/Math.max(1,items.length);
    return `<svg viewBox="0 0 700 205" role="img" aria-label="Commissions ${monthly?'mensuelles':'quotidiennes'}, par date de vente"><line x1="65" x2="680" y1="${zero}" y2="${zero}" stroke="currentColor" opacity=".3"/><text x="0" y="20">${esc(euro(max))}</text><text x="0" y="160">${esc(euro(min))}</text>${items.map(([day,v],i)=>['approved','not_approved'].map((key,j)=>`<rect class="aff-bar-${key}" x="${70+i*width+j*width*.4}" y="${Math.min(zero,y(v[key]))}" width="${Math.max(1,width*.36)}" height="${Math.max(0,Math.abs(y(v[key])-zero))}"><title>${esc(day)} · ${key==='approved'?'Approuvées':'Non approuvées'} : ${esc(euro(v[key]))}</title></rect>`).join('')+(i===0||i===items.length-1||i%Math.max(1,Math.ceil(items.length/6))===0?`<text x="${70+i*width}" y="188" text-anchor="start">${esc(day.slice(monthly?0:5))}</text>`:'')).join('')}</svg><p class="aff-legend"><span>● Approuvées</span><span>● Non approuvées</span></p>`;
  }
- async function load({poll=false}={}){
-   const version=++loadVersion;clearTimeout(timer);
+  async function load({poll=false,refresh=false}={}){
+    if(!poll)load.needsRender=true;
+    if(refresh)load.needsContent=true;
+    const version=++loadVersion;clearTimeout(timer);
    if(initialRange){selectPeriod('30');appliedRange={...selectedRange};initialRange=false;}
    try{
      const next=await request('overview?'+range());if(version!==loadVersion)return;
      const snapshots=m=>JSON.stringify(m?.accounts.map(a=>[a.id,a.snapshot?.id,...(a.platform_id==='amazon'?[a.running,a.last_error,a.session_state,a.portal_run,a.portal_progress]:[])]));
      const changed=snapshots(model)!==snapshots(next);model=next;pollError=false;
-     if(!poll)render();
+      if(!poll||load.needsRender){render();load.needsRender=false;load.needsContent=false;}
      else{
        refreshSyncState();
        if(tab==='connection'&&selected()?.platform_id==='amazon')updateAmazonPortalState(selected());
        else if(tab==='settings')loadRuns();
        else if(changed&&tab==='sales')loadSales();
-       else if(changed)renderContent();
+        else if(changed||load.needsContent){renderContent();load.needsContent=false;}
      }
    }catch(e){
      if(version!==loadVersion)return;
@@ -174,6 +176,7 @@
    const labels={clicks:'Clics Amazon',orders:'Commandes distinctes',ordered_items:'Articles commandés',shipped_items:'Articles expédiés',commission_cents:'Commissions déclarées',payment_cents:'Paiements déclarés'};
    const kinds={performance:'Statistiques Amazon',orders:'Commandes',earnings:'Rémunérations',payments:'Paiements'};
    content.innerHTML=`<p class="aff-alert">${esc(data?.limitation||'Aucune perte par transaction calculée.')} Les Tracking IDs Amazon sont conservés séparément des sources de partage LinKs. Un montant absent reste inconnu.</p>`;
+   if(data?.pending?.length)content.innerHTML+='<section class="panel"><h2>Archives à vérifier</h2><p>Ces fichiers sont conservés sans modifier les statistiques.</p>'+data.pending.map(p=>'<article><h3>'+esc(p.filename)+'</h3><ul>'+p.reasons.map(r=>'<li>'+esc(r)+'</li>').join('')+'</ul><button data-aff="pending-download" data-id="'+p.id+'">Télécharger l’original</button></article>').join('')+'</section>';
    if(tab==='connection'){
      content.innerHTML+='<section class="panel aff-mfa"><h2>Connexion Amazon Partenaires</h2><p>Configurez AMAZON_LOGIN et AMAZON_PASSWORD sur le serveur. Pour activer la double vérification, saisissez ici la clé TOTP de 52 caractères fournie par Amazon. Saisissez le code affiché sur le site Amazon, puis confirmez ici que l’activation est terminée.</p><p class="field-help">LinKs ne valide pas la clé auprès d’Amazon. La synchronisation manuelle utilise le navigateur serveur et s’arrête si Amazon demande un contrôle supplémentaire. Le parcours doit encore être validé sur votre compte réel.</p><p id="aff-mfa-state" role="status">Chargement de la configuration MFA…</p><form id="aff-mfa-form" hidden><label>Clé secrète TOTP Amazon<input id="aff-mfa-secret" type="password" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="80" required placeholder="52 caractères Base32"></label><button class="primary">Afficher le code</button></form><div id="aff-mfa-code-box" hidden><p>Code à saisir chez Amazon :</p><div class="aff-mfa-code-row"><strong id="aff-mfa-code" aria-live="polite"></strong><button id="aff-mfa-copy" type="button">Copier</button></div><p id="aff-mfa-countdown" role="status"></p><label class="aff-checkbox"><input id="aff-mfa-confirm-check" type="checkbox">J’ai activé cette clé sur le site Amazon</label><div class="aff-actions"><button id="aff-mfa-confirm" class="primary" disabled>Confirmer l’activation</button><button id="aff-mfa-cancel">Annuler cette clé</button></div></div><div id="aff-mfa-manage" class="aff-actions" hidden><button id="aff-mfa-replace">Remplacer la clé</button><button id="aff-mfa-remove">Supprimer la clé</button></div></section>';
      const portal=document.createElement('section');portal.className='panel';
@@ -197,7 +200,7 @@
      updateAmazonPortalState(current);setupAmazonMfa(current.id);return;
    }
    if(tab==='settings'){
-     content.innerHTML+='<section class="panel"><h2>Amazon Partenaires France</h2><p>Déposez un ZIP exporté du portail Partenaires : analyse automatique de tous les rapports et bilan d’import. Les réimports du même périmètre sont historisés ; les chevauchements sont refusés.</p><button data-aff="amazon-import">Importer un ZIP Amazon</button><h3>Creators API</h3><p>Les identifiants sont configurés exclusivement côté serveur. Ce diagnostic vérifie les rapports réellement accessibles ; il ne garantit pas l’accès aux commissions France. La collecte automatique reste désactivée tant que le format et la couverture de votre compte ne sont pas validés.</p><button id="aff-amazon-probe">Vérifier les rapports disponibles</button><div id="aff-amazon-files" role="status"></div></section>';
+     content.innerHTML+='<section class="panel"><h2>Amazon Partenaires France</h2><p>Déposez un ZIP exporté du portail Partenaires : analyse automatique de tous les rapports et bilan d’import. Les doublons sont ignorés, les corrections sûres sont historisées et les archives incertaines restent à vérifier sans modifier les totaux.</p><button data-aff="amazon-import">Importer un ZIP Amazon</button><h3>Creators API</h3><p>Les identifiants sont configurés exclusivement côté serveur. Ce diagnostic vérifie les rapports réellement accessibles ; il ne garantit pas l’accès aux commissions France. La collecte automatique reste désactivée tant que le format et la couverture de votre compte ne sont pas validés.</p><button id="aff-amazon-probe">Vérifier les rapports disponibles</button><div id="aff-amazon-files" role="status"></div></section>';
      const id=current.id;
      $('aff-amazon-probe').onclick=async event=>{
        const button=event.currentTarget,box=$('aff-amazon-files');button.disabled=true;box.textContent='Vérification…';
@@ -220,49 +223,42 @@
  }
  function amazonImport(id,initial=''){
    if(initial)return amazonManualImport(id,initial);
-   const d=dialog('Importer un ZIP Amazon France',`<p>Déposez l’archive exportée depuis Amazon Partenaires France. Les rapports sont analysés et enregistrés ensemble.</p><label class="aff-zip-drop" id="amz-drop">Déposer un ZIP ou choisir un fichier<input id="amz-zip" type="file" accept=".zip"></label><p class="field-help">16 Mo compressés · 64 Mo décompressés · CSV/TXT UTF-8</p><div id="amz-zip-result" role="status" aria-live="polite"></div><form id="amz-coverage" hidden></form><details><summary>Diagnostic et import manuel avancé</summary><p>Pour un format non reconnu, examinez les colonnes et le périmètre du rapport.</p><button id="amz-manual">Ouvrir l’import manuel</button></details>`);
-   const input=$('amz-zip'),drop=$('amz-drop'),result=$('amz-zip-result'),form=$('amz-coverage'),manual=$('amz-manual');
-   let archive='',coverage={},busy=false;
+   const d=dialog('Importer un ZIP Amazon France',`<p>Choisissez votre archive puis cliquez sur Envoyer. LinKs analyse les rapports, traite les doublons et conserve l’historique.</p><label class="aff-zip-drop" id="amz-drop">Déposer un ZIP ou choisir un fichier<input id="amz-zip" type="file" accept=".zip"></label><p class="field-help">16 Mo compressés · CSV/TXT UTF-8</p><button id="amz-send" class="primary" disabled>Envoyer</button><div id="amz-zip-result" role="status" aria-live="polite"></div><details><summary>Diagnostic et import manuel avancé</summary><button id="amz-manual">Ouvrir l’import manuel</button></details>`);
+   const input=$('amz-zip'),drop=$('amz-drop'),result=$('amz-zip-result'),send=$('amz-send'),manual=$('amz-manual');
+   let archive='',filename='',busy=false;
    manual.onclick=()=>{if(!busy){d.close();amazonManualImport(id)}};
-   async function submit(){
-     busy=true;input.disabled=true;manual.disabled=true;form.hidden=true;result.textContent='Analyse des rapports et vérification des doublons…';drop.setAttribute('aria-busy','true');
+   send.onclick=async()=>{
+     if(busy||!archive)return;
+     busy=true;input.disabled=true;manual.disabled=true;send.disabled=true;drop.setAttribute('aria-busy','true');
+     result.textContent='Analyse des rapports et vérification des doublons…';
      try{
-       const response=await request('amazon/import-zip',{account:id,archive,coverage});
-       if(!result.isConnected){if(response.ok)await load({poll:true});return}
-       if(response.needs){
-         result.textContent='Aucune donnée enregistrée. Ces informations ne sont pas déterminables dans les fichiers ; précisez uniquement les champs ci-dessous.';
-         form.replaceChildren();
-         for(const item of response.needs){
-           const group=document.createElement('fieldset'),legend=document.createElement('legend');legend.textContent=item.name;group.append(legend);
-           for(const key of item.fields){
-             const label=document.createElement('label'),field=document.createElement('input');
-             label.textContent={start:'Début de la période',end:'Fin de la période',scope:'Périmètre : all ou Tracking ID exact',currency:'Devise du rapport (EUR)'}[key];
-             field.type=['start','end'].includes(key)?'date':'text';field.required=true;field.dataset.file=item.name;field.dataset.field=key;
-             if(key==='currency')field.pattern='EUR';label.append(field);group.append(label);
-           }form.append(group);
-         }
-         const button=document.createElement('button');button.textContent='Importer avec ces précisions';form.append(button);form.hidden=false;return;
+       const response=await request('amazon/import-zip',{account:id,archive,filename});
+       if(!result.isConnected){if(response.ok)await load({poll:true,refresh:true});return}
+       if(response.pending){
+         result.innerHTML='<h3>Archive conservée à vérifier</h3><p>Les statistiques restent inchangées.</p><ul>'+response.reasons.map(r=>'<li>'+esc(r)+'</li>').join('')+'</ul><p>Le fichier original reste disponible dans les rapports Amazon.</p>';
+       }else if(response.duplicate){
+         result.textContent='Archive déjà importée : aucun doublon, aucune ancienne version réactivée.';
+       }else{
+         const labels={clicks:'Clics',ordered_items:'Articles commandés',shipped_items:'Articles expédiés',commission_cents:'Commissions déclarées'};
+         result.innerHTML='<h3>Import terminé</h3><p>'+response.files.length+' fichiers traités · '+response.replaced+' références remplacées, historique conservé.</p><ul>'+response.files.map(f=>'<li>'+esc(f.name)+' · '+esc(f.start)+' → '+esc(f.end)+' · '+(f.reference_metrics.length?'Statistiques mises à jour':'Analyse complémentaire, hors totaux')+'</li>').join('')+'</ul><dl class="aff-facts">'+Object.entries(labels).map(([key,label])=>'<div><dt>'+label+'</dt><dd>'+(key.endsWith('_cents')?euro(response.totals[key]):number(response.totals[key]))+'</dd></div>').join('')+'</dl>'+response.warnings.map(w=>'<p>'+esc(w)+'</p>').join('');
        }
-       if(response.duplicate){result.textContent='Archive déjà importée : aucun doublon, aucune ancienne version réactivée.';return}
-       const labels={clicks:'Clics',ordered_items:'Articles commandés',shipped_items:'Articles expédiés',commission_cents:'Commissions déclarées'};
-       result.innerHTML=`<h3>Import terminé</h3><p>${response.files.length} fichiers traités · ${response.replaced} références remplacées, historique conservé.</p><ul>${response.files.map(f=>`<li>${esc(f.name)} · ${esc(f.view)} · ${esc(f.start)} → ${esc(f.end)} · ${esc(f.scope)} · ${f.reference_metrics.length?'Référence : '+esc(f.reference_metrics.map(k=>labels[k]||k).join(', ')):'Analyse complémentaire'}</li>`).join('')}</ul><dl class="aff-facts">${Object.entries(labels).map(([key,label])=>`<div><dt>${label}</dt><dd>${key.endsWith('_cents')?euro(response.totals[key]):number(response.totals[key])}</dd></div>`).join('')}</dl>${response.warnings.map(w=>'<p>'+esc(w)+'</p>').join('')}`;
-       await load({poll:true});
+       await load({poll:true,refresh:true});
      }catch(error){if(d.isConnected)result.textContent=error.message}
-     finally{busy=false;input.disabled=false;manual.disabled=false;drop.removeAttribute('aria-busy')}
-   }
+     finally{busy=false;input.disabled=false;manual.disabled=false;send.disabled=!archive;drop.removeAttribute('aria-busy')}
+   };
    async function read(file){
      if(busy||!file)return;
+     archive='';send.disabled=true;
      if(!file.name.toLowerCase().endsWith('.zip')||file.size>16*1024*1024){result.textContent='Choisissez un ZIP de 16 Mo maximum.';return}
-     coverage={};busy=true;input.disabled=true;result.textContent='Lecture de l’archive…';
-     try{archive=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result.split(',')[1]);reader.onerror=()=>reject(new Error('Lecture du fichier impossible.'));reader.readAsDataURL(file)})}
-     catch(error){result.textContent=error.message;busy=false;input.disabled=false;return}
-     busy=false;await submit();
+     busy=true;input.disabled=true;manual.disabled=true;result.textContent='Lecture de l’archive…';
+     try{filename=file.name;archive=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result.split(',')[1]);reader.onerror=()=>reject(new Error('Lecture du fichier impossible.'));reader.readAsDataURL(file)});result.textContent=filename+' prêt à envoyer.'}
+     catch(error){result.textContent=error.message}
+     finally{busy=false;input.disabled=false;manual.disabled=false;send.disabled=!archive}
    }
    input.onchange=()=>read(input.files[0]);
    drop.ondragover=event=>{event.preventDefault();drop.classList.add('is-dragging')};
    drop.ondragleave=()=>drop.classList.remove('is-dragging');
    drop.ondrop=event=>{event.preventDefault();drop.classList.remove('is-dragging');if(event.dataTransfer.files.length!==1){result.textContent='Déposez une seule archive ZIP.';return}read(event.dataTransfer.files[0])};
-   form.onsubmit=event=>{event.preventDefault();if(busy)return;for(const field of form.querySelectorAll('[data-field]')){coverage[field.dataset.file]||={};coverage[field.dataset.file][field.dataset.field]=field.value.trim()}submit()};
  }
  function amazonManualImport(id,initial=''){
    const labels={date:'Date de la ligne',tracking_id:'Tracking ID Amazon',asin:'ASIN',title:'Produit',provider_status:'Statut fourni par Amazon',transaction_id:'Identifiant fourni (sans garantie de stabilité)',orders:'Nombre de commandes distinctes',ordered_items:'Articles commandés',shipped_items:'Articles expédiés',commission_cents:'Commission en EUR',payment_cents:'Paiement en EUR',clicks:'Clics Amazon'};
@@ -350,6 +346,11 @@
    try{
      if(action==='amazon-import')amazonImport(account);
      if(action==='reload')await load();
+     if(action==='pending-download'){
+       const saved=await request('amazon/pending-archive',{account,id:Number(button.dataset.id)});
+       const bytes=Uint8Array.from(atob(saved.archive),c=>c.charCodeAt(0)),url=URL.createObjectURL(new Blob([bytes],{type:'application/zip'}));
+       const link=document.createElement('a');link.href=url;link.download=saved.filename;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+     }
      if(action==='global'){account='';tab='overview';await load()}
      if(action==='partners'){account='';tab='partners';await load()}
      if(action==='partner'){account=button.dataset.id;tab='overview';page=1;await load()}

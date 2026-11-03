@@ -566,7 +566,7 @@ def _choose_title(url, parser, current_title, *, fetched=True, diagnostics=None)
     for other_score, other_source, other_title in ranked[1:]:
         models = lambda text: {word for word in _tokens(text) if re.search(r'\d', word)}
         incompatible_model = bool(models(title) and models(other_title) and not models(title) <= models(other_title) and not models(other_title) <= models(title))
-        if other_source != 'url_slug' and other_score >= 70 and (overlap(title, other_title) < .5 or incompatible_model):
+        if other_source != 'url_slug' and ((other_score >= 70 and overlap(title, other_title) < .5) or (other_score >= 60 and incompatible_model)):
             return _result(current_title, '', 'unavailable', 'low', 'conflicting_metadata')
     confidence = 'high' if score >= 85 else 'medium' if score >= 60 else 'low'
     if not fetched and source != 'url_slug':

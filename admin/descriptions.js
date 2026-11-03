@@ -56,7 +56,7 @@ window.LinksDescriptions=(()=>{
   details.addEventListener('toggle',()=>{if(details.isConnected){if(details.open)openItems.add(item.id);else openItems.delete(item.id)}});
   const summary=node('summary');summary.append(node('span',item.name),sorting(details,items,index,item.name));details.append(summary);
   const grid=node('div',undefined,'description-fields');grid.append(field('Nom',item,'name'),field('Titre visible',item,'heading'));
-  if(merchant)grid.append(select('Partenaire LinKs',item,'partner_id',[['','Aucun partenaire associé'],...catalogue.partners.map(x=>[x.id,x.name])]));
+  if(merchant){grid.append(select('Marchand pour l’assistant',item,'merchant',[['','Autre / manuel'],['amazon','Amazon'],['domadoo','Domadoo']]));grid.append(select('Partenaire LinKs',item,'partner_id',[['','Aucun partenaire associé'],...catalogue.partners.map(x=>[x.id,x.name])]))}
   else grid.append(select('Comportement',item,'mode',[['manual','Manuel'],['permanent','Permanent'],['smart','Intelligent']]));
   grid.append(check('Masquer si vide',item,'hide_if_empty'));details.append(grid,field('Texte prérempli',item,'text','textarea'),bindings(item),field('Texte après les liens',item,'after_text','textarea'));
   if(!merchant){

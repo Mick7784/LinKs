@@ -157,6 +157,7 @@ def prepare_link(db,key,data,origin):
     active=[i for i in duplicates if i['enabled'] and not i['archived']]
     link_id=chosen or (active[0]['id'] if len(active)==1 else '')
     known=items.get(link_id)
+    if merchant!='amazon' and known:partner=known['partner_id']
     title=url_inspection.suggest_local_title(analysis.absolute(raw),known_title=known['name'] if known else product['name'],written_title=text(data,'label',160))['title']
     sources=[]
     if merchant!='amazon':
@@ -171,7 +172,7 @@ def prepare_link(db,key,data,origin):
     placements=[]
     for section in document['template_snapshot']['sections']:
         for sub in section['merchants']:
-            if sub['id']==merchant or (partner and sub['partner_id']==partner):
+            if sub.get('merchant',sub['id'])==merchant or (partner and sub['partner_id']==partner):
                 placements.append({'section_id':section['id'],'merchant_id':sub['id'],'name':section['name']+' / '+sub['heading']})
     return {'original_url':raw,'url':final,'partner_id':partner,'mode':'direct' if merchant=='amazon' else 'tracked_pending',
             'label':title,'link_id':link_id,'duplicates':duplicates[:30],'sources':sources[:100],'placements':placements[:100]}
