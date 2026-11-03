@@ -39,7 +39,7 @@ s.serve_forever()`],{cwd:__dirname,env:{...process.env,PYTHONIOENCODING:'utf-8',
   assert.equal(await page.locator('.aff-card').count(),4);
   if(process.env.AMAZON_UI_SHOTS)await page.screenshot({path:join(process.env.AMAZON_UI_SHOTS,'amazon-vue-ensemble.png'),fullPage:true});
   await nav.getByRole('button',{name:'Rapports et imports',exact:true}).click();
-  await page.getByRole('heading',{name:'Rapports actifs',exact:true}).waitFor();
+  await page.getByRole('heading',{name:'Rapports actifs · 1',exact:true}).waitFor();
   assert.equal(await page.locator('#aff-period').isVisible(),false);
   assert.equal(await page.locator('.aff-card').count(),0);
   assert.equal(await page.getByRole('heading',{name:'Évolution quotidienne',exact:true}).count(),0);
@@ -47,7 +47,7 @@ s.serve_forever()`],{cwd:__dirname,env:{...process.env,PYTHONIOENCODING:'utf-8',
   assert.match(await page.locator('#aff-content table').innerText(),/3,75/);
   await nav.getByRole('button',{name:'Connexion',exact:true}).click();
   await page.locator('[data-portal-state]').waitFor();
-  assert.equal(await page.getByRole('heading',{name:'Rapports actifs',exact:true}).count(),0);
+  assert.equal(await page.getByRole('heading',{name:/^Rapports actifs/}).count(),0);
   assert.equal(await page.locator('#aff-amazon-probe').isVisible(),false);
   await page.getByText('Accès API avancé',{exact:true}).click();
   assert(await page.locator('#aff-amazon-probe').isVisible());
@@ -61,21 +61,19 @@ s.serve_forever()`],{cwd:__dirname,env:{...process.env,PYTHONIOENCODING:'utf-8',
   await page.getByRole('button',{name:'Afficher tout l’historique',exact:true}).click();
   await page.locator('.aff-card').filter({hasText:'Commissions déclarées'}).waitFor();
   assert.match(await page.locator('.aff-card').filter({hasText:'Commissions déclarées'}).innerText(),/3,75/);
-  // Pending files are visible only under imports, with their diagnostic collapsed.
+  // Pending files expose the blocking reason directly in the archive manager.
   let unavailable=false;
   await page.route('**/api/affiliation/overview?*',async route=>{const response=await route.fetch(),body=await response.json();for(const r of body.amazon||[]){r.pending=[{id:999,filename:'Archive-annuelle-à-vérifier.zip',observed_at:'2026-11-03T12:00:00Z',reasons:['Période absente du fichier.']}];if(unavailable){r.reports=[];r.rows=[];r.daily=[];r.tracking=[];for(const k of Object.keys(r.totals))r.totals[k]=null}}await route.fulfill({response,json:body})});
   await page.evaluate(()=>window.LinksAffiliation.load());
   await page.getByRole('button',{name:'Voir les rapports',exact:true}).click();
-  await page.getByRole('heading',{name:'Archives à vérifier',exact:true}).waitFor();
-  assert.equal(await page.getByText('Période absente du fichier.',{exact:true}).isVisible(),false);
-  await page.getByText('Pourquoi cet import est bloqué',{exact:true}).click();
+  await page.getByRole('heading',{name:'Archives nécessitant une attention · 1',exact:true}).waitFor();
   assert(await page.getByText('Période absente du fichier.',{exact:true}).isVisible());
   for(const width of [390,768,1440]){
    await page.setViewportSize({width,height:960});
    await nav.getByRole('button',{name:'Connexion',exact:true}).click();
    await page.locator('[data-portal-state]').waitFor();
    await nav.getByRole('button',{name:'Rapports et imports',exact:true}).click();
-   await page.getByRole('heading',{name:'Archives à vérifier',exact:true}).waitFor();
+   await page.getByRole('heading',{name:'Archives nécessitant une attention · 1',exact:true}).waitFor();
    await page.evaluate(()=>{document.activeElement?.blur();window.scrollTo(0,0)});
    assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'No document overflow at '+width);
    assert(await nav.getByRole('button',{name:'Connexion',exact:true}).isVisible());
