@@ -92,7 +92,7 @@ s.serve_forever()`],{cwd:__dirname,env:{...process.env,PYTHONIOENCODING:'utf-8',
   await page.getByRole('button',{name:'Paiements',exact:true}).click();await page.locator('#aff-payments').waitFor();
   await page.getByRole('button',{name:'Connexion et synchronisation',exact:true}).click();await page.locator('#aff-settings-form').waitFor();
   await page.getByRole('navigation',{name:'Partenaires affiliation'}).getByRole('button',{name:'Amazon',exact:true}).click();
-  await page.getByRole('button',{name:'Rapports Amazon',exact:true}).waitFor();assert(await page.getByRole('button',{name:'Importer un ZIP Amazon',exact:true}).first().isVisible());
+  await page.getByRole('button',{name:'Rapports et imports',exact:true}).waitFor();assert(await page.getByRole('button',{name:'Importer un ZIP Amazon',exact:true}).first().isVisible());
   await page.getByRole('button',{name:'Vue d’ensemble générale',exact:true}).click();await page.locator('[data-overview-total]').waitFor();
   for(let i=0;i<8;i++)await api('accounts',{partner:`Partenaire supplémentaire ${i}`,label:'Synthétique',platform:'affiliatly'});
   await page.evaluate(()=>window.LinksAffiliation.load());

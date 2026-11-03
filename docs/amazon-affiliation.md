@@ -21,6 +21,18 @@ Le [centre de rapports France](https://partenaires.amazon.fr/welcome/topic/repor
 
 ## Import ZIP automatique
 
+La page Amazon comprend trois rubriques. **Vue d’ensemble** présente les résultats
+sur la période sélectionnée, l'évolution quotidienne disponible et les Tracking IDs.
+**Rapports et imports** regroupe les archives en attente, les rapports écartés,
+la couverture des rapports actifs, les lignes détaillées et les paiements déclarés.
+**Connexion** affiche la collecte manuelle ; l'authentification à deux facteurs,
+les préférences futures et le diagnostic API sont dépliables séparément.
+Le bouton d'import ZIP reste disponible dans l'en-tête de chaque rubrique.
+Les listes d'anomalies ne sont pas répétées dans les autres rubriques. Sans données
+exploitables, la vue d'ensemble affiche un état explicite et un accès aux imports,
+plutôt que des cartes et tableaux vides. Cette organisation ne résout pas à elle
+seule les informations de couverture manquantes dans un export annuel.
+
 Dans Affiliation → Amazon, **Importer un ZIP Amazon** propose : choisir le fichier,
 cliquer sur **Envoyer**, puis lire le bilan. Le parcours normal ne demande ni dates,
 ni devise, ni périmètre, ni correspondance de colonnes.

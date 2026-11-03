@@ -35,6 +35,8 @@ s.serve_forever()`],{cwd:__dirname,env:{...process.env,PYTHONIOENCODING:'utf-8',
   await page.locator('#amz-preview').click();await page.locator('#amz-submit').waitFor({state:'visible'});await page.waitForFunction(()=>!document.getElementById('amz-submit').disabled);
   assert.match(await page.locator('#amz-review').innerText(),/12,34/);await page.locator('#amz-confirm').check();await page.locator('#amz-submit').click();await page.locator('#aff-dialog').waitFor({state:'hidden'});
   await page.locator('#affiliation').getByRole('button',{name:'Vue d’ensemble',exact:true}).click();await page.locator('#aff-period').selectOption('all');await page.locator('[data-aff=range]').click();
+  await page.getByRole('button',{name:'Rapports et imports',exact:true}).click();
+  await page.getByText('Lignes détaillées · période sélectionnée dans la vue d’ensemble',{exact:true}).click();
   await page.getByText('site-21',{exact:false}).first().waitFor();
   const report=await api('overview?account='+account.id);
   assert.equal(report.amazon[0].totals.commission_cents,1234);assert.equal(report.amazon[0].totals.shipped_items,2);assert.equal(report.amazon[0].totals.orders,null);assert.deepEqual(report.losses,[]);
