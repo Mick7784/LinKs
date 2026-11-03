@@ -1,5 +1,30 @@
 # Changelog
 
+## V1.4.13
+
+# V1.4.13 — Une page Amazon organisée par usage
+
+### Navigation et résultats
+
+- Trois rubriques distinctes : Vue d'ensemble, Rapports et imports, Connexion.
+- Vue d'ensemble recentrée sur quatre indicateurs, l'évolution quotidienne et la ventilation par Tracking ID lorsqu'elles sont disponibles.
+- Sans données exploitables, un écran explicite remplace les cartes et tableaux vides. Les filtres de période apparaissent lorsqu'il existe des rapports actifs ; un accès à tout l'historique permet de retrouver les données hors période.
+- Les alertes détaillées ne sont plus répétées dans toutes les rubriques.
+
+### Rapports et connexion
+
+- Archives à vérifier, rapports écartés, couverture et références actives regroupés dans Rapports et imports.
+- Diagnostics, lignes détaillées et paiements accessibles dans des sections dépliables.
+- Connexion recentrée sur l'état de la collecte. Authentification à deux facteurs, préférences de collecte future et accès API présentés séparément, dans des sections repliées.
+- L'import ZIP reste accessible depuis chaque rubrique. Navigation adaptée aux petits écrans et aux interactions clavier.
+
+### Validation et limites
+
+- Cinq parcours navigateur locaux réussis : navigation/statistiques Amazon, ZIP, CSV, collecte manuelle simulée et vue d'ensemble consolidée ; contrôles de navigation à 390, 768 et 1440 pixels et trois tests de concurrence du chargement réussis.
+- Publication conditionnée au workflow officiel et aux validations Docker AMD64/ARM64.
+- Cette release réorganise l'interface. Elle ne complète pas les informations absentes des exports annuels et ne rétablit pas à elle seule leur import financier. Les protections et exclusions de V1.4.12 restent applicables.
+- La publication GitHub/GHCR ne met pas à jour l'instance hébergée.
+
 ## V1.4.12
 
 # V1.4.12 — Correction des cumuls Amazon attribués à une journée
