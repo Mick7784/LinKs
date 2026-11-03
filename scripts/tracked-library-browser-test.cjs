@@ -35,7 +35,7 @@ const {join,resolve}=require('node:path');
   const page=await context.newPage(),errors=[],writes=[];page.on('pageerror',error=>errors.push(error.message));
   page.on('request',request=>{if(['POST','PUT'].includes(request.method())&&/\/api\/tracked-links(?:\/[a-f0-9]{32})?$/.test(new URL(request.url()).pathname))writes.push(request.postDataJSON())});
   page.on('dialog',dialog=>dialog.accept());
-  await page.goto(origin);await page.locator('#chart svg').waitFor();
+  await page.goto(origin);await page.locator('.sw-overview').waitFor();
   const nav=async id=>{if(await page.locator('#menu-toggle').isVisible())await page.locator('#menu-toggle').click();await page.locator(`[data-tab="${id}"]`).click();await page.locator(`#${id}.active`).waitFor()};
   const checkEditor=async stage=>{
    assert.equal(await page.locator('#tracked-form [name="category"]').count(),0);

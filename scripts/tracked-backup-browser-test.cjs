@@ -21,7 +21,7 @@ const {tmpdir}=require('node:os'),{join,resolve}=require('node:path');
   let approve=false;
   page.on('pageerror',error=>errors.push(error.message));
   page.on('dialog',dialog=>{confirmations.push(dialog.message());return approve?dialog.accept():dialog.dismiss()});
-  await page.goto(origin);await page.locator('#chart svg').waitFor();await page.locator('[data-tab="settings"]').click();
+  await page.goto(origin);await page.locator('.sw-overview').waitFor();await page.locator('[data-tab="settings"]').click();
   await page.locator('[data-settings-section="maintenance"]').click();await page.locator('#backup-panel').waitFor();
   const downloaded=page.waitForEvent('download');await page.locator('#download-backup').click();const download=await downloaded;
   assert.match(download.suggestedFilename(),/\.json$/);

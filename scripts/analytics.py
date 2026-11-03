@@ -15,6 +15,7 @@ import themes
 import images as user_images
 import storage
 import tracked_links
+import statistics_workspace
 import tracked_batch
 import descriptions
 import affiliate_partners
@@ -1683,6 +1684,22 @@ class Handler(BaseHTTPRequestHandler):
                     return self.json(200,{"items":affiliate_partners.list_tracked(db,q.get("start",[None])[0],q.get("end",[None])[0])})
             if url.path=="/api/backup":return self.send(200,export_backup())
             if url.path=="/api/storage":return self.json(200,storage_state())
+            if url.path=="/api/stats/workspace":
+                q=parse_qs(url.query);at=datetime.now(timezone.utc)
+                with connection() as db:
+                    db.execute('BEGIN')
+                    blocks=[dict(row) for row in db.execute('SELECT * FROM content_blocks')]
+                    campaigns=[{**row,'status':status_of(row,at)} for row in blocks if row['type'] in CAMPAIGN_TYPES]
+                    labels={'block:'+row['id']:row['title'] for row in blocks}
+                    labels.update({'button:'+row['id']:row['label'] for row in db.execute('SELECT id,label FROM top_buttons')})
+                    labels['latest-video']='Dernière vidéo'
+                    result=statistics_workspace.workspace(db,now=at,zone=PARIS,
+                        selected=q.get('date',[''])[0],period=q.get('period',['30'])[0],
+                        aliases=metric_aliases(db),labels=labels,campaigns=campaigns,
+                        selection=select_campaigns(blocks,at),
+                        sources={'names':source_labels(db),'metadata':tracked_links.source_rows(db)})
+                    result['collection_enabled']=instance.get(db,'analytics.enabled')=='true'
+                return self.json(200,result)
             if url.path=="/api/stats":
                 q=parse_qs(url.query);today=datetime.now(PARIS).date();return self.json(200,report(q.get("start",[(today-timedelta(days=29)).isoformat()])[0],q.get("end",[today.isoformat()])[0],q.get("source",[""])[0]))
             if url.path=="/api/page-layout":
@@ -1712,6 +1729,8 @@ class Handler(BaseHTTPRequestHandler):
         if url.path.startswith("/preview/") and url.path[9:] in {"index.html","app.js","config.js","metrics.js","theme.js","theme.css","theme-tokens.json","asset-library.json"}:return self.file(STATIC/url.path[9:])
         if url.path in {"/uuid.js","/description-workflow.js","/description-search.js","/description-analysis.js","/description-sections.js","/description-editor.js","/descriptions.js","/descriptions.css","/affiliation.js","/affiliation-overview.js","/affiliation.css","/collection.js","/partner-report.js","/source-platforms.js","/daily-report.js","/charts.js","/navigation.js","/page-editor.js","/page-editor.css","/page-editor-preview.css","/appearance.js","/appearance.css","/shortcuts.js","/uploads.js","/storage.js","/settings.js","/tracking.js","/title-batch.js","/link-batch.js","/theme-init.js"}:return self.file(ADMIN/url.path[1:])
         files={"/":("index.html","text/html;charset=utf-8"),"/app.js":("app.js","application/javascript"),"/dates.js":("dates.js","application/javascript"),"/calendar.js":("calendar.js","application/javascript"),"/style.css":("style.css","text/css")}
+        files.update({'/statistics-workspace.js':('statistics-workspace.js','application/javascript'),
+                      '/statistics-workspace.css':('statistics-workspace.css','text/css')})
         return self.file(ADMIN/files[url.path][0],files[url.path][1]) if url.path in files else self.send(404)
     @after_transactions
     def do_POST(self):

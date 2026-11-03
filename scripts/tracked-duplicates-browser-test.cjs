@@ -22,7 +22,7 @@ const {mkdtempSync,rmSync}=require('node:fs'),{tmpdir}=require('node:os'),{join,
   await context.addInitScript(()=>Object.defineProperty(navigator,'clipboard',{value:{writeText:async value=>{window.copiedLink=value}}}));
   const page=await context.newPage(),errors=[],confirmations=[];let approveDuplicate=false;
   page.on('pageerror',error=>errors.push(error.message));page.on('dialog',dialog=>{confirmations.push(dialog.message());return /doublon de destination/.test(dialog.message())&&!approveDuplicate?dialog.dismiss():dialog.accept()});
-  await page.goto(origin);await page.locator('#chart svg').waitFor();assert.equal(await page.locator('[data-tab="content"] [data-icon]').getAttribute('data-icon'),'globe');assert.equal(await page.locator('[data-tab="tracked-links"] [data-icon]').getAttribute('data-icon'),'links');
+  await page.goto(origin);await page.locator('.sw-overview').waitFor();assert.equal(await page.locator('[data-tab="content"] [data-icon]').getAttribute('data-icon'),'globe');assert.equal(await page.locator('[data-tab="tracked-links"] [data-icon]').getAttribute('data-icon'),'links');
   await page.click('[data-tab="tracked-links"]');await page.locator(`[data-tracked-id="${existing.id}"]`).waitFor();
   const createDraft=async name=>{await page.click('[data-action="new-tracked"]');await page.fill('#tracked-form [name="name"]',name);await page.fill('#tracked-form [name="url"]','https://shop.reolink.com/original');await page.locator('#tracked-duplicates').waitFor();};
   await createDraft('Nouveau brouillon');assert.match(await page.locator('#tracked-duplicate-list').textContent(),/Caméra existante/);

@@ -50,7 +50,7 @@ const {join,resolve}=require('node:path');
    await route.fulfill({status:200,contentType:'application/json',
     body:JSON.stringify({status:title?'ok':'unavailable',title,source:title?'open_graph':''})});
   });
-  await page.goto(origin);await page.locator('#chart svg').waitFor();
+  await page.goto(origin);await page.locator('.sw-overview').waitFor();
   if(await page.locator('#menu-toggle').isVisible())await page.locator('#menu-toggle').click();
   await page.locator('[data-tab="tracked-links"]').click();
   await page.locator('#tracked-links.active').waitFor();

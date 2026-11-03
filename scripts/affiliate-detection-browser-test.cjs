@@ -20,7 +20,7 @@ const {mkdtempSync,rmSync}=require('node:fs'),{tmpdir}=require('node:os'),{join,
   await context.route('https://shop.reolink.com/**',route=>route.fulfill({body:'Destination test'}));
   const page=await context.newPage(),errors=[];let approve=true,confirmations=[];
   page.on('pageerror',error=>errors.push(error.message));page.on('dialog',dialog=>{confirmations.push(dialog.message());return approve?dialog.accept():dialog.dismiss()});
-  await page.goto(origin);await page.locator('#chart svg').waitFor();await page.click('[data-tab="tracked-links"]');
+  await page.goto(origin);await page.locator('.sw-overview').waitFor();await page.click('[data-tab="tracked-links"]');
   const legacyRow=page.locator(`[data-tracked-id="${legacy.id}"]`);await legacyRow.waitFor();await legacyRow.locator('[data-tracked-action="edit"]').click();
   await page.waitForFunction(url=>document.getElementById('tracked-final-link').getAttribute('href')===url,legacy.url);
   assert.equal(await page.inputValue('#tracked-partner'),'');await page.fill('#tracked-form [name="notes"]','Mise à jour sans changer la destination');await page.click('#tracked-form [type="submit"]');await page.locator('#tracked-dialog').waitFor({state:'hidden'});assert.equal(confirmations.length,0);

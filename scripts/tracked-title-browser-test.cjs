@@ -35,7 +35,7 @@ const {join,resolve}=require('node:path');
   const page=await context.newPage(),errors=[];
   page.on('pageerror',err=>errors.push(err.message));
   await page.goto(origin);
-  await page.locator('#chart svg').waitFor();
+  await page.locator('.sw-overview').waitFor();
   if(await page.locator('#menu-toggle').isVisible())await page.locator('#menu-toggle').click();
   await page.locator('[data-tab="tracked-links"]').click();
   await page.locator('#tracked-links.active').waitFor();

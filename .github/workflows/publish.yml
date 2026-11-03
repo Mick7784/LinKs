@@ -66,6 +66,9 @@ jobs:
           python3 scripts/storage_test.py
           python3 scripts/images_test.py
           python3 scripts/analytics_test.py
+          python3 scripts/statistics_workspace_test.py
+          node --test scripts/statistics-workspace.test.cjs
+          NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/statistics-workspace-browser-test.cjs
           node --test scripts/amazon-auth.test.mjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/amazon-mfa-browser-test.mjs
           python3 scripts/affiliation_test.py

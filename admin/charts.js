@@ -125,14 +125,14 @@ function timeSeries(root,detail,days,series,{mode='line',active=()=>true,onSelec
 const sourceSlots={site:0,youtube:3,instagram:1,facebook:2,mail:4,newsletter:6,qr:5,tiktok:7,discord:6,other:4};
 function sourceHash(key){let hash=0;for(const char of String(key))hash=(hash*31+char.codePointAt(0))>>>0;return hash}
 function sourceColor(key){if(key==='unknown')return 'var(--chart-category-unknown)';return 'var(--chart-category-'+(Object.hasOwn(sourceSlots,key)?sourceSlots[key]:sourceHash(key)%8)+')'}
-function distribution(root,items,{query='',sort='input',category='source',onSelect=()=>{}}={}){
+function distribution(root,items,{query='',sort='input',category='source',unit='visites et ouvertures',onSelect=()=>{}}={}){
  root.classList.add('source-distribution');
  const total=items.reduce((sum,row)=>sum+row[1],0),positive=items.filter(row=>row[1]>0),ring=positive.length>=2&&positive.length<=6&&positive.every(row=>String(row[0]).length<=42);
  if(!total){root.innerHTML='<p class="empty">Aucune visite ou ouverture mesurée pour cette période et cette source.</p>';return}
- root.innerHTML=`<div class="source-overview"><strong class="source-total">${fmt.format(total)}</strong><span>visites et ouvertures · ${fmt.format(positive.length)} ${esc(category)}(s)</span></div><div class="sources-layout"><div class="donut-wrap" ${ring?'':'hidden'}></div><div class="source-list"></div></div><p class="source-inspector" role="status" aria-live="polite">${ring?'':'Répartition par '+esc(category)+' · barres proportionnelles au total.'}</p>`;
+ root.innerHTML=`<div class="source-overview"><strong class="source-total">${fmt.format(total)}</strong><span>${esc(unit)} · ${fmt.format(positive.length)} ${esc(category)}(s)</span></div><div class="sources-layout"><div class="donut-wrap" ${ring?'':'hidden'}></div><div class="source-list"></div></div><p class="source-inspector" role="status" aria-live="polite">${ring?'':'Répartition par '+esc(category)+' · barres proportionnelles au total.'}</p>`;
  const pct=value=>value>0&&value/total*100<.1?'<0,1 %':(value/total*100).toLocaleString('fr-FR',{maximumFractionDigits:1})+' %';
  const select=(key,name,value,activate=false)=>{
-  root.querySelector('.source-inspector').textContent=name+' : '+fmt.format(value)+' visites et ouvertures · '+pct(value);
+  root.querySelector('.source-inspector').textContent=name+' : '+fmt.format(value)+' '+unit+' · '+pct(value);
   root.querySelectorAll('[data-source-key]').forEach(n=>{const selected=n.dataset.sourceKey===key;n.classList.toggle('selected',selected);n.setAttribute('aria-pressed',String(selected))});
   if(ring){root.querySelector('.donut-total').textContent=fmt.format(value);root.querySelector('.donut-caption').textContent=pct(value)}
   onSelect({key,name,value,activate});
@@ -145,7 +145,7 @@ function distribution(root,items,{query='',sort='input',category='source',onSele
    if(value/total>=.08){const x=90+66*Math.cos(angle),y=90+66*Math.sin(angle);markers.push(`<g class="source-segment-number" aria-hidden="true"><circle cx="${x}" cy="${y}" r="10"/><text x="${x}" y="${y+4}" text-anchor="middle">${index+1}</text></g>`)}
    const gap=Math.min(2.5,length*.15),result=`<circle class="donut-segment" data-source-key="${esc(key)}" data-source-color="${esc(sourceColor(key))}" tabindex="0" role="button" aria-pressed="false" aria-label="${esc(name+' : '+fmt.format(value)+' · '+pct(value))}" cx="90" cy="90" r="66" fill="none" stroke="${esc(sourceColor(key))}" stroke-width="24" stroke-dasharray="${length-gap} ${circumference-length+gap}" stroke-dashoffset="${-offset-gap/2}" transform="rotate(-90 90 90)"><title>${esc(name+' : '+fmt.format(value)+' · '+pct(value))}</title></circle>`;offset+=length;return result;
   }).join('');
-  root.querySelector('.donut-wrap').innerHTML=`<svg viewBox="0 0 180 180" role="group" aria-label="Répartition des visites et ouvertures par ${esc(category)}">${segments}${markers.join('')}<text class="donut-total" x="90" y="87" text-anchor="middle">${fmt.format(total)}</text><text class="donut-caption" x="90" y="107" text-anchor="middle">Total</text></svg>`;
+  root.querySelector('.donut-wrap').innerHTML=`<svg viewBox="0 0 180 180" role="group" aria-label="Répartition : ${esc(unit)} par ${esc(category)}">${segments}${markers.join('')}<text class="donut-total" x="90" y="87" text-anchor="middle">${fmt.format(total)}</text><text class="donut-caption" x="90" y="107" text-anchor="middle">Total</text></svg>`;
   const nodes=[...root.querySelectorAll('.donut-segment')];
   nodes.forEach((node,index)=>{
    const row=positive[index],show=()=>select(node.dataset.sourceKey,row[0],row[1]);node.onfocus=show;node.onpointerenter=()=>{if(!root.querySelector(':focus-visible'))show()};node.onclick=()=>select(node.dataset.sourceKey,row[0],row[1],true);

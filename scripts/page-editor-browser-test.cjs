@@ -16,7 +16,7 @@ const {spawn,execFileSync}=require('node:child_process'),{mkdtempSync,rmSync,mkd
   const nav=async id=>{if(await page.locator('#menu-toggle').isVisible())await page.locator('#menu-toggle').click();await page.locator(`[data-tab="${id}"]`).click()};
   const ready=async()=>{await page.locator('#page-editor-status').filter({hasText:'Organisation enregistrée'}).waitFor();await page.frameLocator('#page-editor-frame').locator('.video-card').waitFor()};
   const frame=page.frameLocator('#page-editor-frame'),sectionOrder=()=>frame.locator('[data-layout-section]').evaluateAll(nodes=>nodes.map(n=>n.dataset.layoutSection)),linkOrder=()=>frame.locator('[data-layout-link]').evaluateAll(nodes=>nodes.map(n=>n.dataset.layoutLink));
-  await page.goto(origin);await page.locator('#chart svg').waitFor();await nav('content');await ready();
+  await page.goto(origin);await page.locator('.sw-overview').waitFor();await nav('content');await ready();
   const before=await api('/api/public-config'),layout=await api('/api/page-layout'),records=(await api('/api/content')).items;
   assert.deepEqual(await sectionOrder(),before.section_order);assert.deepEqual(await linkOrder(),layout.link_ids);
   assert.equal(await frame.locator('main>.profile').count(),1);assert.equal(await frame.locator('main>footer').count(),1);

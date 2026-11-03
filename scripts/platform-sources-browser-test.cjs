@@ -18,7 +18,7 @@ const {mkdtempSync,rmSync}=require('node:fs'),{tmpdir}=require('node:os'),{join,
   assert((await api('/api/pulse/links',undefined,'GET',true)).links.some(row=>row.id===fresh.id));
   browser=await chromium.launch({headless:true,executablePath:process.env.CHROMIUM_PATH});const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];
   page.on('pageerror',error=>errors.push(error.message));page.on('dialog',dialog=>dialog.accept());
-  await page.goto(origin);await page.locator('#chart svg').waitFor();await page.click('[data-tab="tracked-links"]');
+  await page.goto(origin);await page.locator('.sw-overview').waitFor();await page.click('[data-tab="tracked-links"]');
   const row=page.locator(`[data-tracked-id="${fresh.id}"]`);await row.waitFor();assert.equal(await row.locator('select').inputValue(),instagram.id);
   assert.equal(await row.locator('optgroup').first().getAttribute('label'),'Plateformes');assert(await row.locator('optgroup[label="Historiques"] option').filter({hasText:'Instagram Story'}).count());
   assert(await row.locator(`optgroup[label="Plateformes"] option[value="${youtube.id}"]`).count());

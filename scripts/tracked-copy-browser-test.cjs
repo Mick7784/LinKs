@@ -61,7 +61,7 @@ const {mkdtempSync,rmSync}=require('node:fs'),{tmpdir}=require('node:os'),{join,
    if(networkFailure)return route.abort();
    await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(verdict)});
   });
-  await page.goto(origin);await page.locator('#chart svg').waitFor();
+  await page.goto(origin);await page.locator('.sw-overview').waitFor();
   await page.locator('[data-tab="tracked-links"]').click();
   const row=page.locator(`[data-tracked-id="${link.id}"]`),copy=row.locator('[data-tracked-action="copy"]');
   await row.waitFor();await page.selectOption('#source-'+link.id,sources[0].id);
@@ -135,7 +135,7 @@ const {mkdtempSync,rmSync}=require('node:fs'),{tmpdir}=require('node:os'),{join,
   const real=await native.newPage();
   real.on('pageerror',e=>errors.push(e.message));
   real.on('dialog',async d=>{errors.push('Unexpected native clipboard dialog: '+d.message());await d.dismiss()});
-  await real.goto(origin);await real.locator('#chart svg').waitFor();
+  await real.goto(origin);await real.locator('.sw-overview').waitFor();
   await real.locator('[data-tab="tracked-links"]').click();
   await real.selectOption('#source-'+link.id,sources[0].id);
   await real.locator(`[data-tracked-id="${link.id}"] [data-tracked-action="copy"]`).click();

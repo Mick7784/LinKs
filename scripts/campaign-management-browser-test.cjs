@@ -13,7 +13,7 @@ const {tmpdir}=require('node:os'),{join,resolve}=require('node:path');
   for(let i=0;i<100;i++){try{if((await fetch(origin+'/healthz')).ok)break}catch{}await new Promise(r=>setTimeout(r,100));if(i===99)throw Error('Backend did not start')}
   browser=await chromium.launch({headless:true,...(process.env.CHROMIUM_PATH?{executablePath:process.env.CHROMIUM_PATH}: {})});
   const context=await browser.newContext({viewport:{width:1440,height:1120},reducedMotion:'reduce'}),page=await context.newPage(),errors=[];
-  page.on('pageerror',e=>errors.push(e.message));await page.goto(origin);await page.locator('#chart svg').waitFor();
+  page.on('pageerror',e=>errors.push(e.message));await page.goto(origin);await page.locator('.sw-overview').waitFor();
   await page.locator('[data-tab=campaigns]').click();await page.locator('[data-action=new-campaign]').click();
   for(const name of ['type','internal_name','priority'])assert(await page.locator(`#block-form [name="${name}"]`).isHidden(),name);
   for(const name of ['title','description','url','promo_code','permanent'])assert(await page.locator(`#block-form [name="${name}"]`).isVisible(),name);
@@ -91,7 +91,7 @@ const {tmpdir}=require('node:os'),{join,resolve}=require('node:path');
   assert.equal((await api('/api/content')).items.find(x=>x.id===inherited.id).image,'https://images.example/campaign.webp');
   // A real touch gesture uses the same persisted ordering endpoint.
   const mobileContext=await browser.newContext({hasTouch:true,isMobile:true,viewport:{width:390,height:1100},reducedMotion:'reduce'}),mobile=await mobileContext.newPage();mobile.on('pageerror',e=>errors.push(e.message));
-  await mobile.goto(origin);await mobile.locator('#chart svg').waitFor();await mobile.locator('#menu-toggle').click();await mobile.locator('[data-tab=campaigns]').click();
+  await mobile.goto(origin);await mobile.locator('.sw-overview').waitFor();await mobile.locator('#menu-toggle').click();await mobile.locator('[data-tab=campaigns]').click();
   await mobile.locator('.campaign-order-heading').first().waitFor();const mobileOrder=(await api('/api/content')).items.filter(x=>x.duration_type==='one_off').map(x=>x.id);
   const mobileSource=mobile.locator(`[data-id="${mobileOrder[0]}"] .drag-handle`),mobileTarget=mobile.locator(`[data-id="${mobileOrder[1]}"]`);
   await mobileTarget.scrollIntoViewIfNeeded();await mobileSource.scrollIntoViewIfNeeded();from=await mobileSource.boundingBox();to=await mobileTarget.boundingBox();

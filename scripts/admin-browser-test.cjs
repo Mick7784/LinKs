@@ -23,7 +23,7 @@ const { join, resolve } = require('node:path');
   browser=await chromium.launch({headless:true,...(process.env.CHROMIUM_PATH?{executablePath:process.env.CHROMIUM_PATH,args:['--no-sandbox']}: {})});
   const context=await browser.newContext({colorScheme:'light'});
   const page=await context.newPage();const errors=[];const settingsSection=async(id)=>{if(await page.locator('.settings-mobile-nav').isVisible())await page.locator('.settings-mobile-nav').selectOption(id);else await page.locator(`[data-settings-section=${id}]`).click()};page.on('pageerror',e=>errors.push(e.message));
-  await page.goto(origin);await page.waitForSelector('.campaign-card');
+  await page.goto(origin);await page.waitForSelector('.sw-campaign');
   assert.equal(await page.locator('html').getAttribute('data-theme'),'dark');
   await page.selectOption('#theme-select','dark');await page.reload();
   assert.equal(await page.locator('#theme-select').inputValue(),'dark');assert.equal(await page.locator('html').getAttribute('data-theme'),'dark');
@@ -35,13 +35,13 @@ const { join, resolve } = require('node:path');
   // A browser that refuses storage must still support theme selection.
   const noStorage=await browser.newContext();await noStorage.addInitScript(()=>{Storage.prototype.getItem=()=>{throw Error('blocked')};Storage.prototype.setItem=()=>{throw Error('blocked')}});
   const fallback=await noStorage.newPage();await fallback.goto(origin);await fallback.selectOption('#theme-select','dark');assert.equal(await fallback.locator('html').getAttribute('data-theme'),'dark');await noStorage.close();
-  const nav=async id=>{if(await page.locator('#menu-toggle').isVisible())await page.locator('#menu-toggle').click();await page.locator(`[data-tab="${id}"]`).click();if(id==='dashboard')await page.evaluate(()=>loadStats());await page.waitForSelector(`#${id}.active`);if(['campaigns','permanent-links'].includes(id))await page.waitForFunction(()=>document.querySelector('#campaigns-list')?.getAttribute('aria-busy')==='false')};
+  const nav=async id=>{if(await page.locator('#menu-toggle').isVisible())await page.locator('#menu-toggle').click();await page.locator(`[data-tab="${id}"]`).click();await page.waitForSelector(`#${id}.active`);if(['campaigns','permanent-links'].includes(id))await page.waitForFunction(()=>document.querySelector('#campaigns-list')?.getAttribute('aria-busy')==='false')};
   const overflow=async()=>assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Horizontal overflow');
   for(const width of [1440,1024,768,390,320]){
    await page.setViewportSize({width,height:1000});
    for(const theme of ['light','dark']){
     await page.selectOption('#theme-select',theme);
-    for(const id of ['dashboard','content','campaigns','permanent-links','buttons','archives','settings']){
+    for(const id of ['statistics','content','campaigns','permanent-links','buttons','archives','settings']){
      await nav(id);await overflow();
      if(id==='campaigns'){
       await page.waitForSelector('#campaigns-list .list-item');
@@ -111,7 +111,7 @@ const { join, resolve } = require('node:path');
   const previousOrder=(await request('/api/buttons',undefined,'GET')).items.map(x=>x.id);await page.locator(`[data-id="${added.id}"] [data-action="up"]`).click();await page.waitForFunction(()=>document.getElementById('notice').textContent==='Nouvel ordre enregistré.');assert.equal((await request('/api/buttons',undefined,'GET')).items.findIndex(x=>x.id===added.id),previousOrder.indexOf(added.id)-1);
   await nav('settings');await settingsSection('general');await page.locator('#settings-form [name="tagline"]').fill('Maison connectée');await page.locator('#settings-form button.primary').click();await page.waitForFunction(()=>document.getElementById('notice').textContent==='Réglages enregistrés.');
   assert.equal((await request('/api/settings',undefined,'GET')).tagline,'Maison connectée');
-  await nav('dashboard');await page.waitForSelector('#chart svg');await page.selectOption('#period','90');await page.evaluate(()=>loadStats());await page.waitForFunction(()=>document.querySelector('#chart svg')?.getAttribute('aria-label').includes('par jour'));await page.locator('.chart-bucket').first().focus();await page.keyboard.press('ArrowRight');assert.match(await page.locator('#chart-detail').textContent(),/visites/i);
+  await nav('statistics');await page.locator('#sw-panel[aria-busy=false]').waitFor();await page.click('#sw-tab-links');await page.locator('#statistics-legacy > summary').click();await page.waitForSelector('#chart svg');await page.selectOption('#period','90');await page.evaluate(()=>loadStats());await page.waitForFunction(()=>document.querySelectorAll('#chart .chart-bucket').length===90);await page.locator('.chart-bucket').first().focus();await page.keyboard.press('ArrowRight');assert.match(await page.locator('#chart .time-inspector').textContent(),/visites/i);
   const lum=hex=>{const clean=hex.trim().replace('#','');const c=(clean.length===3?clean.split('').map(x=>x+x).join(''):clean).match(/../g).map(x=>parseInt(x,16)/255).map(x=>x<=.04045?x/12.92:((x+.055)/1.055)**2.4);return c[0]*.2126+c[1]*.7152+c[2]*.0722};
   for(const mode of ['light','dark']){await page.selectOption('#theme-select',mode);const colors=await page.evaluate(()=>{const css=getComputedStyle(document.documentElement);return Object.fromEntries(['text','muted','surface','bg','accent','accent-soft'].map(x=>[x,css.getPropertyValue('--'+x)]))});for(const [fg,bg] of [['text','surface'],['muted','surface'],['muted','bg'],['text','accent-soft']]){const a=lum(colors[fg]),b=lum(colors[bg]);assert((Math.max(a,b)+.05)/(Math.min(a,b)+.05)>=4.5,mode+' contrast '+fg+'/'+bg)}}
   const changedPublic=await fetch('http://127.0.0.1:3003/api/public-config').then(r=>r.json());assert.equal(changedPublic.theme,beforePublic.theme);
