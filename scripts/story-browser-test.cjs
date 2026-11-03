@@ -55,8 +55,15 @@ const { join, resolve } = require('node:path');
     const token = new URL(legacy.url).pathname.split('/').at(-1);
     execFileSync(process.env.PYTHON_PATH||'python3', ['-c', "import sqlite3,sys;from datetime import datetime,timedelta;from zoneinfo import ZoneInfo;db=sqlite3.connect(sys.argv[1]);day=(datetime.now(ZoneInfo('Europe/Paris'))-timedelta(days=20)).date().isoformat();db.execute('INSERT INTO counts VALUES(?,?,?,?,1)',(day,'instagram-story','story','story:'+sys.argv[2]+':09'));db.commit()", database, token]);
     execFileSync(process.env.PYTHON_PATH||'python3', ['-c', "import sqlite3,sys;from datetime import datetime;from zoneinfo import ZoneInfo;db=sqlite3.connect(sys.argv[1]);day=datetime.now(ZoneInfo('Europe/Paris')).date().isoformat();db.executemany('INSERT INTO counts VALUES(?,?,?,?,?)',[(day,'youtube','view','',2),(day,'youtube','click','Amazon',1)]);db.commit()", database]);
-    const stats = async expected => {
+    const openReports = async () => {
       await page.goto(admin);
+      await page.locator('.sw-overview').waitFor();
+      await page.locator('#sw-tab-campaigns').click();
+      await page.locator('#statistics-legacy > summary').click();
+      await page.locator('#chart svg').waitFor();
+    };
+    const stats = async expected => {
+      await openReports();
       await page.waitForFunction(n => document.getElementById('story-clicks').textContent === String(n), expected);
       assert.equal(await page.locator('#views').textContent(), '2');
       assert.equal(await page.locator('#clicks').textContent(), '1');
@@ -75,7 +82,7 @@ const { join, resolve } = require('node:path');
     await page.waitForFunction(() => document.getElementById('story-clicks').textContent === '1');
     for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
       await page.setViewportSize(viewport);
-      const boxes = await page.locator('.analytics-kpis article').evaluateAll(nodes => nodes.map(n => ({ x: n.getBoundingClientRect().x, y: n.getBoundingClientRect().y })));
+      const boxes = await page.locator('.statistics-kpis article').evaluateAll(nodes => nodes.map(n => ({ x: n.getBoundingClientRect().x, y: n.getBoundingClientRect().y })));
       if (viewport.width > 760) assert(Math.abs(boxes[0].y - boxes[1].y) < 2);
       else assert(boxes[2].y > boxes[0].y);
       assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Horizontal overflow');
@@ -96,7 +103,7 @@ const { join, resolve } = require('node:path');
     const second = await api('/api/content', { ...promo, internal_name: 'Deuxième campagne', url: 'http://localhost:18082/second' });
     const secondLink = await api('/api/content/' + second.id + '/story-link', {});
     await page.goto(secondLink.url);
-    await page.goto(admin);
+    await openReports();
     await page.waitForFunction(() => document.getElementById('story-clicks').textContent === '4');
     assert.equal(await page.locator('#story-promos').textContent(), '2');
     const labels = await page.locator('#story-list .engagement-copy strong').allTextContents();
