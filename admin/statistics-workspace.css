@@ -116,6 +116,8 @@
 .sw-chart-table{margin-top:12px;max-height:260px;overflow:auto}
 .sw-chart-table table{width:100%;font-size:12px}
 #statistics-legacy>[data-legacy-content]{margin-top:18px}
+/* The nested reports have less space than the former full-width dashboard. */
+#statistics #statistics-legacy .statistics-kpis{grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr))}
 #statistics-legacy[hidden]{display:none!important}
 .sw-reveal{stroke-dasharray:0 320.442;animation:sw-donut-fill .76s cubic-bezier(.18,.68,.22,1) forwards}
 .sw-fade{animation:sw-fade .5s ease-out both}
