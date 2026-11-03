@@ -69,3 +69,5 @@
 #affiliation .aff-mfa-code-row strong{font-size:2rem;letter-spacing:.18em;font-variant-numeric:tabular-nums}
 #affiliation .aff-mfa .aff-checkbox{margin:.8rem 0}
 #affiliation .aff-sales-table small,#affiliation #aff-sales-table td small{display:block;margin-top:6px}
+
+.aff-zip-drop{display:block;padding:2rem;border:2px dashed var(--line);border-radius:12px;text-align:center;cursor:pointer}.aff-zip-drop input{display:block;margin:1rem auto 0;max-width:100%}.aff-zip-drop.is-dragging{border-color:currentColor}.aff-zip-drop[aria-busy=true]{opacity:.65}

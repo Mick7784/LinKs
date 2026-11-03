@@ -71,8 +71,8 @@ s.serve_forever()`],{cwd:__dirname,env:{...process.env,PYTHONIOENCODING:'utf-8',
   const zero=Number(await page.locator('.aff-zero').getAttribute('y1'));
   const negative=page.locator('[data-overview-date="2026-10-07"] .aff-daily-bar');
   assert.equal(Number(await negative.getAttribute('y')),zero);assert(Number(await negative.getAttribute('height'))>0);
-  await page.locator('[data-overview-compare=previous]').click();assert(await page.locator('.aff-comparison-line').count()>0);
-  await page.locator('[data-overview-compare=year]').click();
+  assert(await page.locator('[data-overview-compare=previous]').isDisabled(),'Amazon without coverage prevents a misleading comparison');
+  assert(await page.locator('[data-overview-compare=year]').isDisabled());
   assert.equal(await page.locator('[data-overview-date="2026-10-07"]').getAttribute('aria-pressed'),'true');
   await page.locator('[data-overview-compare=none]').click();assert.equal(await page.locator('.aff-comparison-line').count(),0);
   assert(await page.evaluate(()=>qaPeriod===document.querySelector('[data-overview-period]')&&qaPeriod.innerHTML===qaPeriodHTML&&qaTotal===document.querySelector('[data-overview-total]').textContent),'Day and comparison must not rebuild or recalculate the period donut');
@@ -92,7 +92,7 @@ s.serve_forever()`],{cwd:__dirname,env:{...process.env,PYTHONIOENCODING:'utf-8',
   await page.getByRole('button',{name:'Paiements',exact:true}).click();await page.locator('#aff-payments').waitFor();
   await page.getByRole('button',{name:'Connexion et synchronisation',exact:true}).click();await page.locator('#aff-settings-form').waitFor();
   await page.getByRole('navigation',{name:'Partenaires affiliation'}).getByRole('button',{name:'Amazon',exact:true}).click();
-  await page.getByRole('button',{name:'Rapports Amazon',exact:true}).waitFor();assert(await page.getByRole('button',{name:'Importer un rapport CSV',exact:true}).first().isVisible());
+  await page.getByRole('button',{name:'Rapports Amazon',exact:true}).waitFor();assert(await page.getByRole('button',{name:'Importer un ZIP Amazon',exact:true}).first().isVisible());
   await page.getByRole('button',{name:'Vue d’ensemble générale',exact:true}).click();await page.locator('[data-overview-total]').waitFor();
   for(let i=0;i<8;i++)await api('accounts',{partner:`Partenaire supplémentaire ${i}`,label:'Synthétique',platform:'affiliatly'});
   await page.evaluate(()=>window.LinksAffiliation.load());

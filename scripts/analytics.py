@@ -1692,7 +1692,7 @@ class Handler(BaseHTTPRequestHandler):
             except (ValueError,TypeError,json.JSONDecodeError):return self.send(400)
             except (sqlite3.Error,OSError):return self.send(503)
         try:
-            data=self.body(BACKUP_LIMIT if path in {'/api/restore','/api/restore/preview'} else themes.MAX_BYTES if path=="/api/appearance/import" else 8*1024*1024)
+            data=self.body(BACKUP_LIMIT if path in {'/api/restore','/api/restore/preview'} else affiliation.amazon.ARCHIVE_BODY_LIMIT if path in {'/api/affiliation/amazon/import-zip','/api/affiliation/amazon/archive'} else themes.MAX_BYTES if path=="/api/appearance/import" else 8*1024*1024)
             if path.startswith("/api/descriptions/"):
                 comparison_match=re.fullmatch(r'/api/descriptions/drafts/([\w-]+)/compare',path)
                 if comparison_match:

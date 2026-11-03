@@ -421,6 +421,10 @@ def post(connect, action, data):
                 return result
             finally:LOCK.release()
         if action=='amazon/archive':return amazon.inspect_archive(data)
+        if action=='amazon/import-zip':
+            with connect() as db:
+                db.execute('BEGIN IMMEDIATE')
+                return amazon.ingest_archive(db,identity,data,stamp())
         if action=='amazon/inspect':
             headers,rows=amazon.inspect_csv(data);return {'headers':headers,'sample':rows[:3],'rows':len(rows)}
         if action=='amazon/preview':return amazon.normalize(data)

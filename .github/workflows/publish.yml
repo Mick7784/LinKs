@@ -77,10 +77,12 @@ jobs:
           python3 scripts/amazon_real_format_test.py
           python3 scripts/amazon_report_views_test.py
           python3 scripts/amazon_statistics_test.py
+          python3 scripts/amazon_zip_test.py
           python3 scripts/amazon_collection_test.py
           CHROMIUM_PATH=$(NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node -e 'console.log(require("playwright").chromium.executablePath())') node --test scripts/amazon-collector.test.mjs scripts/amazon-portal.test.mjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/amazon-statistics-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/amazon-affiliation-browser-test.cjs
+          NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/amazon-zip-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/affiliation-overview-browser-test.cjs
           NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node scripts/amazon-collection-browser-test.cjs
           CHROMIUM_PATH=$(NODE_PATH="$RUNNER_TEMP/story-browser/node_modules" node -e 'console.log(require("playwright").chromium.executablePath())') node --test scripts/domadoo.test.mjs

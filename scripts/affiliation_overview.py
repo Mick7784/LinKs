@@ -1,8 +1,5 @@
-"""Read-only overview: current approved EUR commissions, attributed to sale dates.
-
-No approval-date ledger is inferred. Amazon has no equivalent approval status and
-is deliberately excluded, regardless of its number of overlapping report views.
-"""
+"""Observed EUR commissions, preserving each partner's status and date evidence."""
+import amazon_affiliation as amazon
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -32,11 +29,20 @@ def build(db, accounts, start='', end='', now=None):
     for account in accounts:
         source = {'id': account['id'], 'partner_id': account['partner_id'],
                   'name': account['partner'], 'label': account['label'],
-                  'eligible': account['platform_id'] == 'domadoo',
+                  'eligible': account['platform_id'] in {'domadoo','amazon'},
+                  'platform':account['platform_id'],
+                  'commission_status':{'amazon':'Déclarées dans les rapports','domadoo':'Approuvées actuellement observées'}.get(account['platform_id'],'Statut non pris en charge'),
+                  'undated_cents':None,
                   'collected_at': None, 'first_day': None, 'amounts': {}, 'foreign_days': set()}
         if not source['eligible']:
-            source['reason'] = ('Statut des commissions Amazon non comparable au statut approuvé ; rapports conservés dans la vue Amazon.'
-                                if account['platform_id'] == 'amazon' else 'Aucun contrat de commission comparable pour cette plateforme.')
+            source['reason'] = 'Aucun contrat de commission comparable pour cette plateforme.'
+        elif source['platform']=='amazon':
+            reports=amazon.active_reports(db,source['id'])
+            source['commission_reports']=[r for r in reports if 'commission_cents' in amazon.reference_metrics(r)]
+            source['first_day']=min((r['start'] for r in reports if 'commission_cents' in amazon.reference_metrics(r)),default=None)
+            source['collected_at']=max((r['observed_at'] for r in reports),default=None)
+            source['amounts']={r['date']:r['commission_cents'] for r in amazon.report(db,source['id'])['daily'] if r['commission_cents'] is not None}
+            source['reason']='Seules les dates des rapports de référence alimentent les journées ; les jours absents restent inconnus.'
         else:
             snapshot = db.execute('SELECT observed_at FROM aff_snapshots WHERE account_id=? ORDER BY id DESC LIMIT 1', (source['id'],)).fetchone()
             source['collected_at'] = snapshot['observed_at'] if snapshot else None
@@ -64,12 +70,22 @@ def build(db, accounts, start='', end='', now=None):
         raise ValueError('Choisissez une période de 3 660 jours maximum pour la vue journalière.')
     days = calendar_days(begin, finish)
     eligible = [s for s in sources if s['eligible']]
+    for source in eligible:
+        if source['platform']=='amazon':
+            selection=amazon.report(db,source['id'],begin.isoformat(),finish.isoformat())
+            source['undated_cents']=selection['undated_totals']['commission_cents']
+            if selection['excluded_period_reports']:source['reason']+=' Rapport non ventilé exclu : la sélection ne contient pas toute sa période.'
 
     def point(source, day):
         if day is None:
             return {'cents': None, 'status': 'unavailable', 'reason': 'Pas de date calendaire équivalente.'}
         key = day.isoformat()
         amount = source['amounts'].get(key)
+        if source['platform']=='amazon':
+            if amount is None or day>today:return {'cents':None,'status':'unavailable','reason':'Aucune commission datée dans les rapports de référence.'}
+            covering=[r for r in source['commission_reports'] if r['start']<=key<=r['end']]
+            complete=all(not r.get('date_basis') and any(row['date']==key for row in r['rows']) and all(row.get('commission_cents') is not None for row in r['rows'] if row['date']==key) for r in covering)
+            return {'cents':amount,'status':'complete' if complete and day!=today else 'partial','reason':'Commission déclarée par Amazon.','scope':sorted({r['scope'] for r in covering})}
         observed = local_day(source['collected_at']) if source['collected_at'] else None
         if not observed or not source['first_day'] or key < source['first_day'] or day > observed or day > today:
             return {'cents': None, 'status': 'unavailable', 'reason': 'Journée hors de la couverture connue du relevé.'}
@@ -89,20 +105,25 @@ def build(db, accounts, start='', end='', now=None):
 
     daily = [aggregate(day) for day in days]
     values = [p['cents'] for p in daily if p['cents'] is not None]
-    total = sum(values) if values else None
+    undated_values=[s['undated_cents'] for s in eligible if s['undated_cents'] is not None]
+    total = sum(values)+sum(undated_values) if values or undated_values else None
     partners = []
     for partner_id in dict.fromkeys(s['partner_id'] for s in sources):
         group = [s for s in sources if s['partner_id'] == partner_id]
         parts = [p for item in daily for p in item['parts'] if p['partner_id'] == partner_id]
         amounts = [p['cents'] for p in parts if p['cents'] is not None]
+        amounts += [s['undated_cents'] for s in group if s['undated_cents'] is not None]
         partners.append({'id': partner_id, 'name': group[0]['name'], 'cents': sum(amounts) if amounts else None,
+                         'commission_status':' / '.join(dict.fromkeys(s['commission_status'] for s in group)),
+                         'undated_cents':sum(s['undated_cents'] or 0 for s in group),
                          'status': 'complete' if parts and all(p['status'] == 'complete' for p in parts) and all(s['eligible'] for s in group) else 'partial' if amounts else 'unavailable'})
 
     def comparison(reference_days):
         series = [aggregate(day) for day in reference_days]
-        paired = [r['cents'] if c['status'] == r['status'] == 'complete' else None for c, r in zip(daily, series)]
+        paired = [r['cents'] if c['status'] == r['status'] == 'complete' and [p.get('scope') for p in c['parts']]==[p.get('scope') for p in r['parts']] else None for c, r in zip(daily, series)]
         continuous = all(reference_days) and (reference_days[-1]-reference_days[0]).days+1 == len(days)
-        valid = bool(eligible) and continuous and all(v is not None for v in paired) and all(d['status'] == 'complete' for d in daily)
+        valid = bool(eligible) and not undated_values and continuous and all(v is not None for v in paired) and all(d['status'] == 'complete' for d in daily)
+        if undated_values:paired=[None for _ in paired]
         base = sum(paired) if valid else None
         reason = ''
         if not continuous:
@@ -124,12 +145,14 @@ def build(db, accounts, start='', end='', now=None):
         reason = source['reason'] or ('' if status == 'complete' else 'Couverture journalière incomplète ; les absences ne valent pas zéro.')
         collected = source['collected_at']
         stale = bool(collected and (now-datetime.fromisoformat(collected.replace('Z', '+00:00'))).total_seconds() > 36*3600)
-        coverage.append({k: source[k] for k in ('id','partner_id','name','label','eligible','collected_at')} | {'status': status, 'reason': reason, 'stale': stale})
-    return {'metric': 'approved_commissions_by_sale_day', 'label': 'Commissions approuvées consolidées',
-            'description': 'Statut actuel · date de vente du portail · EUR · aucun solde retirable ni date de validation supposée.',
+        if source['undated_cents'] is not None:status='partial';reason+=' Total de période connu, ventilation quotidienne indisponible.'
+        coverage.append({k: source[k] for k in ('id','partner_id','name','label','eligible','collected_at','commission_status','undated_cents')} | {'status': status, 'reason': reason, 'stale': stale})
+    return {'metric': 'observed_declared_commissions', 'label': 'Commissions observées / déclarées',
+            'description': 'Domadoo : approuvées observées · Amazon : déclarées dans les rapports · EUR · ne constitue pas un solde retirable.',
             'start': begin.isoformat(), 'end': finish.isoformat(), 'today': today.isoformat(),
             'total_cents': total, 'daily': daily, 'partners': partners, 'accounts': coverage,
+            'undated_cents':sum(undated_values) if undated_values else None,
             'included_partners': sum(p['cents'] is not None for p in partners), 'total_partners': len(partners),
-            'partial': any(not s['eligible'] for s in sources) or any(d['status'] != 'complete' for d in daily),
+            'partial': bool(undated_values) or any(not s['eligible'] for s in sources) or any(d['status'] != 'complete' for d in daily),
             'comparisons': {'previous': comparison([d-timedelta(days=len(days)) for d in days]),
                             'year': comparison([previous_year(d) for d in days])}}

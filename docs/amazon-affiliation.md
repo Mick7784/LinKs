@@ -19,18 +19,50 @@ L’[inscription officielle](https://affiliate-program.amazon.com/creatorsapi/do
 
 Le [centre de rapports France](https://partenaires.amazon.fr/welcome/topic/reports) décrit gains, commandes, primes, Tracking IDs et historique des paiements. La [FAQ France](https://partenaires.amazon.fr/help/topic/reports/faq) confirme les téléchargements CSV/TXT, XLSX et XML, avec dates de transaction dans les exports détaillés. Elle indique des commandes actualisées en cours de journée et des rémunérations arrêtées à la veille, ainsi que des sélections de moins de 90 jours. Cela décrit le portail, pas les garanties de la Creators API. Les paiements sont distincts des gains et des articles expédiés. Les schémas exacts de votre compte restent à vérifier.
 
-## Disponible dans LinKs
+## Import ZIP manuel — refonte du 3 novembre 2026
 
-Dans Affiliation → Gérer les partenaires → Ajouter un partenaire, choisir Amazon Partenaires. Le compte propose l’import CSV et une vue détaillée Amazon, sans activer un faux connecteur de collecte.
+Dans Affiliation → Amazon, **Importer un ZIP Amazon** ouvre une zone de dépôt.
+La sélection d'une archive lance `POST /api/affiliation/amazon/import-zip` : analyse
+de tous les CSV/TXT, détection des colonnes connues, choix des références par
+indicateur, contrôle des chevauchements et enregistrement atomique. Le bilan reste
+visible et les statistiques sont actualisées sans rechargement manuel.
 
-- CSV UTF-8 jusqu’à 1 Mo / 10 000 lignes. Choix de la ligne d’en-tête, détection virgule/point-virgule/tabulation, correspondance explicite des colonnes. Formats de date ISO ou JJ/MM/AAAA ; décimales virgule ou point, montants en EUR.
-- Types séparés : Commandes (commandes distinctes si fournies, articles commandés), Rémunérations (articles expédiés, commissions), Paiements. Une quantité d’articles ne devient jamais un nombre de commandes. Un champ absent reste inconnu.
-- ASIN, produit, Tracking ID, statut et identifiant éventuellement fournis restent disponibles sans déduire une identité de transaction fiable ou un statut approuvé. Les Tracking IDs ne sont pas reliés automatiquement aux sources YouTube/Instagram/LinKs.
-- Vérification des lignes et montants avant confirmation. Les totaux/sous-totaux doivent être exclus du fichier : ils ne sont pas devinés. Le format n’est pas annoncé comme compatible automatiquement avec tout export Amazon ; la correspondance doit être validée sur votre fichier réel.
-- Période et périmètre explicites (`all` ou Tracking ID exact). Les chevauchements d’un même type/périmètre sont refusés ; les corrections du même périmètre créent une version supplémentaire. Seule la dernière version contribue aux totaux ; un réimport identique ne crée pas de doublon.
-- Statistiques Amazon filtrées par les dates du rapport, intégrées au total global des commissions avec un indicateur Amazon distinct. Le graphique historique approuvé/non approuvé reste explicitement Domadoo. Les commandes, paiements et commissions sont affichés séparément dans le détail Amazon.
-- Conservation dans les observations financières existantes (`aff_snapshots`) ; les versions précédentes restent dans les sauvegardes. Pas de modification de schéma ni des lignes financières Domadoo. Les anciens exports Affiliation restent acceptés. Les sauvegardes contenant des rapports Amazon doivent être restaurées avec cette version ou une version ultérieure.
-- Aucune perte Amazon calculée : ni fenêtre glissante, ni correction d’agrégat, ni produit absent ne devient une transaction perdue. Le moteur Domadoo n’accepte pas les rapports Amazon.
+- Limites : 16 Mo compressés, 64 Mo décompressés, 64 entrées, 8 Mo et 10 000 lignes
+  par fichier. Lecture en mémoire sans extraction ; chemins dangereux, liens
+  symboliques, chiffrement, archives imbriquées, noms dupliqués et compression
+  excessive sont refusés. Seuls CSV/TXT UTF-8 et ZIP stored/deflate sont acceptés.
+- Vues Category, Linked-Product, Tracking-Id, Daily Trends et colonnes connues de
+  commandes/rémunérations/paiements. Séparateurs virgule, point-virgule et tabulation,
+  dates ISO, MM-JJ-AAAA ou JJ/MM/AAAA, nombres décimaux à virgule/point, symboles EUR,
+  bruit flottant inférieur à la tolérance existante, tirets et en-têtes répétés.
+  Les lignes de total explicitement étiquetées sont exclues avec un avertissement.
+- La période vient des métadonnées, d'une plage de dates du nom de fichier, ou des
+  dates réellement présentes. Le périmètre et la devise doivent être explicites.
+  Si une donnée indispensable manque, aucun import n'a lieu : le formulaire demande
+  uniquement cette donnée. Les dates du filtre et la date d'import ne servent jamais
+  de valeurs implicites. Le mapping technique reste dans le mode manuel secondaire.
+- Pour chaque indicateur d'un même périmètre et d'une même période, la priorité est
+  Category, Daily Trends, Tracking-Id, Linked-Product puis format générique. Une vue
+  datée dont le total est identique peut fournir la référence quotidienne. Les
+  divergences sont signalées ; les autres vues ne s'ajoutent pas aux montants.
+- SHA-256 de chaque archive conservé dans les observations existantes. Un réimport
+  historique est sans effet, même après correction. Une correction remplace les
+  références du même périmètre/période, y compris un ancien import manuel, à condition
+  de préserver tous ses indicateurs. L'historique et les sauvegardes sont conservés.
+  Les chevauchements incompatibles et fichiers invalides annulent tout le lot.
+- Une période sans ventilation quotidienne est stockée avec des dates de lignes
+  nulles, contribue seulement aux sélections qui la contiennent entièrement et
+  figure dans la part non ventilée de la vue générale. Les statuts restent distincts :
+  Domadoo approuvé observé, Amazon déclaré ; aucun solde retirable n'est calculé.
+- Aucune migration de table, modification des transactions Domadoo, perte Amazon
+  inférée ou activation de connexion automatisée au portail. Les anciennes sauvegardes
+  sont acceptées ; les nouvelles métadonnées exigent cette version ou une ultérieure.
+
+Limites connues : les variantes de colonnes non reconnues ou ambiguës nécessitent
+le diagnostic manuel. Un rapport sans preuve de période/périmètre/devise demande
+une précision. Les archives contenant un fichier autre que CSV/TXT sont refusées.
+Aucun export privé réel n'est utilisé pour les tests ; la reconnaissance est validée
+sur des fixtures synthétiques représentatives, pas sur tous les formats Amazon.
 
 ## Diagnostic API sécurisé, à connecter
 
@@ -70,6 +102,6 @@ Dans Affiliation → Amazon → Connexion, l'assistant accepte une clé TOTP Bas
 
 Tests locaux du parseur, des réimports/corrections, chevauchements, fenêtres partielles, métriques inconnues, sauvegardes/restauration, isolation Domadoo et contrat API simulé. Ils ne prouvent pas l’accès réel à l’API France. Aucun workflow CI, release ou déploiement engagé.
 
-Résultat : 20 tests ciblés réussis (11 Amazon, 9 financiers existants) et un parcours navigateur réussi, de l’import fictif à la vue globale. Aucun appel Amazon authentifié pendant ces vérifications.
+La liste des commandes ciblées est maintenue dans `docs/affiliation-overview.md`. Les tests ZIP couvrent les lots multi-vues, les corrections, les échecs atomiques, les périodes non ventilées et le contrôle 9,92 € + 51,87 € = 61,79 €. Aucun appel Amazon authentifié pendant ces vérifications.
 
 La confirmation porte sur une version aléatoire de la clé présentée. Le worker sérialise les opérations MFA : une version remplacée par un autre onglet est refusée avant toute activation.

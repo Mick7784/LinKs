@@ -115,7 +115,7 @@ class OverviewTests(unittest.TestCase):
         self.assertEqual(result['daily'][0]['parts'][0]['status'], 'partial')
         self.assertTrue(result['partial'])
 
-    def test_amazon_reports_and_views_never_added_to_approved_total(self):
+    def test_amazon_reference_added_once_as_declared_commissions(self):
         self.ingest([('2026-10-30', 100, 'approved')])
         identity = a.add_account(self.db, {'partner':'Amazon', 'label':'France', 'platform':'amazon'})['id']
         payload = {'csv':'Date,Commission\n2026-10-30,99.00\n', 'kind':'earnings', 'view':'category',
@@ -124,10 +124,10 @@ class OverviewTests(unittest.TestCase):
         amazon.ingest(self.db, identity, payload, '2026-11-02T10:00:00Z')
         amazon.ingest(self.db, identity, {**payload, 'view':'tracking_id', 'contribution':'detail'}, '2026-11-02T10:00:00Z')
         result = self.build()
-        self.assertEqual(result['total_cents'], 100)
-        self.assertEqual(result['included_partners'], 1)
+        self.assertEqual(result['total_cents'], 10000)
+        self.assertEqual(result['included_partners'], 2)
         self.assertTrue(result['partial'])
-        self.assertIsNone(result['partners'][1]['cents'])
+        self.assertEqual(result['partners'][1]['cents'], 9900)
         self.assertEqual(amazon.report(self.db, identity)['totals']['commission_cents'], 9900)
 
     def test_february_29_is_a_gap_and_reverse_leap_window_not_equal(self):
