@@ -20,6 +20,57 @@ class AutomaticTests(unittest.TestCase):
     report=ZipTests.report
     def ingest(self,files):return auto.ingest(self.db,self.id,{**archive(files),'filename':'exports.zip'},'2026-11-03T12:00:00Z')
 
+    def test_native_annual_export_marker_is_not_a_commission_day(self):
+        text='Date,catégorie,taux de conversion direct,articles retournés,revenus totaux\n11-02-2026,Maison,4,1,12.34\n'
+        result=self.ingest([('Category-03nov2026.csv',text)])
+        self.assertTrue(result['pending']);self.assertEqual(self.report()['daily'],[])
+        self.assertTrue(any('repère' in reason for reason in result['reasons']))
+        value,missing,_=amazon.auto_report({'name':'Category.csv','csv':text},{'start':'2026-01-01','end':'2026-11-02','scope':'all','currency':'EUR'})
+        self.assertIsNone(missing);self.assertEqual(value['date_basis'],'confirmed_period')
+        self.assertIsNone(value['rows'][0]['date']);self.assertEqual(value['start'],'2026-01-01')
+        self.assertEqual(value['rows'][0]['commission_cents'],1234)
+
+    def test_native_linked_product_keeps_product_title_and_view(self):
+        text='Date,catégorie,titre du produit,ASIN,taux de conversion direct,articles retournés,revenus totaux\n11-02-2026,Maison,Produit test,B000000001,4,1,12.34\n'
+        value,missing,_=amazon.auto_report({'name':'renamed.csv','csv':text},{'start':'2026-01-01','end':'2026-11-02','scope':'all','currency':'EUR'})
+        self.assertIsNone(missing);self.assertEqual(value['view'],'linked_product')
+        self.assertEqual(value['rows'][0]['title'],'Produit test');self.assertIsNone(value['rows'][0]['date'])
+
+    def test_windows_1252_zip_and_binary_rejection(self):
+        import base64,io,zipfile
+        def packed(raw):
+            stream=io.BytesIO()
+            with zipfile.ZipFile(stream,'w') as z:z.writestr('Category.csv',raw)
+            return {'archive':base64.b64encode(stream.getvalue()).decode()}
+        text='Date,catégorie,revenus totaux\n11-02-2026,Électricité,12.34\n'
+        self.assertEqual(amazon.inspect_archive(packed(text.encode('cp1252')))['files'][0]['csv'],text)
+        with self.assertRaises(ValueError):amazon.inspect_archive(packed(b'\x00\x01\xff'))
+
+    def test_upload_date_never_changes_daily_export_dates(self):
+        self.ingest([('03nov2026.csv',daily([('2026-09-12','1'),('2026-10-05','2')]))])
+        self.assertEqual([r['date'] for r in self.report()['daily']],['2026-09-12','2026-10-05'])
+
+    def test_repair_existing_stats_preserves_history_and_unrelated_reports(self):
+        from unittest.mock import patch
+        p=payload();amazon.ingest(self.db,self.id,p,'2026-11-03T12:00:00Z')
+        bad=amazon.active_reports(self.db,self.id)[0]
+        self.ingest([('daily.csv',daily([('2026-09-12','2')]))])
+        before=aff.export_backup(self.db)
+        with patch.object(amazon,'MISDATED_ANNUAL_EXPORTS',{amazon.financial_rows_fingerprint(bad)}):
+            report=self.report()
+            self.assertEqual(report['totals']['commission_cents'],200)
+            self.assertEqual([r['date'] for r in report['daily']],['2026-09-12'])
+            self.assertEqual(len(report['quarantined_reports']),1)
+            self.assertEqual(before,aff.export_backup(self.db))
+            target=sqlite3.connect(':memory:');target.row_factory=sqlite3.Row
+            try:
+                aff.restore_backup(target,before)
+                self.assertEqual(amazon.report(target,self.id)['totals']['commission_cents'],200)
+            finally:target.close()
+            # An explicitly covered period remains valid and is never dated.
+            aggregate={**bad,'date_basis':'confirmed_period','rows':[{**r,'date':None} for r in bad['rows']]}
+            self.assertFalse(amazon.misdated_annual_export(aggregate))
+
     def test_complement_separate_zip_does_not_replace_totals(self):
         self.ingest([('Category.csv',category())])
         result=self.ingest([('Tracking.csv',category().replace('Catégorie','Tracking ID').replace('Maison','tag-21'))])

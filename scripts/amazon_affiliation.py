@@ -48,13 +48,16 @@ def inspect_archive(data):
                 if total>EXPANDED_LIMIT or entry.file_size>LIMIT or entry.file_size>max(1024*1024,entry.compress_size*200) or entry.compress_type not in (zipfile.ZIP_STORED,zipfile.ZIP_DEFLATED): raise ValueError()
                 with archive.open(entry) as stream: payload=stream.read(LIMIT+1)
                 if len(payload)!=entry.file_size: raise ValueError()
-                text=payload.decode('utf-8-sig')
-                if '\x00' in text: raise ValueError()
+                try:text=payload.decode('utf-8-sig')
+                except UnicodeDecodeError:
+                    text=payload.decode('cp1252')
+                    if not any(sum(field_key(h) in AUTO_ALIASES for h in next(csv.reader([line],delimiter=delimiter)))>=2 for line in text.splitlines()[:101] for delimiter in (',',';','\t')):raise ValueError()
+                if any(ord(c)<32 and c not in '\r\n\t' for c in text): raise ValueError()
                 files.append({'name':name,'csv':text})
             if not files: raise ValueError()
             return {'files':files,'imported':False,'digest':hashlib.sha256(raw).hexdigest()}
     except (ValueError,binascii.Error,zipfile.BadZipFile,RuntimeError,NotImplementedError,OSError,UnicodeError):
-        raise ValueError('ZIP invalide : CSV/TXT UTF-8 uniquement, 64 entrées, 8 Mo par fichier et 64 Mo décompressés maximum, ratio borné, sans chiffrement ni chemins dangereux.') from None
+        raise ValueError('ZIP invalide : CSV/TXT UTF-8 ou Windows-1252, 64 entrées, 8 Mo par fichier et 64 Mo décompressés maximum, ratio borné, sans chiffrement ni chemins dangereux.') from None
 
 
 def inspect_csv(data):
@@ -127,7 +130,23 @@ def normalize(data):
     return {'version':1,**({'contribution':contribution} if contribution=='detail' else {}),**({'date_basis':'confirmed_single_day'} if not mapping.get('date') else {}),**({'view':view} if view!='legacy' else {}),'kind':kind,'start':start,'end':end,'scope':scope,'currency':'EUR','rows':result}
 
 
-def active_reports(db,identity):
+# Exact numeric-row fingerprints of annual exports confirmed by their owner.
+# No merchant names, product IDs or monetary amounts are embedded here.
+MISDATED_ANNUAL_EXPORTS = {
+    'dc42ab95d73bd94b394ef3d484868871a95fe324cddf7ca10bbf37ba78e11a70',
+    'e4a44e0e4cd453ef5e015b6ddc6aaf39988926efe9a8685e42117d2bd66a96ef',
+    'cfd04b5f12a31bf41a68f800f9d955220f40ff4afbcf26470781c8a13ad22792',
+}
+
+def financial_rows_fingerprint(value):
+    cells=[[r.get(k) for k in ('clicks','ordered_items','shipped_items','commission_cents')] for r in value['rows']]
+    cells=[r for r in cells if any(r)]
+    return hashlib.sha256(json.dumps(sorted(cells,key=lambda r:json.dumps(r)),separators=(',',':')).encode()).hexdigest()
+
+def misdated_annual_export(value):
+    return value.get('date_basis')!='confirmed_period' and financial_rows_fingerprint(value) in MISDATED_ANNUAL_EXPORTS
+
+def resolved_reports(db,identity):
     latest={}
     for row in db.execute('SELECT * FROM aff_snapshots WHERE account_id=? ORDER BY id',(identity,)):
         value=json.loads(row['summary']).get('amazon')
@@ -135,6 +154,11 @@ def active_reports(db,identity):
             latest={key:report for key,report in latest.items() if report['id'] not in value.get('supersedes',[])}
             latest[(value['kind'],value['start'],value['end'],value['scope'],value.get('view','legacy'),value.get('contribution','totals'),tuple(sorted(reference_metrics(value))))]={'id':row['id'],'observed_at':row['observed_at'],**value}
     return list(latest.values())
+
+def active_reports(db,identity):
+    # Apply supersession before exclusion: never resurrect an older bad import.
+    # Snapshots remain byte-for-byte intact, including during backup/restore.
+    return [r for r in resolved_reports(db,identity) if not misdated_annual_export(r)]
 
 
 def validate_saved(value):
@@ -198,7 +222,7 @@ def field_key(value):
 AUTO_COLUMNS = {
     'date': ('date','day','jour','date de commande','date shipped'),
     'tracking_id': ('tracking id','tracking-id','numero de suivi','tag','identifiant de suivi'),
-    'asin': ('asin',), 'title': ('title','product title','titre du produit','produit','category','categorie'),
+    'asin': ('asin',), 'title': ('title','product title','titre du produit','titre de produit','produit','category','categorie'),
     'clicks': ('clicks','clics'), 'orders': ('orders','commandes'),
     'ordered_items': ('ordered items','items ordered','articles commandes','commandes articles'),
     'shipped_items': ('shipped items','items shipped','articles expedies','expedies'),
@@ -224,8 +248,14 @@ def auto_report(file,override):
             keys=[AUTO_ALIASES.get(field_key(re.sub(r'\s*[\[(]?(?:EUR|€)[\])]?\s*$', '',h,flags=re.I))) for h in headers]
             score=sum(k in FIELDS[6:] for k in keys)
             if score: candidates.append((score,offset,delimiter,headers,keys))
-    if not candidates: raise ValueError('Aucun en-tête Amazon reconnu.')
+    if not candidates:
+        if any({'asin','rang'} <= {field_key(h) for h in next(csv.reader([line],delimiter=','))} for line in lines[:101]):
+            raise ValueError('Classement Top-Sellers sans montants ni dates de commissions : ce fichier ne peut pas alimenter les statistiques financières.')
+        raise ValueError('Aucun en-tête Amazon reconnu.')
     _,offset,delimiter,headers,keys=max(candidates,key=lambda c:(c[0],-c[1]))
+    # Product exports also contain a category: it is not a second product title.
+    if any(field_key(h) in {'title','producttitle','titreduproduit','titredeproduit','produit'} for h in headers):
+        keys=[None if field_key(h) in {'category','categorie'} else k for h,k in zip(headers,keys)]
     recognized=[k for k in keys if k]
     if len(set(recognized))!=len(recognized): raise ValueError('Colonnes reconnues ambiguës ou dupliquées ; diagnostic manuel nécessaire.')
     rows=list(csv.reader(io.StringIO('\n'.join(lines[offset+1:])),delimiter=delimiter,strict=True))
@@ -247,7 +277,14 @@ def auto_report(file,override):
         dates=re.findall(token,line)
         if len(dates)==2:ranges.append(tuple(auto_day(d) for d in dates))
     if len(set(ranges))>1: raise ValueError('Périodes contradictoires dans le rapport.')
-    dated='date' in recognized
+    # Native category/product exports use Date as a report marker even for YTD
+    # aggregates. It does not establish the date of the underlying commissions.
+    header_keys={field_key(h) for h in headers}
+    aggregate_export=('asin' in recognized or bool(header_keys & {'category','categorie'})) and bool(header_keys & {'tauxdeconversiondirect','directconversionrate'}) and bool(header_keys & {'articlesretournes','returneditems','itemsreturned'})
+    dated='date' in recognized and not aggregate_export
+    if aggregate_export:
+        for row in clean:row.pop('date',None)
+        warnings.append('Export agrégé : la colonne Date est un repère du rapport, pas la date de chaque commission. La période complète doit être confirmée ; aucune ventilation quotidienne ne sera créée.')
     if dated:
         for row in clean: row['date']=auto_day(row['date'])
     period=ranges[0] if ranges else ((min(r['date'] for r in clean),max(r['date'] for r in clean)) if dated else None)
@@ -270,9 +307,9 @@ def auto_report(file,override):
     if period is None:needed.extend(['start','end'])
     if not scope:needed.append('scope')
     if not currency:needed.append('currency')
-    if needed:return None,{'name':file['name'],'fields':needed},[]
+    if needed:return None,{'name':file['name'],'fields':needed},warnings
     if currency!='EUR':raise ValueError('Seuls les montants EUR sont pris en charge.')
-    view=('category' if any(field_key(h) in {'category','categorie'} for h in headers) else 'linked_product' if 'asin' in recognized or any(field_key(h) in {'producttitle','titreduproduit','produit'} for h in headers) else 'tracking_id' if 'tracking_id' in recognized else 'daily_trends' if dated else 'legacy')
+    view=('linked_product' if 'asin' in recognized or any(field_key(h) in {'producttitle','titreduproduit','titredeproduit','produit'} for h in headers) else 'category' if any(field_key(h) in {'category','categorie'} for h in headers) else 'tracking_id' if 'tracking_id' in recognized else 'daily_trends' if dated else 'legacy')
     metrics=set(recognized)&set(FIELDS[6:])
     kind=next((k for k in ('payments','orders','earnings','performance') if metrics<=set(METRICS[k])),None)
     if not kind: raise ValueError('Mélange de métriques incompatible avec les rapports connus.')
@@ -417,6 +454,7 @@ def report(db,identity,start='',end=''):
         tracking_rows.append(value)
     tracking=[{'tracking_id':tag,**totals([r for r in tracking_rows if r['tracking_id']==tag])} for tag in sorted({r['tracking_id'] for r in tracking_rows})]
     return {'totals':totals(rows),'rows':rows,'daily':daily,'tracking':tracking,'tracking_partial':tracking_partial,'undated_totals':totals(undated),'excluded_period_reports':excluded,
+            'quarantined_reports':[{'id':r['id'],'start':r['start'],'end':r['end'],'reason':'Cumul annuel identifié : dates quotidiennes invalides. Rapport conservé dans l’historique et exclu des statistiques.'} for r in resolved_reports(db,identity) if misdated_annual_export(r)],
             'daily_limitation':'Seules les dates présentes dans les lignes des rapports de référence alimentent l’évolution. Les jours absents ne valent pas zéro. Les dates confirmées manuellement sont exclues.',
             'tracking_limitation':'Vue Tracking IDs séparée, jamais ajoutée aux totaux. '+('Couverture partielle : un total non daté chevauchant ne peut pas être réparti.' if tracking_partial else 'Sa couverture peut différer de celle du rapport de référence.'),
             'reports':[{**{k:r[k] for k in ('id','kind','start','end','scope','observed_at')},'view':r.get('view','legacy'),'contribution':r.get('contribution','totals')} for r in reports],

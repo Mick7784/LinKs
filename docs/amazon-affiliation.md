@@ -25,7 +25,7 @@ Dans Affiliation → Amazon, **Importer un ZIP Amazon** propose : choisir le fic
 cliquer sur **Envoyer**, puis lire le bilan. Le parcours normal ne demande ni dates,
 ni devise, ni périmètre, ni correspondance de colonnes.
 
-- Lecture en mémoire des CSV/TXT UTF-8 ; limites : 16 Mo compressés, 64 Mo
+- Lecture en mémoire des CSV/TXT UTF-8 ou Windows-1252 avec en-têtes reconnus ; limites : 16 Mo compressés, 64 Mo
   décompressés, 64 entrées, 8 Mo et 10 000 lignes par fichier. Les chemins dangereux,
   doublons de noms, liens symboliques, archives imbriquées et compressions excessives
   sont rejetés avant toute conservation.

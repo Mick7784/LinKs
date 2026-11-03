@@ -107,7 +107,9 @@ def ingest(db,identity,data,observed):
     for file in archive['files']:
         try:
             value,missing,notes=amazon.auto_report(file,{})
-            if missing:reasons.append(file['name']+' : '+', '.join(dict.fromkeys(labels[k] for k in missing['fields']))+' absent(e) du fichier.')
+            if missing:
+                reasons.append(file['name']+' : '+', '.join(dict.fromkeys(labels[k] for k in missing['fields']))+' absent(e) du fichier.')
+                reasons.extend(notes)
             else:values.append(value);warnings.extend(notes)
         except (ValueError,csv.Error) as exc:reasons.append(file['name']+' : '+str(exc))
     if reasons:return retain(db,identity,data,archive,reasons,observed)
