@@ -48,16 +48,18 @@ def inspect_archive(data):
                 if total>EXPANDED_LIMIT or entry.file_size>LIMIT or entry.file_size>max(1024*1024,entry.compress_size*200) or entry.compress_type not in (zipfile.ZIP_STORED,zipfile.ZIP_DEFLATED): raise ValueError()
                 with archive.open(entry) as stream: payload=stream.read(LIMIT+1)
                 if len(payload)!=entry.file_size: raise ValueError()
-                try:text=payload.decode('utf-8-sig')
+                encoding='utf-16' if payload.startswith((b'\xff\xfe',b'\xfe\xff')) else 'utf-8-sig'
+                try:text=payload.decode(encoding)
                 except UnicodeDecodeError:
+                    encoding='cp1252'
                     text=payload.decode('cp1252')
-                    if not any(sum(field_key(h) in AUTO_ALIASES for h in next(csv.reader([line],delimiter=delimiter)))>=2 for line in text.splitlines()[:101] for delimiter in (',',';','\t')):raise ValueError()
+                    if not any(len(next(csv.reader([line],delimiter=delimiter)))>=2 for line in text.splitlines()[:101] for delimiter in (',',';','\t')):raise ValueError()
                 if any(ord(c)<32 and c not in '\r\n\t' for c in text): raise ValueError()
-                files.append({'name':name,'csv':text})
+                files.append({'name':name,'csv':text,'encoding':encoding})
             if not files: raise ValueError()
             return {'files':files,'imported':False,'digest':hashlib.sha256(raw).hexdigest()}
     except (ValueError,binascii.Error,zipfile.BadZipFile,RuntimeError,NotImplementedError,OSError,UnicodeError):
-        raise ValueError('ZIP invalide : CSV/TXT UTF-8 ou Windows-1252, 64 entrées, 8 Mo par fichier et 64 Mo décompressés maximum, ratio borné, sans chiffrement ni chemins dangereux.') from None
+        raise ValueError('ZIP invalide : CSV/TXT UTF-8, UTF-16 avec BOM ou Windows-1252, 64 entrées, 8 Mo par fichier et 64 Mo décompressés maximum, ratio borné, sans chiffrement ni chemins dangereux.') from None
 
 
 def inspect_csv(data):
@@ -239,29 +241,92 @@ def auto_day(value):
     raise ValueError('Date Amazon non reconnue : ISO, MM-JJ-AAAA ou JJ/MM/AAAA attendus.')
 
 
-def auto_report(file,override):
+class ComplementaryReport(ValueError):
+    """Recognized non-financial evidence, not a parser failure."""
+
+
+def column_key(header):
+    return AUTO_ALIASES.get(field_key(re.sub(r'\s*[\[(]?(?:EUR|€)[\])]?\s*$', '',header,flags=re.I)))
+
+
+def numeric_cell(raw):
+    raw=re.sub(r'EUR|€|\s', '',raw,flags=re.I)
+    if ',' in raw and '.' in raw:
+        return raw.replace('.','').replace(',','.') if raw.rfind(',')>raw.rfind('.') else raw.replace(',','')
+    return raw.replace(',','.')
+
+
+def resolve_columns(headers,keys,rows):
+    """Position remains the identity; never choose a conflicting duplicate by order."""
+    keys=list(keys);notes=[]
+    if any(field_key(h) in {'title','producttitle','titreduproduit','titredeproduit','produit'} for h in headers):
+        keys=[None if field_key(h) in {'category','categorie'} else k for h,k in zip(headers,keys)]
+    for key in dict.fromkeys(k for k in keys if k):
+        positions=[i for i,k in enumerate(keys) if k==key]
+        if len(positions)<2:continue
+        populated=[i for i in positions if any(r[i].strip() not in {'','-'} for r in rows)]
+        candidates=populated or positions
+        def canonical(raw):
+            raw=raw.strip()
+            if raw in {'','-'}:return None
+            if key=='date':return auto_day(raw)
+            if key in FIELDS[6:]:
+                value=Decimal(numeric_cell(raw))
+                scaled=value*(100 if key.endswith('_cents') else 1)
+                if not value.is_finite() or abs(scaled)>10**14 or abs(scaled-scaled.to_integral_value())>Decimal('0.00000001'):raise ValueError()
+                return value
+            if key=='asin' and not re.fullmatch(r'[A-Z0-9]{10}',raw):raise ValueError()
+            return raw
+        try:
+            columns=[[canonical(r[i]) for r in rows] for i in candidates]
+            equivalent=all(c==columns[0] for c in columns)
+        except (ValueError,InvalidOperation):equivalent=False
+        if not equivalent:
+            locations=', '.join(f'{i+1} « {headers[i]} »' for i in positions)
+            raise ValueError(f'Colonnes ambiguës pour {key} : {locations}. Contenus ou formats incompatibles ; aucune colonne sélectionnée.')
+        selected=candidates[0]
+        for i in positions:
+            if i!=selected:keys[i]=None
+        notes.append(f'Colonnes {", ".join(str(i+1) for i in positions)} ({key}) : colonne {selected+1} retenue ; doublons équivalents ou colonnes entièrement vides.')
+    return keys,notes
+
+
+def auto_report(file,override,diagnostic=None):
     """Detect known export columns; missing coverage is returned, never guessed."""
-    lines=file['csv'].splitlines(); candidates=[]
+    lines=file['csv'].lstrip('\ufeff').splitlines(); candidates=[];rankings=[]
     for offset,line in enumerate(lines[:101]):
         for delimiter in (';',',','\t'):
             headers=next(csv.reader([line],delimiter=delimiter))
-            keys=[AUTO_ALIASES.get(field_key(re.sub(r'\s*[\[(]?(?:EUR|€)[\])]?\s*$', '',h,flags=re.I))) for h in headers]
+            keys=[column_key(h) for h in headers]
+            names={field_key(h) for h in headers}
+            if 'asin' in names and names & {'rank','rang','classement','salesrank','bestsellerrank'}:
+                rankings.append((offset,delimiter,headers))
             score=sum(k in FIELDS[6:] for k in keys)
             if score: candidates.append((score,offset,delimiter,headers,keys))
     if not candidates:
-        if any({'asin','rang'} <= {field_key(h) for h in next(csv.reader([line],delimiter=','))} for line in lines[:101]):
-            raise ValueError('Classement Top-Sellers sans montants ni dates de commissions : ce fichier ne peut pas alimenter les statistiques financières.')
+        if rankings:
+            offset,delimiter,headers=rankings[0]
+            if len(headers)>100 or any(len(h)>500 for h in headers):raise ValueError('En-tête Top-Sellers trop long.')
+            rows=list(csv.reader(io.StringIO('\n'.join(lines[offset+1:])),delimiter=delimiter,strict=True))
+            rows=[r for r in rows if any(c.strip() for c in r) and r!=headers]
+            if not rows or len(rows)>10000 or any(len(r)!=len(headers) for r in rows):raise ValueError('Classement Top-Sellers : lignes CSV invalides ou vides.')
+            asins=[i for i,h in enumerate(headers) if field_key(h)=='asin']
+            ranks=[i for i,h in enumerate(headers) if field_key(h) in {'rank','rang','classement','salesrank','bestsellerrank'}]
+            if len(asins)!=1 or len(ranks)!=1 or any(not re.fullmatch(r'[A-Z0-9]{10}',r[asins[0]].strip()) or not re.fullmatch(r'[1-9]\d*',r[ranks[0]].strip()) for r in rows):
+                raise ValueError('Classement Top-Sellers : colonnes ou valeurs de rang/ASIN non fiables.')
+            if diagnostic is not None:diagnostic.update(header_row=offset+1,delimiter=delimiter,headers=headers,row_count=len(rows))
+            raise ComplementaryReport('Classement Top-Sellers reconnu : informations complémentaires sans indicateur financier reconnu ; conservé hors statistiques.')
         raise ValueError('Aucun en-tête Amazon reconnu.')
     _,offset,delimiter,headers,keys=max(candidates,key=lambda c:(c[0],-c[1]))
-    # Product exports also contain a category: it is not a second product title.
-    if any(field_key(h) in {'title','producttitle','titreduproduit','titredeproduit','produit'} for h in headers):
-        keys=[None if field_key(h) in {'category','categorie'} else k for h,k in zip(headers,keys)]
-    recognized=[k for k in keys if k]
-    if len(set(recognized))!=len(recognized): raise ValueError('Colonnes reconnues ambiguës ou dupliquées ; diagnostic manuel nécessaire.')
+    if len(headers)>100 or any(len(h)>500 for h in headers):raise ValueError('En-tête trop long ou plus de 100 colonnes : format non pris en charge.')
+    if diagnostic is not None:diagnostic.update(header_row=offset+1,delimiter=delimiter,headers=headers)
     rows=list(csv.reader(io.StringIO('\n'.join(lines[offset+1:])),delimiter=delimiter,strict=True))
     rows=[r for r in rows if any(c.strip() for c in r) and r!=headers]
     if len(rows)>10000 or any(len(r)!=len(headers) for r in rows): raise ValueError('Lignes CSV invalides ou plus de 10 000 lignes.')
-    warnings=[]; clean=[]
+    keys,warnings=resolve_columns(headers,keys,rows)
+    recognized=[k for k in keys if k]
+    if diagnostic is not None:diagnostic.update(row_count=len(rows),columns=[{'position':i+1,'header':h,'role':keys[i]} for i,h in enumerate(headers)],corrections=warnings[:])
+    clean=[]
     for row in rows:
         if any(field_key(row[i]) in {'total','totals','totalgeneral','grandtotal','subtotal','soustotal'} for i,k in enumerate(keys) if k in {'title','date','tracking_id'}):
             warnings.append('Ligne de total exclue.');continue
@@ -315,11 +380,7 @@ def auto_report(file,override):
     if not kind: raise ValueError('Mélange de métriques incompatible avec les rapports connus.')
     for row in clean:
         for key in metrics:
-            raw=re.sub(r'EUR|€|\s', '',row[key],flags=re.I)
-            if ',' in raw and '.' in raw:
-                raw=raw.replace('.','').replace(',','.') if raw.rfind(',')>raw.rfind('.') else raw.replace(',','')
-            else:raw=raw.replace(',','.')
-            row[key]=raw
+            row[key]=numeric_cell(row[key])
         if not dated:row['date']=period[0]
     output=io.StringIO(); writer=csv.DictWriter(output,fieldnames=list(clean[0]));writer.writeheader();writer.writerows(clean)
     value=normalize(dict(csv=output.getvalue(),mapping={k:k for k in clean[0]},kind=kind,view=view,start=period[0],end=period[1],scope=scope,decimal='dot'))
@@ -327,6 +388,7 @@ def auto_report(file,override):
         value['date_basis']='confirmed_period'
         for row in value['rows']:row['date']=None
         warnings.append('Total de période sans ventilation quotidienne.')
+    value['view']=view
     value['filename']=file['name']
     return value,None,list(dict.fromkeys(warnings))
 
@@ -457,7 +519,7 @@ def report(db,identity,start='',end=''):
             'quarantined_reports':[{'id':r['id'],'start':r['start'],'end':r['end'],'reason':'Cumul annuel identifié : dates quotidiennes invalides. Rapport conservé dans l’historique et exclu des statistiques.'} for r in resolved_reports(db,identity) if misdated_annual_export(r)],
             'daily_limitation':'Seules les dates présentes dans les lignes des rapports de référence alimentent l’évolution. Les jours absents ne valent pas zéro. Les dates confirmées manuellement sont exclues.',
             'tracking_limitation':'Vue Tracking IDs séparée, jamais ajoutée aux totaux. '+('Couverture partielle : un total non daté chevauchant ne peut pas être réparti.' if tracking_partial else 'Sa couverture peut différer de celle du rapport de référence.'),
-            'reports':[{**{k:r[k] for k in ('id','kind','start','end','scope','observed_at')},'view':r.get('view','legacy'),'contribution':r.get('contribution','totals')} for r in reports],
+            'reports':[{**{k:r[k] for k in ('id','kind','start','end','scope','observed_at')},'filename':r.get('filename'),'date_basis':r.get('date_basis'),'view':r.get('view','legacy'),'contribution':r.get('contribution','totals')} for r in reports],
             'loss_tracking':False,'limitation':'Rapports agrégés ou limités dans le temps : aucune perte par transaction calculée.'}
 
 

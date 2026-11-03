@@ -82,7 +82,9 @@ class AutomaticTests(unittest.TestCase):
         self.ingest([('a.csv',category())]);self.ingest([('b.csv',category('52,00'))])
         self.assertEqual(self.report()['totals']['commission_cents'],5200)
         n=self.count();self.assertTrue(self.ingest([('renamed.csv',category())])['duplicate'])
-        self.assertEqual(n,self.count());self.assertEqual(self.report()['totals']['commission_cents'],5200)
+        # A newly packaged original is retained, without adding a financial report.
+        self.assertEqual(n+1,self.count());self.assertEqual(self.report()['totals']['commission_cents'],5200)
+        self.assertEqual(self.db.execute("SELECT count(*) FROM aff_snapshots WHERE source='amazon-zip'").fetchone()[0],2)
 
     def test_rolling_daily_window_preserves_uncovered_days(self):
         self.ingest([('a.csv',daily([('2026-10-29','1'),('2026-10-30','2')]))])

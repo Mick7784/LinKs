@@ -79,6 +79,7 @@ jobs:
           python3 scripts/amazon_statistics_test.py
           python3 scripts/amazon_zip_test.py
           python3 -m unittest discover -s scripts -p amazon_automatic_test.py
+          python3 scripts/amazon_archives_test.py
           python3 -m unittest discover -s scripts -p global_audit_test.py
           node --test scripts/affiliation-loading.test.cjs
           python3 scripts/amazon_collection_test.py

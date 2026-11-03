@@ -68,6 +68,36 @@ s.serve_forever()`],{cwd:__dirname,env:{...process.env,PYTHONIOENCODING:'utf-8',
   const saved=await api('amazon/pending-archive',{account:account.id,id:pendingReport.pending[0].id});
   assert(saved.archive.length>0);
   await page.locator('#aff-dialog [data-aff=close]').click();
+  await page.getByRole('button',{name:'Rapports et imports',exact:true}).click();
+  await page.getByRole('heading',{name:'Archives nécessitant une attention · 2',exact:true}).waitFor();
+  const archiveId=pendingReport.pending[0].id;
+  await page.locator('[data-aff=archive-diagnostic][data-id="'+archiveId+'"]').click();
+  await page.getByRole('dialog').getByText('Historique des analyses et décisions',{exact:true}).waitFor();
+  assert.match(await page.getByRole('dialog').innerText(),/Encodage|UTF|utf/);
+  await page.locator('#aff-dialog [data-aff=close]').click();
+  const downloaded=page.waitForEvent('download');
+  await page.locator('[data-aff=pending-download][data-id="'+archiveId+'"]').click();
+  assert.equal((await downloaded).suggestedFilename(),'reports.zip');
+  const ignored=page.waitForResponse(r=>r.url().endsWith('/amazon/ignore-archive'));
+  await page.locator('[data-aff=archive-ignore][data-id="'+archiveId+'"]').click();await ignored;
+  await page.getByRole('heading',{name:'Archives nécessitant une attention · 1',exact:true}).waitFor();
+  assert.equal((await api('overview?account='+account.id)).amazon[0].totals.commission_cents,5200);
+  await page.locator('[data-aff=archive-reanalyze][data-id="'+archiveId+'"]').click();
+  await page.getByRole('heading',{name:'Archives nécessitant une attention · 2',exact:true}).waitFor();
+  const batchDone=page.waitForResponse(r=>r.url().endsWith('/amazon/reanalyze-pending'));
+  await page.locator('[data-aff=archives-reanalyze]').click();
+  const batchResult=await (await batchDone).json();assert.equal(batchResult.results.length,2);
+  await page.locator('[data-aff=archives-reanalyze]').waitFor({state:'visible'});
+  assert.equal((await api('overview?account='+account.id)).amazon[0].totals.commission_cents,5200);
+  await page.setViewportSize({width:390,height:900});
+  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Archive manager fits mobile');
+  if(process.env.ARCHIVE_SCREENSHOT)await page.screenshot({path:process.env.ARCHIVE_SCREENSHOT,fullPage:true});
+  await page.setViewportSize({width:1280,height:900});
+  // A recognized ranking is retained as complementary, with no invented totals.
+  const ranking=await api('amazon/import-zip',{account:account.id,archive:zip({'Top-Sellers.csv':'Préambule\nRank;ASIN;Titre du produit\n1;B000000001;Lampe\n'}).toString('base64'),filename:'top-sellers.zip'});
+  assert.equal(ranking.state,'complementary');assert.equal(ranking.imported,false);
+  await page.evaluate(()=>window.LinksAffiliation.load());
+  await page.getByText('Archive complémentaire',{exact:true}).waitFor();
   await open();
   const drop=zip({'Category.csv':category('52,00'),'Tracking-Id.csv':files['Tracking-Id.csv'].replace('51,87','52,00')});
   await page.locator('#amz-drop').evaluate((element,bytes)=>{const transfer=new DataTransfer();transfer.items.add(new File([new Uint8Array(bytes)],'reports.zip',{type:'application/zip'}));element.dispatchEvent(new DragEvent('drop',{bubbles:true,dataTransfer:transfer}))},[...drop]);
@@ -84,6 +114,6 @@ s.serve_forever()`],{cwd:__dirname,env:{...process.env,PYTHONIOENCODING:'utf-8',
   release();await refreshed;await page.locator('#amz-file').waitFor();
   await page.setViewportSize({width:390,height:900});
   assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'No mobile document overflow');
-  assert.deepEqual(errors,[]);console.log('PASS Amazon ZIP: auto multi-report import, live overview 61.79, undated totals, duplicate, correction, overlap, missing metadata, drop zone, mobile.');
+  assert.deepEqual(errors,[]);console.log('PASS Amazon ZIP: import, live statistics, duplicates, corrections, overlaps, diagnostics, download, ignore/reanalyze, batch, complementary ranking, mobile.');
  }finally{if(browser)await browser.close();if(server){server.kill();if(server.exitCode===null)await new Promise(r=>server.once('exit',r))}rmSync(temp,{recursive:true,force:true})}
 })().catch(error=>{console.error(error);process.exitCode=1});

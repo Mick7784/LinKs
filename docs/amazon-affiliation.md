@@ -37,7 +37,7 @@ Dans Affiliation → Amazon, **Importer un ZIP Amazon** propose : choisir le fic
 cliquer sur **Envoyer**, puis lire le bilan. Le parcours normal ne demande ni dates,
 ni devise, ni périmètre, ni correspondance de colonnes.
 
-- Lecture en mémoire des CSV/TXT UTF-8 ou Windows-1252 avec en-têtes reconnus ; limites : 16 Mo compressés, 64 Mo
+- Lecture en mémoire des CSV/TXT UTF-8, UTF-16 avec BOM ou Windows-1252 avec en-têtes reconnus ; limites : 16 Mo compressés, 64 Mo
   décompressés, 64 entrées, 8 Mo et 10 000 lignes par fichier. Les chemins dangereux,
   doublons de noms, liens symboliques, archives imbriquées et compressions excessives
   sont rejetés avant toute conservation.
@@ -53,12 +53,14 @@ ni devise, ni périmètre, ni correspondance de colonnes.
   jours effectivement renseignés, en conservant les autres jours et indicateurs.
 - Les totaux non datés ne sont ni proratisés ni répartis arbitrairement. Un
   chevauchement non résoluble, une information manquante ou un format inconnu donne
-  un bilan **Archive conservée à vérifier** : ZIP original et motifs persistés,
-  statistiques inchangées. Le fichier se récupère dans **Archives à vérifier**.
+  un bilan **Archive conservée à vérifier** : ZIP original et motifs persistés.
+  Les fichiers fiables du même ZIP sont traités ; les fichiers signalés ne contribuent pas
+  aux statistiques. Un conflit de consolidation entre références bloque leur intégration.
+  Le fichier se récupère dans **Archives nécessitant une attention**.
   Un réenvoi identique n'ajoute pas une deuxième archive en attente.
 - Réimport d'une archive déjà acceptée sans effet, même après correction. Les
   rapports identiques réemballés ou renommés ne réactivent pas une ancienne version.
-- Les sauvegardes comprennent les archives en attente ; leur plafond global reste
+- Les sauvegardes comprennent tous les ZIP désormais reçus et les diagnostics successifs ; leur plafond global reste
   applicable. La restauration contrôle leur empreinte et leur contenu. Les
   anciennes sauvegardes sont acceptées ; les nouvelles nécessitent ce correctif.
 - Le mode manuel avancé reste séparé pour le diagnostic. Il ne fait pas partie du
@@ -67,6 +69,59 @@ ni devise, ni périmètre, ni correspondance de colonnes.
 La décision automatique est isolée dans `scripts/amazon_imports.py`. Le parseur et
 la lecture des références restent partagés avec CSV et portail. Aucun volume réel
 n'est reclassé au démarrage. Les variantes non reconnues sont conservées, pas devinées.
+
+## Gestion et retraitement des archives
+
+La page **Rapports et imports** comprend trois zones : rapports actifs utilisés dans
+les calculs, archives nécessitant une attention, historique (compléments, versions
+remplacées, archives classées sans suite et rapports écartés). La couverture et
+l'origine sont affichées. Le classement sans suite conserve l'original et ne retire
+pas les éventuels fichiers fiables déjà intégrés d'un ZIP partiellement exploitable.
+
+Chaque archive à traiter propose une réanalyse avec corrections reconnues, un
+diagnostic détaillé, le téléchargement de l'original et le classement sans suite.
+Une archive classée sans suite peut être réanalysée explicitement. Le traitement
+global ne reprend que les archives en attente ou non exploitables, dans l'ordre de
+réception, en réutilisant les octets enregistrés sur le serveur. Il ne nécessite
+aucun nouvel envoi et n'utilise ni dates du filtre ni paramètres fournis par le client.
+
+Les positions de colonnes restent distinctes. Catégorie et titre de produit ne sont
+pas confondus ; les doublons strictement équivalents après validation de format et
+les colonnes concurrentes entièrement vides sont résolus avec une explication.
+Des valeurs différentes, des formats incompatibles ou des titres concurrents
+restent bloqués. Les premières 101 lignes sont inspectées pour les en-têtes et
+les séparateurs CSV usuels. Un classement reconnu par ses colonnes rang/ASIN et
+ses valeurs, sans indicateur financier reconnu, devient complémentaire ; le seul
+nom « Top-Sellers » ne suffit jamais. Si des indicateurs sont présents, les règles
+habituelles de période, devise et périmètre s'appliquent.
+
+Les diagnostics enregistrent encodage, ligne d'en-tête, séparateur, colonnes et
+positions, corrections, raisons de blocage et rapports liés. Chaque nouvelle
+analyse ou décision est datée et conserve les diagnostics précédents. Les API
+privées `amazon/reanalyze`, `amazon/reanalyze-pending`, `amazon/ignore-archive`
+et `amazon/archive-diagnostic` contrôlent le compte ; les mutations utilisent la
+transaction SQLite existante et les insertions financières un point de sauvegarde.
+
+Les empreintes des contenus déjà importés empêchent le double comptage et le
+retour d'une ancienne correction, même après changement du nom ou du ZIP. Une
+archive reçue avant une référence plus récente ne peut pas l'écraser. Les imports
+financiers restent immuables ; seuls l'état et le journal de l'archive évoluent.
+
+Le rapport historique #9 et les deux archives signalées résident sur un VPS non
+accessible pendant ce développement : leurs contenus exacts n'ont pas été examinés.
+Les empreintes historiques déjà exclues restent exclues. Une période explicite
+fiable dans un original peut permettre un nouveau rapport de période, sans
+ventilation quotidienne ; les anciennes dates sauvegardées ne sont jamais utilisées
+pour reconstruire cette période. Sans original relié au rapport, le diagnostic
+explique que la reconstruction est impossible et ne propose pas de réintégration.
+Les ZIP acceptés par l'ancien moteur, qui n'en conservait que les rapports normalisés,
+ne peuvent pas être récupérés rétroactivement.
+
+Validation : tests synthétiques `amazon_archives_test.py`, suites Amazon existantes,
+sauvegarde/restauration et statistiques d'affiliation, parcours navigateur
+`amazon-zip-browser-test.cjs` (actions, actualisation des totaux, affichage mobile).
+La validation des trois éléments réels reste à faire sur le VPS après une release
+explicitement autorisée ; ce changement ne lance aucune reprise au démarrage.
 
 ## Diagnostic API sécurisé, à connecter
 

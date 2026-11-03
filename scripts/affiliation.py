@@ -221,7 +221,9 @@ def report(db, query):
     if start: loss_clause+=' AND aff_loss_day(first_missing_at)>=?'; loss_args.append(start)
     if end: loss_clause+=' AND aff_loss_day(first_missing_at)<=?'; loss_args.append(end)
     losses=[dict(r) for r in db.execute('SELECT account_id,COUNT(*) sales,SUM(commission_cents) cents FROM '+transaction_source(db)+' WHERE '+loss_clause+' GROUP BY account_id',loss_args)]
-    amazon_reports=[{'account_id':a['id'],**amazon.report(db,a['id'],start,end),'pending':amazon_imports.pending_reports(db,a['id'])} for a in selected if a['platform_id']=='amazon']
+    amazon_reports=[{'account_id':a['id'],**amazon.report(db,a['id'],start,end),'pending':amazon_imports.pending_reports(db,a['id']),
+        'archives':[{k:v for k,v in item.items() if k not in {'attempts','diagnostics'}} for item in amazon_imports.archives(db,a['id'])],
+        'history':amazon_imports.report_history(db,a['id'])} for a in selected if a['platform_id']=='amazon']
     return {**({'overview':affiliation_overview.build(db, accounts, start, end)} if not identity else {}),
             'amazon':amazon_reports,'losses':losses,'accounts':accounts,'platforms':[{**dict(r),'available':1 if r['id']=='amazon' else r['available']} for r in db.execute('SELECT * FROM aff_platforms')],
             'aggregate':aggregate,'daily':daily,'has_data':any(a['snapshot'] for a in selected),
@@ -425,10 +427,18 @@ def post(connect, action, data):
             finally:LOCK.release()
         if action=='amazon/pending-archive':
             with connect() as db:
-                row=db.execute("SELECT summary FROM aff_snapshots WHERE id=? AND account_id=? AND source='amazon-pending'",(data.get('id'),identity)).fetchone()
-                if not row:raise ValueError('Archive introuvable.')
-                value=json.loads(row['summary'])['amazon_pending']
+                value=amazon_imports.saved_archive(db,identity,data.get('id'))
                 return {k:value[k] for k in ('filename','archive')}
+        if action=='amazon/archive-diagnostic':
+            with connect() as db:
+                value=amazon_imports.saved_archive(db,identity,data.get('id'))
+                return {k:v for k,v in value.items() if k!='archive'}
+        if action in {'amazon/reanalyze','amazon/reanalyze-pending','amazon/ignore-archive'}:
+            with connect() as db:
+                db.execute('BEGIN IMMEDIATE')
+                if action=='amazon/reanalyze-pending':return amazon_imports.reprocess_pending(db,identity,stamp())
+                if action=='amazon/ignore-archive':return amazon_imports.ignore(db,identity,data.get('id'),stamp())
+                return amazon_imports.reprocess(db,identity,data.get('id'),stamp())
         if action=='amazon/archive':return amazon.inspect_archive(data)
         if action=='amazon/import-zip':
             with connect() as db:
