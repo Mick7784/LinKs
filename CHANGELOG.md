@@ -1,5 +1,33 @@
 # Changelog
 
+## V1.4.10
+
+# V1.4.10 — Import ZIP Amazon et commissions observées
+
+### Import ZIP Amazon
+
+- Dépôt d'une archive et analyse automatique de ses rapports CSV/TXT connus : Category, Linked-Product, Tracking-Id, Daily Trends et colonnes de commandes, rémunérations et paiements.
+- Enregistrement atomique, empreinte d'archive, réimports sans doublon, corrections historisées et refus explicite des chevauchements incompatibles.
+- Une référence par indicateur, période et périmètre ; les vues complémentaires ne s'ajoutent pas aux totaux. Les anciennes références manuelles peuvent être remplacées sans double comptage.
+- Dates MM-JJ-AAAA, ISO et JJ/MM/AAAA, séparateurs variables, nombres à virgule ou point, bruit flottant, tirets et en-têtes répétés pris en charge.
+- Limites de 16 Mo compressés, 64 Mo décompressés, 64 entrées et 8 Mo par fichier, avec contrôle des chemins, du chiffrement et des ratios de compression.
+- Bilan détaillé et actualisation des statistiques après import. Les informations indispensables non vérifiables sont demandées ; le mapping manuel reste disponible en mode avancé.
+
+### Vue générale Affiliation
+
+- Le total devient « Commissions observées / déclarées » : commissions approuvées observées chez Domadoo et commissions déclarées par les rapports de référence Amazon.
+- Statuts et sources distincts dans le détail par partenaire. Ce total ne constitue pas un solde retirable ni des commissions toutes approuvées.
+- Les montants sans ventilation quotidienne contribuent uniquement aux sélections contenant toute leur période confirmée ; ils sont affichés séparément et ne créent aucune barre quotidienne fictive.
+- Comparaisons limitées aux journées complètes et aux périmètres comparables. Les jours inconnus restent distincts des zéros.
+
+### Validation et compatibilité
+
+- 64 tests Python ciblés et trois parcours navigateur locaux réussis sur données synthétiques, dont le contrôle 9,92 € + 51,87 € = 61,79 €.
+- Tests ZIP intégrés au workflow officiel avant publication.
+- Anciennes sauvegardes conservées, aucune migration de table ni modification des transactions Domadoo. Les nouvelles métadonnées requièrent cette version ou une version ultérieure pour restauration.
+- Les variantes de format non reconnues nécessitent le diagnostic manuel ; les tests ne certifient pas tous les exports Amazon réels.
+- Aucune activation de l'automatisation de connexion Amazon. Aucun déploiement automatique sur le VPS.
+
 ## V1.4.9
 
 # V1.4.9 — Vue d'ensemble Affiliation et suivi Amazon
