@@ -1,3 +1,4 @@
+const mountLegacyStatistics=require('./legacy-statistics-fixture.cjs');
 // End-to-end task paths on disposable data. Never touches a deployed instance.
 const {chromium}=require('playwright'),assert=require('node:assert/strict');
 const {spawn,execFileSync}=require('node:child_process');
@@ -34,7 +35,7 @@ const {tmpdir}=require('node:os'),{join,resolve}=require('node:path');
   await nav('campaigns');await page.locator(`#campaigns-list [data-id="${campaign.id}"] [data-action=edit]`).click();await page.locator('#block-dialog[open]').waitFor();assert.equal(await page.locator('#block-form [name=title]').inputValue(),'Campagne repère');await page.keyboard.press('Escape');
   await nav('campaigns');const order=await page.evaluate(()=>document.querySelector('#campaigns-list').getBoundingClientRect().top<document.querySelector('#campaign-planning').getBoundingClientRect().top);assert(order);
   await page.locator('[data-management-jump="campaign-planning"]').click();assert.equal(await page.evaluate(()=>document.activeElement.textContent),'Planning des promotions');
-  await nav('statistics');await page.locator('#sw-panel[aria-busy=false]').waitFor();await page.click('#sw-tab-links');await page.locator('#statistics-legacy > summary').click();await page.locator('#chart svg').waitFor();assert(await page.locator('#analysis-search').isVisible());assert(await page.locator('#statistics-filter-context').isVisible());
+  await nav('statistics');await page.locator('#sw-panel[aria-busy=false]').waitFor();await page.click('#sw-tab-links');await mountLegacyStatistics(page);await page.locator('#chart svg').waitFor();assert(await page.locator('#analysis-search').isVisible());assert(await page.locator('#statistics-filter-context').isVisible());
   await page.locator('[data-metric-scope=tracked]').click();assert.equal(await page.locator('#analysis-scope').inputValue(),'tracked');assert.equal(await page.locator('#daily-category').inputValue(),'tracked');
   await page.locator('.daily-inspect-action').click();assert.equal(await page.evaluate(()=>document.activeElement.id),'daily-detail-title');
   await page.locator('[data-statistics-jump=statistics-partners]').click();assert(await page.locator('#statistics-partners').getAttribute('open')!==null);

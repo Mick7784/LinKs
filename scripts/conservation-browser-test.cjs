@@ -33,7 +33,7 @@ const {readFileSync,mkdtempSync,rmSync,mkdirSync}=require('node:fs'),{join,resol
   browser=await chromium.launch({headless:true,...(process.env.CHROMIUM_PATH?{executablePath:process.env.CHROMIUM_PATH,args:['--no-sandbox']}: {})});
   const context=await browser.newContext({userAgent:'Mozilla/5.0 Links V1.310 test'}),page=await context.newPage(),errors=[],csp=[];
   page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error'&&/Content Security Policy|violates.*directive/.test(m.text()))csp.push(m.text())});
-  await page.goto(admin);await page.locator('.sw-overview').waitFor();assert.equal(await page.locator('.sw-campaign').count(),2);
+  await page.goto(admin);await page.locator('.sw-overview').waitFor();assert.equal(await page.locator('.sw-campaign').count(),0);
   assert.equal(await page.locator('.studio-eyebrow,.instance-context').count(),0);
   for(const width of [1440,768,390,320]){await page.setViewportSize({width,height:1000});for(const theme of ['light','dark','system']){
    await page.selectOption('#theme-select',theme);await page.waitForTimeout(180);
@@ -45,7 +45,7 @@ const {readFileSync,mkdtempSync,rmSync,mkdirSync}=require('node:fs'),{join,resol
    if(process.env.V1310_SCREENSHOTS&&[1440,390].includes(width)&&theme!=='system'){mkdirSync(process.env.V1310_SCREENSHOTS,{recursive:true});await page.screenshot({path:join(process.env.V1310_SCREENSHOTS,'admin-'+theme+'-'+width+'.png'),fullPage:true})}
   }}
   await page.setViewportSize({width:1440,height:1000});await page.locator('[data-tab=tracked-links]').click();const trackedRow=page.locator(`#tracked-list [data-tracked-id="${tracked.id}"]`);await trackedRow.waitFor();
-  await trackedRow.locator('[data-open-statistics=shared]').click();await page.locator('#statistics.active').waitFor();assert.equal(await page.locator('#sw-tab-links').getAttribute('aria-selected'),'true');await page.locator('#statistics-legacy > summary').click();await page.locator('#chart svg').waitFor();await page.selectOption('#analysis-scope','shared');await page.selectOption('#period','7');await page.locator('.stories-card > summary').click();await page.locator('#story-list').waitFor();
+  await trackedRow.locator('[data-open-statistics=shared]').click();await page.locator('#statistics.active').waitFor();assert.equal(await page.locator('#sw-tab-links').getAttribute('aria-selected'),'true');await page.locator('#sw-results').waitFor();assert((await page.locator('#sw-results').textContent()).includes('Privé permanent'));await page.locator('.sw-evolution > summary').click();await page.locator('.sw-time-chart svg').waitFor();
 
   await page.locator('[data-tab=appearance]').click();await page.getByRole('button',{name:'Créer un thème',exact:true}).click();
   // Enum controls must update without referencing the image upload guard.

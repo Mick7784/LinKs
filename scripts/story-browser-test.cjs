@@ -1,3 +1,4 @@
+const mountLegacyStatistics=require('./legacy-statistics-fixture.cjs');
 // Full Story journey through the back-office, at desktop and mobile widths.
 const { chromium } = require('playwright');
 const assert = require('node:assert/strict');
@@ -59,7 +60,7 @@ const { join, resolve } = require('node:path');
       await page.goto(admin);
       await page.locator('.sw-overview').waitFor();
       await page.locator('#sw-tab-campaigns').click();
-      await page.locator('#statistics-legacy > summary').click();
+      await mountLegacyStatistics(page);
       await page.locator('#chart svg').waitFor();
     };
     const stats = async expected => {

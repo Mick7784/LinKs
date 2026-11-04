@@ -15,16 +15,21 @@ Les accès internes `activate('dashboard')` et les fragments `#dashboard` /
 `#statistics` conservent leur accès à Statistiques. L'entrée Tableau de bord est
 fusionnée avec Statistiques dans le menu. Les autres modules gardent leurs vues.
 Le menu Actions rapides conserve la création de liens/campagnes et l'organisation
-de la page. Les rapports de périodes, fiches, codes promo, partenaires et archives
-restent accessibles sous les vues détaillées, dans un volet complémentaire fermé.
-Ce volet conserve ses anciens composants de classement ; les nouvelles listes
-quotidiennes sont virtualisées et ne comportent aucune pagination manuelle.
+de la page. Le volet des rapports complémentaires est retiré de l'interface.
+Les codes promos disposent d'un onglet dédié. Les listes quotidiennes sont
+virtualisées et ne comportent aucune pagination manuelle.
 
-La période mensuelle est de 30 jours glissants par défaut, cohérente avec le kit et
-le défaut serveur existant. Le mois civil est disponible et ce choix est mémorisé
-dans le navigateur, sans nouveau paramètre de base. La date détaillée peut être
-conservée entre onglets ; l'accueil présente toujours aujourd'hui. L'évolution
-détaillée porte sur les 30 jours terminant à la journée choisie, toutes origines.
+Les statistiques affichent par défaut les totaux des 30 derniers jours sur tous
+les onglets. Le sélecteur commun propose aussi le mois civil et une journée
+précise. Le choix d'une date dans le calendrier ou d'un point sur une courbe
+bascule les cartes, listes, répartitions et compteurs sur cette journée.
+Le contexte reste partagé entre les onglets et types de liens. Choisir de
+nouveau 30 jours glissants rétablit les totaux de période.
+
+Les courbes conservent leur période pendant la sélection d'un point. Une date
+choisie au calendrier hors de cette période affiche une courbe des 30 jours
+se terminant à cette date. La carte des campagnes affiche les campagnes ayant
+reçu des ouvertures pendant le jour ou la période consultée.
 
 ## Sources exactes des mesures
 
@@ -34,6 +39,7 @@ détaillée porte sur les 30 jours terminant à la journée choisie, toutes orig
 | Clics publics | `counts.kind='click'`, `counts.link`, aliases explicites de `metric_aliases()` ; métadonnées `content_blocks` / `top_buttons` |
 | Ouvertures suivies | `counts.kind='tracked'` → `tracked_tokens.token` → `tracked_tokens.link_id` ; titre courant de `tracked_links.name` |
 | Ouvertures de campagnes | `counts.kind='story'` → `story_links.token` → `promotion_id` ; `content_blocks.internal_name` ou nom historique capturé |
+| Copies de codes promos | `counts.kind='promo_code_copy'`, instantané enregistré avec l'identifiant de campagne, le nom et le code. Les heures et les origines sont regroupées par campagne et par code. |
 | Campagnes actives | `select_campaigns()` existant, ses `eligible_ids` ordonnés ; statut, retrait, archivage, brouillon et dates réels ; maximum trois cartes |
 | Origines | `counts.source`, `source_labels()`, `tracking_sources` et leurs rattachements de plateforme existants ; les clés incertaines restent « Non identifiée » |
 
@@ -57,15 +63,37 @@ les réglages). Aucun recalcul rétroactif n'est effectué. Les instants UTC des
 campagnes restent soumis à la logique métier existante. Changer le fuseau d'une
 instance ne permet pas de reconstruire les instants absents des anciens compteurs.
 
-La comparaison des visites concerne aujourd'hui et la veille complète ; une
-référence nulle donne « Comparaison indisponible ». La collecte désactivée est
+Les volumes affichés sont comparés à la veille pour une journée sélectionnée,
+ou aux jours immédiatement précédents sur une durée égale pour une période.
+Les filtres de recherche et d'origine s'appliquent aussi à la référence.
+Une référence nulle affiche l'écart en nombre et la mention « référence 0 ».
+La collecte désactivée est
 signalée. Les journées sans événement correspondent à zéro enregistré, sans
 extrapolation. La nouvelle API reste interdite au serveur public et aux sessions
 non authentifiées en mode local.
 
 ## Interface et accessibilité
 
-- Quatre onglets sans rechargement : Vue d'ensemble, Visites, Liens, Campagnes.
+Les campagnes disposent d'un tableau des impressions et clics publics avec
+leur taux de clic. Les codes promos disposent d'un rapport des copies divisées
+par les impressions de chaque offre, tous codes de cette offre confondus.
+Les agrégats utilisent les mêmes dates et origines pour les deux termes du
+ratio. Une absence d'impressions affiche « — ».
+
+Le classement des partenaires figure dans les liens suivis et réutilise
+`StudioPartnerReport.attribute`. Il distingue les ouvertures attribuées,
+celles sans partenaire et celles dont l'attribution est inconnue. Le classement
+repose sur les associations actuelles des liens.
+
+- Cinq onglets sans rechargement, Vue d'ensemble, Visites, Liens, Campagnes et Codes promos.
+- Les copies sont regroupées par campagne et par code, sur la journée choisie.
+  Le détail par origine et l'évolution quotidienne utilisent les copies enregistrées.
+- Les courbes se dessinent à l'ouverture. La sélection affiche la date et la
+  valeur dans le graphique avec un repère pointillé. Les dates sont abrégées,
+  inclinées et espacées selon la largeur disponible.
+- Les graphiques détaillés permettent de choisir la journée sans déplacer leur
+  période. Le tableau dépliable des valeurs et l'accès aux rapports
+  complémentaires sont retirés de l'interface.
 - Accueil à trois cartes et un graphique, largeur plafonnée à 1450 px dans
   l'administration existante ; menu latéral et thèmes conservés.
 - Donut SVG avec masque circulaire de 760 ms ; valeurs exactes dès le départ,

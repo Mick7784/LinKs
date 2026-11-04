@@ -64,6 +64,95 @@ class StatisticsWorkspaceTests(unittest.TestCase):
         self.assertEqual(result['details']['campaigns']['total'],6)
         self.assertEqual(self.project('2001-01-01')['details']['tracked']['items'],[])
 
+    def test_monthly_points_match_daily_cards_including_the_first_comparison(self):
+        _, token = self.tracked()
+        self.put([('2026-10-04','youtube','view','page',4),
+                  ('2026-10-05','youtube','view','page',6),
+                  ('2026-10-05','youtube','click','Amazon',7),
+                  ('2026-10-05','instagram','tracked','tracked:'+token+':11',3),
+                  ('2026-10-05','youtube','tracked','tracked:'+token+':10',5),
+                  ('2026-10-05','instagram','story','story:st_abcdefghijklmnop:10',2),
+                  ('2026-10-05','youtube','story','story:st_abcdefghijklmnop:11',4)])
+        result = self.project('2026-10-05')
+        first, empty = result['series'][:2]
+        self.assertEqual(first['day'], '2026-10-05')
+        self.assertEqual(first['previous_visits'], 4)
+        for metric in ('visits','public','tracked','campaigns'):
+            self.assertEqual(first[metric], result['details'][metric]['total'])
+        self.assertEqual(first['tracked_sources'], {'youtube':5,'instagram':3})
+        self.assertEqual(first['campaign_count'], 1)
+        self.assertEqual(first['top_campaigns'][0]['total'], 6)
+        self.assertEqual(empty['previous_visits'], 6)
+        self.assertEqual(empty['tracked_sources'], {})
+        self.assertEqual(empty['top_campaigns'], [])
+
+    def test_codes_group_hours_and_sources_but_keep_distinct_codes(self):
+        def snapshot(code, hour):
+            return json.dumps({'id':'retired-campaign','name':'Offre historique',
+                               'code':code,'timestamp':hour})
+        self.put([('2026-11-03','youtube','promo_code_copy',snapshot('TEST10','10:00'),3),
+                  ('2026-11-03','youtube','promo_code_copy',snapshot('TEST10','11:00'),4),
+                  ('2026-11-03','instagram','promo_code_copy',snapshot('TEST10','12:00'),2),
+                  ('2026-11-03','youtube','promo_code_copy',snapshot('TEST20','10:00'),5)])
+        with self.a.connection() as db:before='\n'.join(db.iterdump())
+        result=self.project()
+        detail=result['details']['copies']
+        self.assertEqual(detail['total'],14)
+        self.assertEqual(detail['sources'],{'youtube':12,'instagram':2})
+        self.assertEqual(len(detail['items']),2)
+        self.assertEqual(detail['items'][0]['name'],'Offre historique · TEST10')
+        self.assertEqual(detail['items'][0]['total'],9)
+        self.assertEqual(result['detail_series'][-1]['copies'],14)
+        self.assertEqual(result['series'][-1]['copies'],14)
+        self.assertEqual(self.project('2001-01-01')['details']['copies']['total'],0)
+        with self.a.connection() as db:self.assertEqual(before,'\n'.join(db.iterdump()))
+
+    def test_period_totals_cover_30_days_for_every_metric_and_selected_day_stays_separate(self):
+        _, token = self.tracked()
+        code = json.dumps({'id':'campaign','name':'Offre','code':'TEST10','timestamp':'10:00'})
+        keys = [('view','page'),('click','Amazon'),('tracked','tracked:'+token+':10'),
+                ('story','story:st_abcdefghijklmnop:10'),('promo_code_copy',code)]
+        self.put([(day,source,kind,key,total)
+                  for day,source,total in [('2026-10-04','youtube',100),('2026-10-05','youtube',2),
+                                            ('2026-11-02','instagram',3),('2026-11-03','youtube',4)]
+                  for kind,key in keys])
+        result = self.project('2026-11-02')
+        for metric, report in result['period_details'].items():
+            self.assertEqual(report['total'],9,metric)
+            self.assertEqual(report['sources'],{'youtube':6,'instagram':3})
+            self.assertEqual(len(report['items']),2 if metric=='visits' else 1)
+            self.assertEqual(sum(row[metric] for row in result['series']),9)
+            self.assertEqual(result['details'][metric]['total'],3)
+        monthly = self.project('2026-11-02',period='month')
+        self.assertTrue(all(report['total']==7 for report in monthly['period_details'].values()))
+        self.assertTrue(all(report['total']==100 for report in result['previous_period_details'].values()))
+        self.assertEqual(result['comparison'],{'from':'2026-09-05','to':'2026-10-04','days':30})
+        self.assertTrue(all(report['total']==0 for report in result['previous_details'].values()))
+
+    def test_campaign_performance_and_partner_metadata_use_recorded_sources_and_current_links(self):
+        ident, token = self.tracked()
+        with self.a.connection() as db:
+            partner=db.execute("SELECT id FROM affiliate_partners WHERE name='Domadoo'").fetchone()[0]
+            db.execute('INSERT INTO tracked_link_partners(link_id,partner_id) VALUES(?,?)',(ident,partner))
+            campaign=self.a.save_content(db,self.a.block_data({'type':'promo','internal_name':'Offre',
+                'title':'Offre','url':'https://example.org/offer'}))
+        snapshot=json.dumps({'id':campaign,'name':'Offre','code':'TEST10','timestamp':'10:00'})
+        self.put([('2026-11-03','youtube','impression','block:'+campaign,100),
+                  ('2026-11-03','youtube','click','block:'+campaign,20),
+                  ('2026-11-03','youtube','promo_code_copy',snapshot,5),
+                  ('2026-11-02','instagram','impression','block:'+campaign,40),
+                  ('2026-11-02','instagram','promo_code_copy',snapshot,2),
+                  ('2026-11-03','youtube','tracked','tracked:'+token+':10',8),
+                  ('2026-11-02','youtube','tracked','tracked:'+token+':10',4)])
+        with self.a.connection() as db:before='\n'.join(db.iterdump())
+        result=self.project()
+        self.assertEqual(result['performance'][0]['sources'],{'youtube':{'impressions':100,'clicks':20,'copies':5}})
+        self.assertEqual(result['period_performance'][0]['sources']['instagram'],{'impressions':40,'clicks':0,'copies':2})
+        self.assertEqual(result['details']['tracked']['items'][0]['partner_id'],partner)
+        self.assertEqual(result['previous_details']['tracked']['total'],4)
+        self.assertEqual(result['details']['copies']['items'][0]['campaign_id'],campaign)
+        with self.a.connection() as db:self.assertEqual(before,'\n'.join(db.iterdump()))
+
     def test_campaign_eligibility_zero_to_four_and_archived(self):
         ids=[]
         for n in range(5):

@@ -1,4 +1,5 @@
 """Disposable HTTP fixture, used only by the browser acceptance test."""
+import json
 import os
 import sys
 from datetime import datetime, timedelta
@@ -18,6 +19,10 @@ with a.connection() as db:
         item=a.tracked_links.create_link(db,{'name':name,'url':'https://example.org/'+str(index)},a.story_url_valid,a.now_iso())
         token=a.tracked_links.token_link(db,item['id'],source['id'],'https://links.example',a.now_iso())['token']
         for origin,count in counts.items():db.execute('INSERT INTO counts VALUES(?,?,?,?,?)',(str(today),origin,'tracked','tracked:'+token+':12',count))
+        if index==0:
+            partner=db.execute("SELECT id FROM affiliate_partners WHERE name='Domadoo'").fetchone()[0]
+            db.execute('INSERT INTO tracked_link_partners(link_id,partner_id) VALUES(?,?)',(item['id'],partner))
+            db.execute('INSERT INTO counts VALUES(?,?,?,?,?)',(str(today-timedelta(days=1)),'instagram','tracked','tracked:'+token+':11',7))
     for n in range(30):
         day=str(today-timedelta(days=n))
         db.execute('INSERT INTO counts VALUES(?,?,?,?,?)',(day,'youtube','view','page',17+n%9))
@@ -27,6 +32,13 @@ with a.connection() as db:
         token='st_'+str(n).zfill(16)
         db.execute('INSERT INTO story_links VALUES(?,?,?,?,0)',(token,ident,'Campagne test',a.now_iso()))
         db.execute('INSERT INTO counts VALUES(?,?,?,?,?)',(str(today),'youtube','story','story:'+token+':12',n+1))
+        if n==0:
+            db.execute('INSERT INTO counts VALUES(?,?,?,?,?)',(str(today),'youtube','impression','block:'+ident,100))
+            db.execute('INSERT INTO counts VALUES(?,?,?,?,?)',(str(today-timedelta(days=1)),'instagram','impression','block:'+ident,40))
+            db.execute('INSERT INTO counts VALUES(?,?,?,?,?)',(str(today-timedelta(days=1)),'youtube','story','story:'+token+':12',4))
+            snapshot=json.dumps({'id':ident,'name':'Campagne de validation 1','code':'AUTOMNE10','timestamp':'2026-11-04T10:00:00Z'})
+            db.execute('INSERT INTO counts VALUES(?,?,?,?,?)',(str(today),'youtube','promo_code_copy',snapshot,5))
+            db.execute('INSERT INTO counts VALUES(?,?,?,?,?)',(str(today-timedelta(days=1)),'instagram','promo_code_copy',snapshot,2))
 server=a.serve(0,True,'127.0.0.1')
 print('http://127.0.0.1:'+str(server.server_port),flush=True)
 server.serve_forever()
