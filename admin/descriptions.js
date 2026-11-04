@@ -114,11 +114,13 @@ window.LinksDescriptions=(()=>{
  }
  function showDraft(draft){currentDraftId=draft.id;tab='editor';render()}
  function render(){
+  const restoreFocus=StudioNavigation.sectionFocus(root);
   for(const details of root.querySelectorAll('details[data-section-id]')){if(details.open)openItems.add(details.dataset.sectionId);else openItems.delete(details.dataset.sectionId)}
   root.replaceChildren();const head=node('div',undefined,'section-head'),title=node('div');title.append(node('h1','Descriptions'),node('p','Vos descriptions YouTube et leurs modèles.'));head.append(title);root.append(head);
-  const nav=node('div',undefined,'description-toolbar');for(const [id,label] of [['drafts','Descriptions'],['templates','Modèles'],...(currentDraftId?[['editor','Rédaction']]:[])]){const b=button(label,async()=>{tab=id;render();if(id==='templates')return preview();if(id==='drafts'){drafts=(await request('drafts')).items;if(tab===id)render()}});b.setAttribute('aria-pressed',String(tab===id));nav.append(b)}root.append(nav);
+  const nav=node('nav');StudioNavigation.sectionBar(nav,'Rubriques des descriptions');for(const [id,label] of [['drafts','Descriptions'],['templates','Modèles'],...(currentDraftId?[['editor','Rédaction']]:[])]){const b=button(label,async()=>{tab=id;render();if(id==='templates')return preview();if(id==='drafts'){drafts=(await request('drafts')).items;if(tab===id)render()}});b.id='description-section-'+id;b.setAttribute('aria-controls','descriptions-panel');if(tab===id)b.setAttribute('aria-current','page');nav.append(b)}root.append(nav);
   const status=node('p',dirty?'Modifications du modèle non enregistrées':'', 'description-status');status.dataset.descriptionStatus='';status.setAttribute('role','status');status.setAttribute('aria-live','polite');root.append(status);
   if(tab==='templates')renderTemplates();else if(tab==='drafts')renderDrafts();else{const host=node('div'),draftId=currentDraftId;host.dataset.editorHost='';root.append(host);window.LinksDescriptionEditor.mount(host,draftId,id=>{if(currentDraftId===draftId)currentDraftId=id})}
+  const panel=node('section');panel.id='descriptions-panel';panel.setAttribute('aria-labelledby','description-section-'+tab);panel.append(...[...root.children].slice(3));root.append(panel);restoreFocus();
  }
  async function load(){if(loaded)return;try{await refresh();model=clone(templates[0]||null);loaded=true;render();await preview()}catch(error){root.replaceChildren(node('p',error.message),button('Réessayer',load))}}
  window.addEventListener('beforeunload',event=>{if(dirty){event.preventDefault();event.returnValue=''}});

@@ -53,11 +53,14 @@ def workspace(db, *, now, zone, selected, period, aliases, labels, campaigns, se
     previous_items = {key: {} for key in categories.values()}
     day_performance, period_performance = {}, {}
     campaign_by_id = {row["id"]: row for row in campaigns}
+    active_code_campaigns = {ident for ident in selection["eligible_ids"]
+                             if (campaign_by_id.get(ident, {}).get("promo_code") or "").strip()}
     partner_links = {row['id']: row['partner_id'] for row in db.execute(
         "SELECT l.id,COALESCE(a.partner_id,'') partner_id FROM tracked_links l LEFT JOIN tracked_link_partners a ON a.link_id=l.id")}
 
     def add_performance(target, ident, source, metric, row, name):
-        item = target.setdefault(ident, {'id':ident, 'name':campaign_by_id.get(ident, {}).get('internal_name') or name or 'Campagne historique', 'sources':{}})
+        item = target.setdefault(ident, {'id':ident, 'name':campaign_by_id.get(ident, {}).get('internal_name') or name or 'Campagne historique',
+                                        'has_active_promo_code':ident in active_code_campaigns, 'sources':{}})
         values = item['sources'].setdefault(source, {'impressions':0, 'clicks':0, 'copies':0})
         values[metric] += row['total']
     series = {}

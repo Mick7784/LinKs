@@ -28,10 +28,12 @@ with a.connection() as db:
         db.execute('INSERT INTO counts VALUES(?,?,?,?,?)',(day,'youtube','view','page',17+n%9))
     db.execute('INSERT INTO counts VALUES(?,?,?,?,?)',(str(today),'direct-inconnu','click','block:legacy-link-2',2))
     for n in range(3):
-        ident=a.save_content(db,a.block_data({'type':'promo','internal_name':'Campagne de validation '+str(n+1),'title':'Offre de test','url':'https://example.org/campaign/'+str(n)}))
+        ident=a.save_content(db,a.block_data({'type':'promo','internal_name':'Campagne de validation '+str(n+1),'title':'Offre de test','promo_code':'AUTOMNE10' if n==0 else '', 'url':'https://example.org/campaign/'+str(n)}))
         token='st_'+str(n).zfill(16)
         db.execute('INSERT INTO story_links VALUES(?,?,?,?,0)',(token,ident,'Campagne test',a.now_iso()))
         db.execute('INSERT INTO counts VALUES(?,?,?,?,?)',(str(today),'youtube','story','story:'+token+':12',n+1))
+        if n==1:
+            db.execute('INSERT INTO counts VALUES(?,?,?,?,?)',(str(today),'youtube','impression','block:'+ident,200))
         if n==0:
             db.execute('INSERT INTO counts VALUES(?,?,?,?,?)',(str(today),'youtube','impression','block:'+ident,100))
             db.execute('INSERT INTO counts VALUES(?,?,?,?,?)',(str(today-timedelta(days=1)),'instagram','impression','block:'+ident,40))

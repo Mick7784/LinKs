@@ -139,7 +139,7 @@
     const node=host.querySelector('#sw-performance');if(!node)return;
     const q=state.query.trim().toLocaleLowerCase('fr'),copies=state.tab==='copies';
     const campaignIds=new Set(all.filter(item=>!q||item.name.toLocaleLowerCase('fr').includes(q)).map(item=>item.campaign_id));
-    const rows=(state.date?state.data.performance:state.data.period_performance).filter(item=>!q||item.name.toLocaleLowerCase('fr').includes(q)||item.id.includes(q)||copies&&campaignIds.has(item.id)).map(item=>{
+    const rows=(state.date?state.data.performance:state.data.period_performance).filter(item=>!copies||item.has_active_promo_code).filter(item=>!q||item.name.toLocaleLowerCase('fr').includes(q)||item.id.includes(q)||copies&&campaignIds.has(item.id)).map(item=>{
       const values=Object.entries(item.sources).filter(([key])=>!state.source||(state.source.startsWith('p:')?platform(key)===state.source.slice(2):key===state.source)).map(([,values])=>values);
       return {...item,impressions:values.reduce((n,v)=>n+v.impressions,0),clicks:values.reduce((n,v)=>n+v.clicks,0),copies:values.reduce((n,v)=>n+v.copies,0)};
     }).filter(item=>item.impressions||item.clicks||item.copies).sort((a,b)=>(copies?b.copies-a.copies:b.clicks-a.clicks)||b.impressions-a.impressions||a.name.localeCompare(b.name,'fr'));
@@ -147,8 +147,8 @@
     node.innerHTML=`<div class="sw-card-head"><h3>${icon('chart')}${copies?'Copies par rapport aux affichages des offres':'Affichages et clics des campagnes'}</h3>${pill(periodLabel())}</div>
       <div class="sw-performance-kpis"><div><small>Impressions</small><strong>${fmt.format(impressions)}</strong></div><div><small>${copies?'Copies':'Clics publics'}</small><strong>${fmt.format(actions)}</strong></div><div><small>${copies?'Copies / impressions':'Taux de clic public'}</small><strong>${rate(actions,impressions)}</strong></div></div>
       <div class="sw-table-scroll"><table><thead><tr><th>Campagne</th><th>Impressions</th><th>${copies?'Copies':'Clics publics'}</th><th>${copies?'Copies / impressions':'Taux de clic'}</th></tr></thead><tbody>${rows.map(item=>`<tr><th scope="row">${esc(item.name)}</th><td data-label="Impressions">${fmt.format(item.impressions)}</td><td data-label="${copies?'Copies':'Clics publics'}">${fmt.format(copies?item.copies:item.clicks)}</td><td data-label="${copies?'Copies / impressions':'Taux de clic'}">${rate(copies?item.copies:item.clicks,item.impressions)}</td></tr>`).join('')}</tbody></table></div>
-      ${rows.length?'':'<p class="sw-muted">Aucun affichage ni action sur cette période avec ces filtres.</p>'}
-      <p class="sw-muted sw-report-note">${copies?'Copies divisées par les impressions de chaque offre, tous codes de cette offre confondus.':'Clics depuis la page publique divisés par les impressions de la campagne.'} Les ouvertures des liens partagés sont comptées séparément. Une référence sans impression est affichée « — ».</p>`;
+      ${rows.length?'':`<p class="sw-muted">${copies?'Aucune campagne avec code promo actif sur cette période avec ces filtres.':'Aucun affichage ni action sur cette période avec ces filtres.'}</p>`}
+      <p class="sw-muted sw-report-note">${copies?'Campagnes actives avec un code promo renseigné. Copies divisées par les impressions de chaque offre, tous codes de cette offre confondus.':'Clics depuis la page publique divisés par les impressions de la campagne.'} Les ouvertures des liens partagés sont comptées séparément. Une référence sans impression est affichée « — ».</p>`;
   }
   function renderPartners() {
     const node=host.querySelector('#sw-partners');if(!node)return;

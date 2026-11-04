@@ -1,0 +1,316 @@
+/* Shared administration foundation, derived from the Statistics workspace. */
+.admin-shell {
+  --workspace-width: 1450px;
+  --workspace-radius: 15px;
+  --workspace-gap: 14px;
+  --workspace-padding: 18px;
+  --primary: var(--accent);
+  --primary-line: var(--accent);
+  --on-primary: var(--on-accent);
+  --primary-hover: color-mix(in srgb, var(--accent) 85%, var(--text));
+}
+
+.admin-shell main {
+  max-width: calc(var(--workspace-width) + 48px);
+  padding: 20px 24px 32px;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+/* Keep the same navigation and reading frame when changing modules. */
+.admin-shell .sidebar::before,
+.admin-shell .topbar::after {
+  display: none;
+}
+
+.admin-shell .sidebar .tabs button.active {
+  background: var(--raised);
+}
+
+.admin-shell .view {
+  max-width: var(--workspace-width);
+  margin-inline: auto;
+}
+
+.admin-shell main :is(.section-head, .page-heading) {
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.admin-shell main :is(.section-head, .page-heading) :is(h1, h2) {
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -.6px;
+}
+
+.admin-shell main :is(.section-head, .page-heading) p {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.admin-shell main :is(.panel, .content-section) {
+  min-width: 0;
+  margin-top: var(--workspace-gap);
+  padding: var(--workspace-padding);
+  border: 1px solid var(--line);
+  border-radius: var(--workspace-radius);
+  background: linear-gradient(145deg, var(--surface), var(--raised));
+}
+
+.admin-shell main .content-section-header {
+  padding: 0 0 14px;
+  background: transparent;
+}
+
+.admin-shell main .content-section-header h3 {
+  font-size: 16px;
+}
+
+.admin-shell main .section-items {
+  padding: 0;
+}
+
+.admin-shell main :is(#button-list, #archive-list, #archive-buttons, .section-items) > .list-item {
+  border-inline: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.admin-shell main :is(#button-list, #archive-list, #archive-buttons, .section-items) > .list-item:first-child {
+  border-top: 0;
+}
+
+.admin-shell main :is(#button-list, #archive-list, #archive-buttons, .section-items) > .list-item:last-child {
+  border-bottom: 0;
+}
+
+.admin-shell main :is(#button-list, #archive-list, #archive-buttons, .section-items) > .list-item:hover {
+  background: var(--hover);
+}
+
+.admin-shell main .panel-title {
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.admin-shell main :is(.panel-title h2, .panel-title h3, .panel > h2, .panel > h3) {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.admin-shell :is(main, dialog) :where(button, input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"]), select, textarea) {
+  min-height: 36px;
+  border-radius: 9px;
+  font-size: 12px;
+}
+
+.admin-shell :is(main, dialog) :where(button, a, input, select, textarea, summary):focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+}
+
+.admin-shell :is(main, dialog) :where(button, a, input, select, textarea) {
+  transition: background-color .15s ease, border-color .15s ease, color .15s ease;
+}
+
+.admin-shell dialog {
+  border-radius: var(--workspace-radius);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.admin-shell dialog h2 {
+  font-size: 24px;
+  letter-spacing: -.6px;
+}
+
+/* Timed events keep their duration geometry; their details expose full controls. */
+.admin-shell main .agenda-event {
+  min-height: 0;
+}
+
+/* Include legacy ID selectors so their module rules cannot replace this bar. */
+.admin-shell main :is(.workspace-tabs, #settings-nav, #affiliation .aff-tabs) {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 0 0 18px;
+  padding: 0 0 11px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+}
+
+.admin-shell main :is(.workspace-tabs, #settings-nav, #affiliation .aff-tabs)[hidden] {
+  display: none;
+}
+
+.admin-shell main :is(.workspace-tabs, #settings-nav, #affiliation .aff-tabs) button {
+  min-height: 40px;
+  padding: 10px 16px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+  box-shadow: none;
+}
+
+.admin-shell main :is(.workspace-tabs, #settings-nav, #affiliation .aff-tabs) button:is(.active, [aria-selected="true"], [aria-current="page"]) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+  box-shadow: none;
+}
+
+.admin-shell main :is(.workspace-tabs, #settings-nav, #affiliation .aff-tabs) button:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.admin-shell #settings .settings-layout {
+  display: block;
+}
+
+.admin-shell #settings-nav {
+  position: static;
+}
+
+.admin-shell .settings-card {
+  align-items: flex-start;
+  padding: 14px;
+  border-radius: 12px;
+  background: var(--surface);
+  gap: 5px;
+}
+
+.admin-shell .settings-card span,
+.admin-shell .appearance-status {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.admin-shell .settings-card strong {
+  font-size: 24px;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-shell #affiliation {
+  --aff-cyan: var(--accent);
+  --aff-blue: var(--stats-sources);
+  --aff-purple: var(--purple);
+  --aff-green: var(--success);
+}
+
+.admin-shell #affiliation .aff-card {
+  padding: var(--workspace-padding);
+  border-radius: var(--workspace-radius);
+  background: linear-gradient(145deg, var(--surface), var(--raised));
+}
+
+.admin-shell main #affiliation .aff-partner-tabs {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  /* Leave space for the focus outline inside the scrolling region. */
+  padding: 5px 5px 11px;
+}
+
+.admin-shell #appearance .theme-list {
+  gap: var(--workspace-gap);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+}
+
+.admin-shell #appearance .theme-card {
+  margin: 0;
+}
+
+.admin-shell #appearance .appearance-layout {
+  gap: 18px;
+}
+
+.admin-shell #appearance .appearance-controls {
+  padding: var(--workspace-padding);
+  border: 1px solid var(--line);
+  border-radius: var(--workspace-radius);
+  background: linear-gradient(145deg, var(--surface), var(--raised));
+}
+
+.admin-shell #appearance .appearance-controls details {
+  border-color: var(--line);
+  background: var(--surface);
+}
+
+.admin-shell #appearance .color-swatches button {
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+}
+
+.admin-shell .workspace-content {
+  min-width: 0;
+}
+
+.admin-shell #descriptions-panel > .description-fields {
+  max-width: 720px;
+}
+
+@media (max-width: 767px) {
+  .admin-shell main {
+    padding: 16px 12px 24px;
+  }
+}
+
+@media (max-width: 760px) {
+  .admin-shell main #settings-nav.workspace-tabs {
+    display: none;
+  }
+
+  .admin-shell .settings-mobile-nav {
+    margin-bottom: 14px;
+  }
+}
+
+@media (max-width: 650px) {
+  .admin-shell {
+    --workspace-padding: 14px;
+  }
+
+  .admin-shell main :is(.section-head, .page-heading) :is(h1, h2) {
+    font-size: 21px;
+  }
+
+  .admin-shell main :is(.workspace-tabs, #settings-nav, #affiliation .aff-tabs) button {
+    padding: 9px;
+    font-size: 12px;
+  }
+
+  .admin-shell .settings-card strong {
+    font-size: 22px;
+  }
+}
+
+@media (pointer: coarse) {
+  .admin-shell main :is(.workspace-tabs, #settings-nav, #affiliation .aff-tabs) button,
+  .admin-shell :is(main, dialog) :is(button, select, input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"])) {
+    min-height: 44px;
+  }
+
+  .admin-shell #appearance .color-swatches button {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-shell *,
+  .admin-shell *::before,
+  .admin-shell *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}

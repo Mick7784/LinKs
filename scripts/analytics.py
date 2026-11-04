@@ -1730,7 +1730,8 @@ class Handler(BaseHTTPRequestHandler):
         if url.path in {"/uuid.js","/description-workflow.js","/description-search.js","/description-analysis.js","/description-sections.js","/description-editor.js","/descriptions.js","/descriptions.css","/affiliation.js","/affiliation-overview.js","/affiliation.css","/collection.js","/partner-report.js","/source-platforms.js","/daily-report.js","/charts.js","/navigation.js","/page-editor.js","/page-editor.css","/page-editor-preview.css","/appearance.js","/appearance.css","/shortcuts.js","/uploads.js","/storage.js","/settings.js","/tracking.js","/title-batch.js","/link-batch.js","/theme-init.js"}:return self.file(ADMIN/url.path[1:])
         files={"/":("index.html","text/html;charset=utf-8"),"/app.js":("app.js","application/javascript"),"/dates.js":("dates.js","application/javascript"),"/calendar.js":("calendar.js","application/javascript"),"/style.css":("style.css","text/css")}
         files.update({'/statistics-workspace.js':('statistics-workspace.js','application/javascript'),
-                      '/statistics-workspace.css':('statistics-workspace.css','text/css')})
+                      '/statistics-workspace.css':('statistics-workspace.css','text/css'),
+                      '/workspace.css':('workspace.css','text/css')})
         return self.file(ADMIN/files[url.path][0],files[url.path][1]) if url.path in files else self.send(404)
     @after_transactions
     def do_POST(self):
