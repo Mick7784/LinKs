@@ -1,5 +1,48 @@
 # Changelog
 
+## V1.4.17
+
+# V1.4.17 — Administration harmonisée
+
+### Interface d’administration
+
+- La page Statistiques devient la référence commune : couleurs sémantiques,
+  typographie, largeur de lecture, cartes, listes, contrôles et navigation.
+- Rubriques harmonisées dans Réglages, Apparence, Descriptions et Affiliation.
+  Réglages conserve son sélecteur mobile ; les partenaires d’Affiliation gardent
+  un défilement interne lorsque nécessaire.
+- Surfaces communes pour les campagnes, liens permanents, raccourcis et archives,
+  ainsi que pour les fenêtres d’édition.
+- Navigation clavier avec conservation du focus après changement de rubrique,
+  commandes tactiles adaptées et prise en compte du mouvement réduit.
+
+### Codes promos
+
+- Le tableau des taux de copie affiche uniquement les campagnes actives et
+  éligibles disposant réellement d’un code renseigné.
+- Les totaux et dénominateurs suivent ce même périmètre. Les campagnes sans code,
+  désactivées, en brouillon, expirées, futures, archivées ou introuvables sont
+  exclues de ce tableau ; leurs historiques restent conservés.
+
+### Conservation et validation
+
+- Les thèmes personnalisables de la page publique et leurs aperçus conservent
+  leurs styles. Les liens publiés, redirections et historiques sont préservés.
+- Aucune nouvelle migration de données requise par cette version.
+- L’organisation fonctionnelle actuelle de Liens suivis est conservée. Les
+  propositions de nouveaux onglets, filtres et favoris restent à confirmer.
+- Contrôles locaux : 11 tests Python et 14 suites navigateur, dont un parcours
+  transversal des dix vues avec deux thèmes, cinq largeurs, clavier, tactile,
+  mouvement réduit et comparaison des données avant et après navigation.
+- La publication reste soumise au workflow complet et aux vérifications des
+  images AMD64/ARM64, des tags numérotés et de l’image `latest`.
+
+### Mise à jour
+
+- La publication de l’image ne redémarre pas l’instance installée. La mise à
+  jour du service reste une opération distincte, avec le volume persistant et
+  la configuration existante conservés.
+
 ## V1.4.16
 
 # V1.4.16 — Statistiques interactives et indicateurs de performance
