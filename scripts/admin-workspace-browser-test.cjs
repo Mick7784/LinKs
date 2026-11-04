@@ -108,8 +108,14 @@ const {tmpdir}=require('node:os'),{join}=require('node:path');
   await page.emulateMedia({reducedMotion:'reduce'});
   for(const view of ['settings','appearance','descriptions','affiliation']){
    await navigate(view);
-   const motion=await page.locator(`#${view} .workspace-tabs button`).first().evaluate(button=>({transition:getComputedStyle(button).transitionDuration,animation:getComputedStyle(button).animationName}));
-   assert.deepEqual(motion,{transition:'0s',animation:'none'},view);
+   // Opening Appearance fetches data and replaces its bar. Read the current
+   // connected button atomically, rather than a handle that can be detached.
+   await page.waitForFunction(view=>{
+    const button=document.querySelector(`#${view}.active .workspace-tabs button`);
+    if(!button)return false;
+    const style=getComputedStyle(button);
+    return style.transitionDuration==='0s'&&style.animationName==='none';
+   },view);
   }
   await navigate('appearance');
   await page.locator('#appearance-section-library').focus();await page.keyboard.press('Enter');
