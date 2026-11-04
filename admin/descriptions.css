@@ -1,6 +1,5 @@
 @font-face{font-family:LinksDescriptionRoboto;src:url('/preview/assets/description-roboto-latin.woff2') format('woff2');font-style:normal;font-weight:400;font-display:swap}
-main:has(> #descriptions.active){max-width:none;margin-inline:0}
-#descriptions{max-width:none;container-type:inline-size}
+#descriptions{container-type:inline-size}
 #descriptions>.description-fields{max-width:720px}
 #descriptions .description-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin:16px 0}
 #descriptions .description-toolbar select{min-width:260px;max-width:100%;width:auto;flex:0 1 460px}

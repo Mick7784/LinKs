@@ -10,6 +10,8 @@ les vues de l’administration LinKs.
 - `admin/statistics-workspace.css` pour la composition de la référence.
 - `admin/style.css` pour les couleurs sémantiques des thèmes clair et sombre.
 - `admin/workspace.css` pour les règles communes aux autres vues.
+- `StudioNavigation.sectionBar` et `sectionFocus` dans `admin/navigation.js`
+  pour les barres de rubriques existantes et la conservation du focus.
 - `docs/STATISTICS-WORKSPACE.md` pour les périmètres analytiques.
 
 ## Présentation
@@ -77,3 +79,14 @@ les imports et le planning, adaptent cette composition à leurs tâches.
 
 Chaque livraison vérifie les thèmes clair et sombre, le mouvement réduit,
 la navigation clavier, les états de données et les largeurs de bureau et mobiles.
+
+Les barres `.workspace-tabs` utilisent une navigation nommée, des boutons
+natifs et `aria-current="page"` pour indiquer la rubrique courante ;
+`aria-controls` relie chaque bouton à son contenu. Elles ne déclarent pas
+le rôle ARIA `tab` : tous les boutons restent accessibles par Tab. Les flèches
+et Début/Fin déplacent uniquement le focus ; Entrée ou Espace active la rubrique.
+Statistiques conserve son composant d’onglets spécialisé.
+
+Le sélecteur mobile des neuf rubriques de Réglages et le défilement interne
+des partenaires d’Affiliation adaptent cette navigation au volume de rubriques.
+Les aperçus publics intégrés et le rendu YouTube gardent leurs propres styles.

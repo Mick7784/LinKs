@@ -73,6 +73,7 @@
    if(current)host.querySelectorAll('[data-aff-fact]').forEach(node=>{const key=node.dataset.affFact,label=key==='next_due'&&!current.enabled?'Désactivé':at(current[key]);if(node.textContent!==label)node.textContent=label});
  }
  function render(){
+   const restoreFocus=StudioNavigation.sectionFocus(host);
    clearInterval(mfaTimer);mfaTimer=null;
    renderVersion++;
    const current=selected(),label=current?current.partner:'Affiliation';
@@ -85,7 +86,8 @@
     <div id="aff-sync-notice">${syncNotice()}</div>
     <div id="aff-content"></div><dialog id="aff-dialog" aria-labelledby="aff-dialog-title"></dialog>`;
    $('aff-period').value=selectedRange.period;
-   renderContent();refreshSyncState();
+   host.querySelectorAll('.aff-tabs').forEach((nav,index)=>{StudioNavigation.sectionBar(nav);nav.querySelectorAll('button').forEach(button=>{button.id=index===0?'aff-partner-'+(button.dataset.id||'global'):'aff-section-'+button.dataset.affTab;button.setAttribute('aria-controls','aff-content')})});
+   renderContent();refreshSyncState();restoreFocus();
  }
  function renderContent(){
    if(!selected()&&tab==='overview'){window.LinksAffiliationOverview.render($('aff-content'),model.overview);return}
