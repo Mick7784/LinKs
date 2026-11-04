@@ -77,6 +77,8 @@ non authentifiées en mode local.
 Les campagnes disposent d'un tableau des impressions et clics publics avec
 leur taux de clic. Les codes promos disposent d'un rapport des copies divisées
 par les impressions de chaque offre, tous codes de cette offre confondus.
+Ce rapport inclut uniquement les campagnes actuellement éligibles avec un
+code promo renseigné. Ses totaux suivent ce même périmètre.
 Les agrégats utilisent les mêmes dates et origines pour les deux termes du
 ratio. Une absence d'impressions affiche « — ».
 

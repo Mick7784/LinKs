@@ -153,6 +153,25 @@ class StatisticsWorkspaceTests(unittest.TestCase):
         self.assertEqual(result['details']['copies']['items'][0]['campaign_id'],campaign)
         with self.a.connection() as db:self.assertEqual(before,'\n'.join(db.iterdump()))
 
+    def test_copy_performance_requires_a_current_active_campaign_with_a_real_code(self):
+        ids={}
+        variants={'active':{},'no-code':{'promo_code':''},'blank-code':{},
+                  'disabled':{'active':False},'draft':{'draft':True},
+                  'expired':{'end_at':'2026-10-01T00:00:00Z'},
+                  'future':{'start_at':'2027-01-01T00:00:00Z'},'archived':{}}
+        with self.a.connection() as db:
+            for name, values in variants.items():
+                ids[name]=self.a.save_content(db,self.a.block_data({'type':'promo','internal_name':name,
+                    'title':name,'url':'https://example.org/offer','promo_code':'TEST10',**values}))
+            db.execute('UPDATE content_blocks SET archived=1 WHERE id=?',(ids['archived'],))
+            db.execute("UPDATE content_blocks SET promo_code='   ' WHERE id=?",(ids['blank-code'],))
+        self.put([('2026-11-03','youtube','impression','block:'+ident,10) for ident in [*ids.values(),'lost']])
+        result=self.project()
+        for report in (result['performance'],result['period_performance']):
+            flags={row['id']:row['has_active_promo_code'] for row in report}
+            self.assertTrue(flags[ids['active']])
+            self.assertTrue(all(not enabled for ident,enabled in flags.items() if ident!=ids['active']))
+
     def test_campaign_eligibility_zero_to_four_and_archived(self):
         ids=[]
         for n in range(5):

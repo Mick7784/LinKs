@@ -1,0 +1,133 @@
+/* Shared administration foundation, derived from the Statistics workspace. */
+.admin-shell {
+  --workspace-width: 1450px;
+  --workspace-radius: 15px;
+  --workspace-gap: 14px;
+  --workspace-padding: 18px;
+  --primary: var(--accent);
+  --primary-line: var(--accent);
+  --on-primary: var(--on-accent);
+  --primary-hover: color-mix(in srgb, var(--accent) 85%, var(--text));
+}
+
+.admin-shell main {
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.admin-shell .view {
+  max-width: var(--workspace-width);
+  margin-inline: auto;
+}
+
+.admin-shell main :is(.section-head, .page-heading) {
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.admin-shell main :is(.section-head, .page-heading) :is(h1, h2) {
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -.6px;
+}
+
+.admin-shell main :is(.section-head, .page-heading) p {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.admin-shell main .panel {
+  min-width: 0;
+  margin-top: var(--workspace-gap);
+  padding: var(--workspace-padding);
+  border: 1px solid var(--line);
+  border-radius: var(--workspace-radius);
+  background: linear-gradient(145deg, var(--surface), var(--raised));
+}
+
+.admin-shell main .panel-title {
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.admin-shell main .panel-title h3 {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.admin-shell main :where(button, input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"]), select, textarea) {
+  min-height: 36px;
+  border-radius: 9px;
+  font-size: 12px;
+}
+
+.admin-shell main :where(button, a, input, select, textarea, summary):focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+}
+
+.admin-shell main :where(button, a, input, select, textarea) {
+  transition: background-color .15s ease, border-color .15s ease, color .15s ease;
+}
+
+.admin-shell main :is(.appearance-tabs, #affiliation .aff-tabs) {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 0 0 18px;
+  padding: 0 0 11px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+}
+
+.admin-shell main :is(.appearance-tabs, #affiliation .aff-tabs)[hidden] {
+  display: none;
+}
+
+.admin-shell main :is(.appearance-tabs, #affiliation .aff-tabs) button {
+  min-height: 40px;
+  padding: 10px 16px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+  box-shadow: none;
+}
+
+.admin-shell main :is(.appearance-tabs, #affiliation .aff-tabs) button:is(.active, [aria-selected="true"], [aria-current="page"]) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+  box-shadow: none;
+}
+
+@media (max-width: 650px) {
+  .admin-shell {
+    --workspace-padding: 14px;
+  }
+
+  .admin-shell main :is(.section-head, .page-heading) :is(h1, h2) {
+    font-size: 21px;
+  }
+
+  .admin-shell main :is(.appearance-tabs, #affiliation .aff-tabs) button {
+    padding: 9px;
+    font-size: 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-shell main *,
+  .admin-shell main *::before,
+  .admin-shell main *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}

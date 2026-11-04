@@ -29,8 +29,10 @@ const {spawn,execFileSync}=require('node:child_process'),{mkdtempSync,mkdirSync,
       assert.equal(await page.locator('#sw-partners tbody td').last().textContent(),'27');
     }
     if(['campaigns','copies'].includes(tab)){
-      assert.equal(await page.locator('.sw-performance-kpis strong').first().textContent(),'140');
+      assert.equal(await page.locator('.sw-performance-kpis strong').first().textContent(),tab==='copies'?'140':'340');
       if(tab==='copies'){
+        assert.equal(await page.locator('#sw-performance tbody tr').count(),1);
+        assert.match(await page.locator('#sw-performance tbody').textContent(),/Campagne de validation 1/);
         assert.equal(await page.locator('.sw-performance-kpis strong').last().textContent(),'5 %');
         await page.selectOption('#sw-source','p:instagram');
         assert.equal(await page.locator('.sw-performance-kpis strong').first().textContent(),'40');
