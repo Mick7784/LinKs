@@ -20,6 +20,67 @@ class AutomaticTests(unittest.TestCase):
     report=ZipTests.report
     def ingest(self,files):return auto.ingest(self.db,self.id,{**archive(files),'filename':'exports.zip'},'2026-11-03T12:00:00Z')
 
+    def test_known_reference_still_ranks_a_new_complement_in_the_same_zip(self):
+        source=category()
+        self.ingest([('Category.csv',source)])
+        complement=category('1,00').replace('Catégorie','Titre du produit')
+        result=self.ingest([('Category.csv',source),('Product.csv',complement)])
+        self.assertEqual(result['files'][0]['reference_metrics'],[])
+        self.assertEqual(self.report()['totals']['commission_cents'],5187)
+
+    def test_zip_without_provider_revision_cannot_replace_manual_totals(self):
+        data=payload()
+        amazon.ingest(self.db,self.id,data,'2026-11-02T10:00:00Z')
+        result=self.ingest([('unseen.csv',daily([('2026-11-01','9.00')]))])
+        self.assertFalse(result['imported'])
+        self.assertTrue(result['pending'])
+        self.assertEqual(self.report()['totals']['commission_cents'],1234)
+
+    def test_zip_with_invalid_financial_member_cannot_apply_correction(self):
+        self.ingest([('Category.csv',category())])
+        broken=category().replace('Revenus totaux','Remboursements (EUR)')
+        result=self.ingest([('Category.csv',category('52,00')),('Broken.csv',broken)])
+        self.assertFalse(result['imported'])
+        self.assertIn('Remboursements',result['reasons'][0])
+        self.assertEqual(self.report()['totals']['commission_cents'],5187)
+
+    def test_zip_rejects_unknown_currency_and_invalid_digit_grouping(self):
+        for text in (category().replace('Currency: EUR','Currency: NOK'),
+                     category('1,2.34'),
+                     category().replace('Revenus totaux\n','Revenus totaux;Devise\n').replace('51,87\n','51,87;GBP\n')):
+            result=self.ingest([('Category.csv',text)])
+            self.assertFalse(result['imported'])
+            self.assertEqual(result['state'],'unusable')
+        self.assertIsNone(self.report()['totals']['commission_cents'])
+
+    def test_zip_preserves_return_columns_and_rejects_ambiguous_returns(self):
+        text='Scope: all\nCurrency: EUR\nDate;Clics;Articles retournés;Commission\n2026-10-30;813;2;51.87\n2026-10-31;0;0;-1\n2026-11-01;0;;0\n'
+        self.assertTrue(self.ingest([('A.csv',text)])['imported'])
+        self.assertEqual(self.report()['totals']['returned_items'],2)
+        self.assertEqual([row['returned_items'] for row in self.report()['daily']],[2,0,None])
+        conflicting=text.replace('Articles retournés;','Articles retournés;Returned Items;').replace(';2;51.87',';2;3;51.87').replace(';0;-1',';0;0;-1').replace(';;0',';;;0')
+        self.assertFalse(self.ingest([('conflicting.csv',conflicting)])['imported'])
+        self.assertEqual(self.report()['totals']['returned_items'],2)
+
+    def test_csv_and_reordered_zip_share_observation_history(self):
+        text='Date;Commission\n2026-10-30;10.00\n2026-10-31;12.34\n'
+        data=dict(csv=text,kind='earnings',start='2026-10-30',end='2026-10-31',scope='all',
+                  mapping={'date':'Date','commission_cents':'Commission'},decimal='dot',confirmed=True)
+        correction=daily([('2026-10-30','10'),('2026-10-31','13')])
+        self.assertTrue(self.ingest([('original.csv',daily([('2026-10-30','10'),('2026-10-31','12.34')]))])['imported'])
+        self.assertTrue(self.ingest([('correction.csv',correction)])['imported'])
+        reordered={**data,'csv':'Date;Commission\n2026-10-31;12.3400\n2026-10-30;10\n'}
+        self.assertTrue(amazon.ingest(self.db,self.id,reordered,'2026-11-04T10:00:00Z')['duplicate'])
+        self.assertEqual(self.report()['totals']['commission_cents'],2300)
+        self.assertEqual(self.report()['reports'][0]['source'],'amazon-zip')
+
+    def test_unsupported_financial_column_keeps_original_out_of_totals(self):
+        text='Scope: all\nCurrency: EUR\nDate;Commission;Remboursements (EUR)\n2026-10-30;51.87;2\n'
+        result=self.ingest([('A.csv',text)])
+        self.assertEqual(result['state'],'unusable')
+        self.assertIn('Remboursements (EUR)',result['reasons'][0])
+        self.assertIsNone(self.report()['totals']['commission_cents'])
+
     def test_native_annual_export_marker_is_not_a_commission_day(self):
         text='Date,catégorie,taux de conversion direct,articles retournés,revenus totaux\n11-02-2026,Maison,4,1,12.34\n'
         result=self.ingest([('Category-03nov2026.csv',text)])

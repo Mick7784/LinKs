@@ -57,13 +57,14 @@ class ZipTests(unittest.TestCase):
         self.assertTrue(amazon.ingest_archive(self.db,self.id,data,'2026-11-02T12:00:00Z')['duplicate'])
         self.assertEqual(self.count(),2);self.assertEqual(self.report()['totals']['commission_cents'],5201)
 
-    def test_legacy_manual_reference_is_replaced_without_losing_history(self):
+    def test_legacy_zip_preserves_manual_reference(self):
         p=payload();p.update(start='2026-10-30',end='2026-10-31');p['csv']=p['csv'].replace('01/11/2026','31/10/2026')
         amazon.ingest(self.db,self.id,p,'2026-11-02T10:00:00Z')
-        result=self.ingest([('Category.csv',category())])
-        self.assertEqual(result['replaced'],1);self.assertEqual(self.count(),2)
+        with self.assertRaisesRegex(ValueError,'CSV manuel'):
+            self.ingest([('Category.csv',category())])
+        self.assertEqual(self.count(),1)
         self.assertEqual(len(amazon.active_reports(self.db,self.id)),1)
-        self.assertEqual(self.report()['totals']['commission_cents'],5187)
+        self.assertEqual(self.report()['totals']['commission_cents'],1234)
 
     def test_incompatible_overlap_and_scope_block_all_files(self):
         self.ingest([('Category.csv',category())])

@@ -74,17 +74,17 @@ ICONS.update({'phone','video','podcast','blog','download','calendar','location',
 IMAGE_TYPES={"image/jpeg":".jpg","image/png":".png","image/webp":".webp","image/gif":".gif"}
 
 @contextmanager
+def sqlite_connection(timeout=10):
+    with closing(sqlite3.connect(DB,timeout=timeout)) as db, db:
+        db.row_factory=sqlite3.Row
+        db.execute("PRAGMA foreign_keys=ON")
+        yield db
+
+
+@contextmanager
 def connection():
-    with DATA_LOCK:
-        db=sqlite3.connect(DB,timeout=10); db.row_factory=sqlite3.Row; db.execute("PRAGMA foreign_keys=ON")
-        try:
-            yield db
-            db.commit()
-        except Exception:
-            db.rollback()
-            raise
-        finally:
-            db.close()
+    with DATA_LOCK, sqlite_connection() as db:
+        yield db
 def now_iso(): return datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
 def instant(value,strict=False,zone=None):
     if not value:return None
@@ -125,6 +125,7 @@ def init():
     with connection() as db:
         db.execute("PRAGMA journal_mode=WAL")
         db.execute("CREATE TABLE IF NOT EXISTS counts(day TEXT,source TEXT,kind TEXT,link TEXT,total INTEGER NOT NULL,PRIMARY KEY(day,source,kind,link))")
+        initialize_redirect_observations(db)
         db.execute("""CREATE TABLE IF NOT EXISTS content_blocks(
           id TEXT PRIMARY KEY,type TEXT NOT NULL,internal_name TEXT NOT NULL,title TEXT NOT NULL,
           description TEXT NOT NULL DEFAULT '',url TEXT NOT NULL,icon TEXT NOT NULL DEFAULT 'website',
@@ -220,10 +221,29 @@ def increment(db,kind,source,link,day):
     db.execute("INSERT INTO counts VALUES(?,?,?,?,1) ON CONFLICT(day,source,kind,link) DO UPDATE SET total=total+1",(day,source,kind,link))
     # The report window is bounded; recording a new action never purges history.
 
-def collection_allowed(headers):
-    if headers.get('DNT')=='1' or headers.get('Sec-GPC')=='1':return False
+def initialize_redirect_observations(db):
+    db.execute("""CREATE TABLE IF NOT EXISTS redirect_observations(
+        day TEXT NOT NULL, kind TEXT NOT NULL, token TEXT NOT NULL, placement TEXT NOT NULL,
+        outcome TEXT NOT NULL, referrer TEXT NOT NULL, total INTEGER NOT NULL CHECK(total>0),
+        PRIMARY KEY(day,kind,token,placement,outcome,referrer))""")
+
+
+def collection_exclusion(headers):
+    if headers.get('DNT')=='1' or headers.get('Sec-GPC')=='1':return 'privacy'
+    for name in ('Sec-Purpose','Purpose','X-Purpose','X-Moz'):
+        if re.search(r'\b(?:prefetch|prerender|preview)\b',headers.get(name,'').lower()):
+            return 'prefetch'
     agent=headers.get('User-Agent','').lower()
-    return not any(x in agent for x in ['bot','spider','crawler','headless','facebookexternalhit','meta-externalagent','preview'])
+    if any(x in agent for x in ('bot','spider','crawler','headless','facebookexternalhit','meta-externalagent',
+                                'preview','slack-imgproxy','whatsapp','discord-embed','skypeuripreview','microsoftpreview')):
+        return 'bot'
+    return None
+
+
+def collection_allowed(headers):
+    return collection_exclusion(headers) is None
+
+
 def source_of(data):
     source=data.get("source","")
     if not isinstance(source,str):raise ValueError()
@@ -236,9 +256,17 @@ def source_of(data):
         return {"yt":"youtube","ig":"instagram"}.get(source,source) if source in known else "autre-campagne"
     ref=data.get("referrer","")
     if not isinstance(ref,str):raise ValueError()
-    host=(urlsplit(ref).hostname or "").lower()
-    if host==urlsplit(ORIGIN).hostname:return "direct-inconnu"
-    for domain,name in [("youtube.com","youtube"),("youtu.be","youtube"),("instagram.com","instagram"),("facebook.com","facebook"),("tiktok.com","tiktok"),("discord.com","discord"),("google.com","google"),("google.fr","google")]:
+    return observed_referrer(ref,rules)
+
+
+def observed_referrer(ref,rules,*,same_site='direct-inconnu'):
+    try:
+        parsed=urlsplit(ref[:4096])
+        host=(parsed.hostname or "").lower().rstrip('.') if parsed.scheme in {'http','https'} else ''
+    except ValueError:
+        host=''
+    if host and host==urlsplit(ORIGIN).hostname:return same_site
+    for domain,name in [("youtube.com","youtube"),("youtu.be","youtube"),("instagram.com","instagram"),("facebook.com","facebook"),("tiktok.com","tiktok"),("discord.com","discord"),("discord.gg","discord"),("google.com","google"),("google.fr","google")]:
         if host==domain or host.endswith("."+domain):return name
     for rule in rules:
         if any(host==domain or host.endswith("."+domain) for domain in rule["domains"]):return rule["key"]
@@ -551,7 +579,10 @@ def save_page_layout(data):
         return page_layout(db)
 
 def public_config(snapshot=False):
-    with connection() as db:
+    # WAL readers can assemble a consistent public response during an import.
+    connect=connection if snapshot else sqlite_connection
+    with connect() as db:
+        db.execute('BEGIN')
         now=datetime.now(timezone.utc)
         rows=list(db.execute("SELECT * FROM content_blocks WHERE retired=0 AND archived=0 ORDER BY CASE WHEN type IN ('promo','featured') THEN 0 ELSE 1 END,"+classic_priority_order(db)+"position,created_at,id"))
         selection=select_campaigns(rows,now)
@@ -806,6 +837,8 @@ def export_backup():
         for path in (DATA_DIR/'assets').glob('*'):
             if path.is_file():assets[path.name]=base64.b64encode(path.read_bytes()).decode('ascii')
         result={'format':'links-backup','version':3,'created_at':now_iso(),'software_version':software_version(),'instance_id':instance.get(db,'app.instance_id'),'tables':tables,'images':images,'assets':assets,'affiliation':affiliation.export_backup(db),'descriptions':descriptions.export_backup(db)}
+        observations=[dict(row) for row in db.execute('SELECT * FROM redirect_observations')]
+        if observations:result['redirect_observations']=observations
         encoded=json.dumps(result,ensure_ascii=False).encode()
         if len(encoded)>BACKUP_LIMIT:raise ValueError('Sauvegarde supérieure à 64 Mo : sauvegarder le volume serveur')
         return encoded
@@ -816,6 +849,12 @@ def restore_backup(data,preview=False):
     if data.get('format') not in {'links-backup','domotik-links-backup'} or data.get('version') not in {1,2,3}:raise ValueError('Ce fichier n’est pas une sauvegarde Links compatible')
     tables=data.get('tables');images=data.get('images')
     if not isinstance(tables,dict) or not isinstance(images,dict):raise ValueError('Sauvegarde incomplète')
+    observations=data.get('redirect_observations',[])
+    if not isinstance(observations,list):raise ValueError('Observations de redirection invalides')
+    for observation in observations:
+        validate_redirect_observation(observation)
+    affiliation_bundle=data.get('affiliation')
+    affiliation.validate_backup(affiliation_bundle)
     if data.get('version')<3:
         expected={'content_blocks','top_buttons','settings','counts'}
         if not expected<=set(tables) or set(tables)-set(BACKUP_TABLES):raise ValueError('Sauvegarde incomplète')
@@ -1106,7 +1145,7 @@ def restore_backup(data,preview=False):
             for ref in refs:
                 if ref.startswith('/assets/') and not (STATIC/ref[1:]).is_file() and not (DATA_DIR/ref[1:]).is_file() and ref[8:] not in asset_bytes:raise ValueError('Asset référencé manquant')
             description_restore=descriptions.restore_backup(db,data.get('descriptions'))
-            affiliation_restore=affiliation.restore_backup(db,data.get('affiliation'))
+            affiliation_restore=affiliation.restore_backup(db,affiliation_bundle,validated=True)
             summary={'descriptions':description_restore,'affiliation':affiliation_restore,'blocks':len(tables['content_blocks']),'buttons':len(tables['top_buttons']),'images':len(images),
                      'retained_content':len(retained_rows),'published_redirects':len(tables['story_links'])+len(tables['tracked_tokens']),
                      'counter_total':sum(row['total'] for row in tables['counts'])}
@@ -1134,6 +1173,11 @@ def restore_backup(data,preview=False):
                     # Storage compatibility only: never import an obsolete category.
                     for row in tables[table]:row['category']=legacy_link_categories.get(row['id'],'')
                 db.executemany('INSERT INTO '+table+' ('+','.join(columns)+') VALUES ('+','.join('?' for _ in columns)+')',[[row[c] for c in columns] for row in tables[table]])
+            if observations:
+                initialize_redirect_observations(db)
+                db.executemany("""INSERT INTO redirect_observations(day,kind,token,placement,outcome,referrer,total)
+                    VALUES(:day,:kind,:token,:placement,:outcome,:referrer,:total)
+                    ON CONFLICT(day,kind,token,placement,outcome,referrer) DO UPDATE SET total=MAX(total,excluded.total)""",observations)
             db.execute("INSERT OR REPLACE INTO settings VALUES('content.initialized','1')")
             # New filenames ensure that a failed restore cannot overwrite current images.
             for name,raw in decoded.items():
@@ -1150,6 +1194,25 @@ def restore_backup(data,preview=False):
     except Exception:
         for path in written:path.unlink(missing_ok=True)
         raise
+
+
+def validate_redirect_observation(row):
+    fields={'day','kind','token','placement','outcome','referrer'}
+    if not isinstance(row,dict) or set(row)!=fields|{'total'} or any(not isinstance(row[k],str) for k in fields):
+        raise ValueError('Observation de redirection invalide')
+    kind=row['kind']
+    token_pattern={'story':STORY_TOKEN,'tracked':tracked_links.TOKEN}.get(kind)
+    if not token_pattern or not token_pattern.fullmatch(row['token']):
+        raise ValueError('Jeton de redirection invalide')
+    if date.fromisoformat(row['day']).isoformat()!=row['day'] or type(row['total']) is not int or not 0<row['total']<2**63:
+        raise ValueError('Compteur de redirection invalide')
+    legacy_sources={'shared-unknown','instagram','youtube','facebook','tiktok','discord','newsletter','site','mail','qr'}
+    if not re.fullmatch(r'tracked:[a-f0-9]{32}',row['placement']) and not (kind=='story' and row['placement'] in legacy_sources):
+        raise ValueError('Placement de redirection invalide')
+    if row['outcome']=='open' and re.fullmatch(r'[a-z0-9._-]{1,120}',row['referrer']):
+        return
+    if row['outcome'] not in {'prefetch','bot'} or row['referrer']:
+        raise ValueError('Signal de redirection invalide')
 
 
 def validate_settings(values):
@@ -1641,7 +1704,7 @@ class Handler(BaseHTTPRequestHandler):
             except (OSError,ValueError):return self.json(502,{"error":"Vidéo momentanément indisponible"})
         if url.path=="/healthz":
             try:
-                with connection() as db:db.execute("SELECT total FROM counts LIMIT 1").fetchone()
+                with sqlite_connection() as db:db.execute("SELECT total FROM counts LIMIT 1").fetchone()
                 return self.send(200,b"ok","text/plain")
             except (sqlite3.Error,OSError):return self.send(503)
         if self.server.admin and url.path.startswith("/preview/assets/"):
@@ -1939,51 +2002,83 @@ class Handler(BaseHTTPRequestHandler):
         token=path.removeprefix('/go/')
         return self.redirect_tracked(token,count=False) if tracked_links.TOKEN.fullmatch(token) else self.redirect_story(token,count=False)
     def redirect_short(self,code,count=True):
-        try:
-            with connection() as db:alias=short_urls.lookup(db,code)
-            if not alias:return self.send(404)
-            if alias['revoked']:return self.send(410)
-            token=alias['target_token']
-            if token.startswith('tk_'):return self.redirect_tracked(token,count=count)
-            return self.redirect_story(token,count=count,source_override=alias['source'])
-        except (sqlite3.Error,OSError):return self.send(503)
+        return self.redirect_link(code,count,short=True)
+
     def redirect_tracked(self,token,count=True):
-        try:
-            with connection() as db:
-                db.execute('BEGIN IMMEDIATE')
-                row=tracked_links.find_destination(db,token)
-                if not row:return self.send(404)
-                if not row['enabled'] or not story_url_valid(row['url']):return self.send(410)
-                if count and instance.get(db,"analytics.enabled")=="true" and collection_allowed(self.headers):
-                    now=datetime.now(PARIS)
-                    increment(db,'tracked','tracked:'+row['source_id'],'tracked:'+token+':'+now.strftime('%H'),now.date().isoformat())
-                    tracked_links.count_click(db,token)
-                target=story_destination(row['url'])
-            self.send_response(302);self.send_header('Location',target);self.send_header('Cache-Control','no-store');self.send_header('Referrer-Policy','no-referrer');self.send_header('Content-Length','0');self.end_headers()
-        except (sqlite3.Error,OSError):return self.send(503)
-    def redirect_story(self,token,count=True,source_override=None):
+        return self.redirect_link(token,count)
+
+    def redirect_story(self,token,count=True):
         if not STORY_TOKEN.fullmatch(token):return self.send(404)
+        return self.redirect_link(token,count)
+
+    def resolve_redirect(self,db,token,short):
+        source=None
+        if short:
+            alias=short_urls.lookup(db,token)
+            if not alias:return 404,None
+            if alias['revoked']:return 410,None
+            token,source=alias['target_token'],alias['source']
+        if tracked_links.TOKEN.fullmatch(token):
+            row=tracked_links.find_destination(db,token)
+            if not row:return 404,None
+            if not row['enabled'] or not story_url_valid(row['url']):return 410,None
+            return 302,('tracked',token,'tracked:'+row['source_id'],story_destination(row['url']))
+        row=db.execute('''SELECT b.url,s.deleted FROM story_links s
+            LEFT JOIN content_blocks b ON b.id=s.promotion_id WHERE s.token=?''',(token,)).fetchone()
+        if not row:return 404,None
+        if row['deleted'] or not row['url'] or not story_url_valid(row['url']):return 410,None
+        if source is None:
+            source=parse_qs(urlsplit(self.path).query).get('utm_source',[''])[0].strip().lower()
+            if re.fullmatch(r'src_[a-f0-9]{32}',source):
+                ident=source[4:]
+                source='tracked:'+ident if db.execute('SELECT 1 FROM tracking_sources WHERE id=?',(ident,)).fetchone() else 'shared-unknown'
+            elif source not in {'instagram','youtube','facebook','tiktok','discord','newsletter','site','mail','qr'}:
+                source='shared-unknown'
+        return 302,('story',token,source,story_destination(row['url']))
+
+    def redirect_link(self,key,count,short=False):
         try:
-            with connection() as db:
-                db.execute('BEGIN IMMEDIATE')
-                item=db.execute('''SELECT b.url,b.internal_name,s.deleted FROM story_links s
-                  LEFT JOIN content_blocks b ON b.id=s.promotion_id WHERE s.token=?''',(token,)).fetchone()
-                if not item:return self.send(404)
-                if item['deleted'] or not item['url']:return self.send(410)
-                if not story_url_valid(item['url']):return self.send(410)
-                if count and instance.get(db,"analytics.enabled")=="true" and collection_allowed(self.headers):
-                    now=datetime.now(PARIS)
-                    source=source_override if source_override is not None else parse_qs(urlsplit(self.path).query).get('utm_source',[''])[0].strip().lower()
-                    if source_override is not None:pass
-                    elif re.fullmatch(r'src_[a-f0-9]{32}',source):
-                        ref=source[4:]
-                        source='tracked:'+ref if db.execute("SELECT 1 FROM tracking_sources WHERE id=?",(ref,)).fetchone() else 'shared-unknown'
-                    elif source not in {'instagram','youtube','facebook','tiktok','discord','newsletter','site','mail','qr'}:source='shared-unknown'
-                    increment(db,'story',source,'story:'+token+':'+now.strftime('%H'),now.date().isoformat())
-                    tracked_links.count_campaign_source(db,source)
-                target=story_destination(item['url'])
-            self.send_response(302);self.send_header('Location',target);self.send_header('Cache-Control','no-store');self.send_header('Referrer-Policy','no-referrer');self.send_header('Content-Length','0');self.end_headers()
+            with sqlite_connection(timeout=0.25) as db:
+                db.execute('BEGIN')
+                status,route=self.resolve_redirect(db,key,short)
+                enabled=count and route and instance.get(db,'analytics.enabled')=='true'
         except (sqlite3.Error,OSError):return self.send(503)
+        if not route:return self.send(status)
+        reason=collection_exclusion(self.headers) if enabled else 'privacy'
+        if reason!='privacy':
+            try:
+                status,route=self.record_redirect(key,short,reason)
+            except (sqlite3.Error,OSError):
+                print('LinKs : mesure de redirection indisponible.',file=sys.stderr)
+            if not route:return self.send(status)
+        self.send_response(302);self.send_header('Location',route[3]);self.send_header('Cache-Control','no-store');self.send_header('Referrer-Policy','no-referrer');self.send_header('Content-Length','0');self.end_headers()
+
+    def record_redirect(self,key,short,reason):
+        # Keep the existing publication/cleanup lock order and bound the cost
+        # of telemetry when an administrative write is already in progress.
+        if not DATA_LOCK.acquire(timeout=0.15):
+            raise sqlite3.OperationalError('Mesure occupée')
+        try:
+            with sqlite_connection(timeout=0.15) as db:
+                db.execute('BEGIN IMMEDIATE')
+                status,route=self.resolve_redirect(db,key,short)
+                if not route or instance.get(db,'analytics.enabled')!='true':return status,route
+                kind,token,placement,_=route
+                now=datetime.now(PARIS)
+                day=now.date().isoformat()
+                referrer=''
+                if not reason:
+                    rules=json.loads(instance.get(db,'analytics.source_rules','[]'))
+                    referrer=observed_referrer(self.headers.get('Referer',''),rules,same_site='site')
+                    increment(db,kind,placement,kind+':'+token+':'+now.strftime('%H'),day)
+                    if kind=='tracked':tracked_links.count_click(db,token)
+                    else:tracked_links.count_campaign_source(db,placement)
+                db.execute('''INSERT INTO redirect_observations VALUES(?,?,?,?,?,?,1)
+                    ON CONFLICT(day,kind,token,placement,outcome,referrer) DO UPDATE SET total=total+1''',
+                    (day,kind,token,placement,reason or 'open',referrer))
+                return status,route
+        finally:
+            DATA_LOCK.release()
     def create_content(self,data):
         with connection() as db:
             db.execute("BEGIN IMMEDIATE")

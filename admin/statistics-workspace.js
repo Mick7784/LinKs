@@ -238,8 +238,20 @@
   }
   function renderContext() {
     const item=visible.find(row=>row.id===state.selected),sources=item?.sources||aggregate(visible),node=host.querySelector('#sw-context');
-    node.innerHTML=`<div class="sw-card-head"><h3>${icon('pie')}Répartition par origine</h3>${pill(item?'Sélection':state.query||state.source?'Résultats filtrés':'Global')}</div><p class="sw-context-title" title="${esc(item?.name||'Toutes les origines')}">${esc(item?.name||'Toutes les origines')}</p>${donut(sources,config[category()].unit)}${legend(sources)}<p class="sw-context-note">${item?'Cliquez de nouveau sur cette ligne pour revenir à la répartition globale.':'Sélectionnez une ligne pour afficher ses origines.'}</p>`;
+    const redirects=['tracked','campaigns'].includes(category());
+    const signals=redirects?redirectSignals(item?[item]:visible):'';
+    node.innerHTML=`<div class="sw-card-head"><h3>${icon('pie')}${redirects?'Placement déclaré':'Répartition par origine'}</h3>${pill(item?'Sélection':state.query||state.source?'Résultats filtrés':'Global')}</div><p class="sw-context-title" title="${esc(item?.name||'Toutes les origines')}">${esc(item?.name||'Toutes les origines')}</p>${donut(sources,config[category()].unit)}${legend(sources)}${signals}<p class="sw-context-note">${item?'Cliquez de nouveau sur cette ligne pour revenir à la répartition globale.':'Sélectionnez une ligne pour afficher ses origines.'}</p>`;
     for(const button of host.querySelectorAll('[data-sw-index]'))button.setAttribute('aria-pressed',String(visible[Number(button.dataset.swIndex)]?.id===state.selected));
+  }
+  function redirectSignals(items) {
+    const referrers=Object.create(null),excluded=Object.create(null);
+    for(const item of items)for(const [placement,signals] of Object.entries(item.redirect_signals||{})){
+      if(state.source&&(state.source.startsWith('p:')?platform(placement)!==state.source.slice(2):placement!==state.source))continue;
+      for(const [key,n] of Object.entries(signals.observed_referrers||{}))referrers[key]=(referrers[key]||0)+n;
+      for(const [key,n] of Object.entries(signals.excluded_redirects||{}))excluded[key]=(excluded[key]||0)+n;
+    }
+    const lines=Object.entries(referrers).sort((a,b)=>b[1]-a[1]).map(([key,n])=>`<div class="sw-source"><span>${esc(key==='direct-inconnu'?'Non transmis ou illisible':sourceName(key))}</span><strong>${fmt.format(n)}</strong></div>`).join('');
+    return `<h4>Référent observé</h4>${lines||'<p class="sw-muted">Aucun référent relevé sur ces ouvertures.</p>'}${sum(excluded)?`<p class="sw-muted">Trafic exclu des ouvertures · ${fmt.format(excluded.prefetch||0)} préchargement(s) · ${fmt.format(excluded.bot||0)} robot(s)</p>`:''}`;
   }
   function headingSubtitle() {
     return state.date?'Chiffres de la journée sélectionnée.':'Statistiques des '+(state.period==='month'?'jours du mois en cours.':'30 derniers jours.');

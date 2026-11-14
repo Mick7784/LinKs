@@ -5,6 +5,8 @@ from urllib.request import Request, urlopen, build_opener, HTTPRedirectHandler
 from urllib.error import HTTPError
 from pathlib import Path
 from fixtures import prepare,populate
+from concurrent.futures import ThreadPoolExecutor
+from unittest.mock import patch
 
 class AnalyticsTests(unittest.TestCase):
     def setUp(self):
@@ -36,6 +38,168 @@ class AnalyticsTests(unittest.TestCase):
             response=build_opener(NoRedirect).open(Request(url,headers={'User-Agent':agent,**(headers or {})},method=method))
         except HTTPError as exc:response=exc
         with response:return response.code,dict(response.headers)
+
+    def test_public_requests_finish_while_amazon_status_waits(self):
+        admin=self.server(True);public=self.server()
+        link=self.a.story_link(self.promo())['url'].rsplit('/',1)[-1]
+        with self.a.connection() as db:
+            account=self.a.affiliation.add_account(db,dict(partner='Amazon',label='Test',platform='amazon'))['id']
+            db.execute("INSERT INTO aff_runs(account_id,started_at,status) VALUES(?,?,'running')",(account,self.a.now_iso()))
+        started=threading.Event();release=threading.Event()
+        def slow_worker(*args,**kwargs):
+            started.set()
+            release.wait(5)
+            return {'stage':'collecting'}
+        with patch.object(self.a.affiliation,'worker',side_effect=slow_worker), ThreadPoolExecutor() as pool:
+            overview=pool.submit(self.request,admin+'/api/affiliation/overview')
+            try:
+                self.assertTrue(started.wait(3))
+                health=pool.submit(self.request,public+'/healthz')
+                redirect=pool.submit(self.redirect,public+'/go/'+link)
+                metrics=pool.submit(self.request,public+'/metrics',{'kind':'view','source':'site'},
+                                    {'Origin':self.a.ORIGIN,'Content-Type':'application/json'})
+                self.assertEqual(health.result(timeout=1)[0],200)
+                self.assertEqual(redirect.result(timeout=1)[0],302)
+                self.assertEqual(metrics.result(timeout=1)[0],204)
+                self.assertFalse(overview.done())
+            finally:
+                release.set()
+            self.assertEqual(overview.result(timeout=3)[0],200)
+
+    def test_redirect_referrer_is_independent_and_preloads_are_excluded(self):
+        admin=self.server(True);public=self.server()
+        target='https://partner.example/product?aff=117&x=a%2Fb#fiche'
+        token=self.a.story_link(self.promo(url=target))['url'].rsplit('/',1)[-1]
+        link=public+'/go/'+token
+        ref={'Referer':'https://www.youtube.com/watch?v=private'}
+        for headers,agent in [({'Sec-Purpose':'prefetch;prerender'},'Mozilla/5.0'),
+                              ({'X-Purpose':'preview'},'Mozilla/5.0'),({},'Slack-ImgProxy')]:
+            self.assertEqual(self.redirect(link,headers={**ref,**headers},agent=agent)[1]['Location'],target)
+        self.assertEqual(self.redirect(link,headers=ref)[0],302)
+        self.assertEqual(self.redirect(link+'?utm_source=instagram',headers=ref)[0],302)
+        self.assertEqual(self.redirect(link,headers={**ref,'Sec-GPC':'1'})[0],302)
+        day=self.a.datetime.now(self.a.PARIS).date().isoformat()
+        self.assertEqual(sum(r['total'] for r in self.a.report(day,day)['stories']),2)
+        stats=json.loads(self.request(admin+'/api/stats/workspace?date='+day)[1])
+        item=stats['details']['campaigns']['items'][0]
+        self.assertEqual(item['sources'],{'shared-unknown':1,'instagram':1})
+        self.assertEqual(item['observed_referrers'],{'youtube':2})
+        self.assertEqual(item['excluded_redirects'],{'prefetch':2,'bot':1})
+        self.assertNotIn('private',json.dumps(stats))
+        backup=json.loads(self.a.export_backup())
+        self.assertEqual(len(backup['redirect_observations']),4)
+        with self.a.connection() as db:db.execute('DELETE FROM redirect_observations')
+        self.a.restore_backup(backup)
+        self.a.restore_backup(backup)
+        restored=json.loads(self.request(admin+'/api/stats/workspace?date='+day)[1])
+        self.assertEqual(restored['details']['campaigns']['items'][0],item)
+
+    def test_observed_referrer_uses_exact_domain_boundaries_and_unknown(self):
+        for uri,category in [('https://l.instagram.com/example','instagram'),
+                             ('https://discord.gg/example','discord'),
+                             ('https://youtu.be/example','youtube'),
+                             ('https://www.youtube.com.example.test/','autre-site'),
+                             (self.a.ORIGIN+'/some-path','site'),
+                             ('https://[malformed','direct-inconnu'),
+                             ('','direct-inconnu')]:
+            self.assertEqual(self.a.observed_referrer(uri,[],same_site='site'),category)
+
+    def test_locked_sqlite_keeps_a_resolved_redirect_usable(self):
+        public=self.server()
+        target='https://partner.example/offer?aff=117'
+        link=self.a.story_link(self.promo(url=target))['url'].rsplit('/',1)[-1]
+        with ThreadPoolExecutor() as pool, self.a.connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            self.assertEqual(pool.submit(self.request,public+'/healthz').result(timeout=1)[0],200)
+            self.assertEqual(pool.submit(self.request,public+'/api/public-config').result(timeout=1)[0],200)
+            self.assertEqual(pool.submit(self.redirect,public+'/go/'+link).result(timeout=1)[1]['Location'],target)
+        day=self.a.datetime.now(self.a.PARIS).date().isoformat()
+        self.assertEqual(self.a.report(day,day)['stories'],[])
+
+    def test_redirect_schema_upgrade_is_idempotent_and_keeps_counts(self):
+        day=self.a.datetime.now(self.a.PARIS).date().isoformat()
+        self.a.record('view','site','',day)
+        with self.a.connection() as db:
+            before=list(map(tuple,db.execute('SELECT * FROM counts')))
+            db.execute('DROP TABLE redirect_observations')
+            db.execute('BEGIN IMMEDIATE')
+            self.a.initialize_redirect_observations(db)
+            db.rollback()
+            self.assertIsNone(db.execute("SELECT 1 FROM sqlite_master WHERE name='redirect_observations'").fetchone())
+        self.a.init()
+        self.a.init()
+        with self.a.connection() as db:
+            self.assertEqual(list(map(tuple,db.execute('SELECT * FROM counts'))),before)
+            self.assertEqual(db.execute('SELECT count(*) FROM redirect_observations').fetchone()[0],0)
+            self.assertEqual(db.execute('PRAGMA integrity_check').fetchone()[0],'ok')
+
+    def test_repository_backup_validation_does_not_block_the_redirect_counter(self):
+        public=self.server()
+        link=self.a.story_link(self.promo())['url'].rsplit('/',1)[-1]
+        backup=json.loads(self.a.export_backup())
+        original=self.a.affiliation.validate_backup
+        started=threading.Event();release=threading.Event()
+        def slow_validation(bundle):
+            started.set()
+            release.wait(5)
+            return original(bundle)
+        with patch.object(self.a.affiliation,'validate_backup',side_effect=slow_validation), ThreadPoolExecutor() as pool:
+            preview=pool.submit(self.a.restore_backup,backup,True)
+            try:
+                self.assertTrue(started.wait(3))
+                self.assertEqual(pool.submit(self.redirect,public+'/go/'+link).result(timeout=1)[0],302)
+                day=self.a.datetime.now(self.a.PARIS).date().isoformat()
+                self.assertEqual(self.a.report(day,day)['stories'][0]['total'],1)
+            finally:
+                release.set()
+            preview.result(timeout=3)
+
+    def test_concurrent_amazon_imports_store_one_observation(self):
+        from amazon_affiliation_test import payload
+
+        with self.a.connection() as db:
+            account=self.a.affiliation.add_account(db,dict(partner='Amazon',label='Test',platform='amazon'))['id']
+        data={**payload(),'account':account}
+        first_ready=threading.Barrier(2,timeout=5)
+        original=self.a.affiliation.amazon.prepare_csv
+        def prepare_together(value):
+            prepared=original(value)
+            first_ready.wait()
+            return prepared
+        with patch.object(self.a.affiliation.amazon,'prepare_csv',side_effect=prepare_together), ThreadPoolExecutor() as pool:
+            results=list(pool.map(lambda _:self.a.affiliation.post(self.a.connection,'amazon/import',data),range(2)))
+        self.assertEqual(sorted(r['duplicate'] for r in results),[False,True])
+        self.assertEqual(len({r['report_id'] for r in results}),1)
+
+    def test_slow_amazon_collection_cannot_overwrite_a_concurrent_import(self):
+        from amazon_collection_test import batch, DAY
+
+        public=self.server()
+        with self.a.connection() as db:
+            account=self.a.affiliation.add_account(db,dict(partner='Amazon',label='Test',platform='amazon'))['id']
+        request={'account':account,'day':DAY,'tracking_id':'test-21'}
+        started=threading.Event();release=threading.Event()
+        observed=self.a.affiliation.amazon.prepare_portal_batch(batch(),DAY,'test-21')[0]
+        corrected={**observed,'rows':[{**row,'commission_cents':130} for row in observed['rows']]}
+        worker_thread=[]
+        def slow_worker(*args,**kwargs):
+            worker_thread.append(threading.current_thread())
+            started.set()
+            release.wait(5)
+            return batch()
+        with patch.object(self.a.affiliation,'worker',side_effect=slow_worker), ThreadPoolExecutor() as pool:
+            run=self.a.affiliation.post(self.a.connection,'amazon/sync',request)['run']
+            try:
+                self.assertTrue(started.wait(3))
+                self.assertEqual(pool.submit(self.request,public+'/healthz').result(timeout=1)[0],200)
+                with self.a.connection() as db:
+                    self.a.affiliation.amazon.store_csv(db,account,corrected,self.a.now_iso())
+            finally:
+                release.set()
+                for thread in worker_thread:thread.join(timeout=5)
+        with self.a.connection() as db:
+            self.assertEqual(db.execute('SELECT status FROM aff_runs WHERE id=?',(run,)).fetchone()[0],'failed')
+            self.assertEqual(self.a.affiliation.amazon.report(db,account)['totals']['commission_cents'],130)
 
     def test_private_tracked_links_sources_permanent_tokens_and_history(self):
         admin=self.server(True);public=self.server()

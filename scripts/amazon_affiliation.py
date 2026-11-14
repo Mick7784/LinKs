@@ -10,6 +10,7 @@ import json
 import os
 import re
 import unicodedata
+from collections import Counter
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from urllib.parse import urlencode, urlsplit
@@ -20,8 +21,8 @@ API_LIMIT = 1024 * 1024
 ARCHIVE_LIMIT = 16 * 1024 * 1024
 EXPANDED_LIMIT = 64 * 1024 * 1024
 ARCHIVE_BODY_LIMIT = ((ARCHIVE_LIMIT + 2) // 3) * 4 + 128 * 1024
-FIELDS = ('date','tracking_id','asin','title','provider_status','transaction_id','orders','ordered_items','shipped_items','commission_cents','payment_cents','clicks')
-METRICS = {'orders':('orders','ordered_items'), 'earnings':('shipped_items','commission_cents'), 'payments':('payment_cents',), 'performance':('clicks','ordered_items','shipped_items','commission_cents')}
+FIELDS = ('date','tracking_id','asin','title','provider_status','transaction_id','orders','ordered_items','shipped_items','commission_cents','payment_cents','clicks','returned_items')
+METRICS = {'orders':('orders','ordered_items'), 'earnings':('shipped_items','returned_items','commission_cents'), 'payments':('payment_cents',), 'performance':('clicks','ordered_items','shipped_items','returned_items','commission_cents')}
 
 
 
@@ -71,7 +72,7 @@ def inspect_csv(data):
         if not 0<=offset<=100: raise ValueError()
         lines=text.lstrip('\ufeff').splitlines(keepends=True)[offset:]
         dialect=csv.Sniffer().sniff(''.join(lines[:10]),delimiters=',;\t')
-        reader=csv.reader(io.StringIO(''.join(lines)),dialect)
+        reader=csv.reader(io.StringIO(''.join(lines)),dialect,strict=True)
         headers=next(reader); rows=list(reader)
         if not headers or len(headers)>100 or any(not h.strip() for h in headers): raise ValueError()
         original=headers[:]
@@ -93,13 +94,26 @@ def normalize(data):
     kind=data.get('kind'); mapping=data.get('mapping',{})
     if kind not in METRICS or not isinstance(mapping,dict) or set(mapping)-set(FIELDS): raise ValueError('Type ou colonnes invalides.')
     if (not mapping.get('date') and data.get('single_day') is not True) or not any(mapping.get(k) for k in METRICS[kind]): raise ValueError('Associez la date et au moins un indicateur du type de rapport choisi.')
-    if any(v not in headers for v in mapping.values() if v) or len([v for v in mapping.values() if v])!=len(set(v for v in mapping.values() if v)): raise ValueError('Correspondance de colonnes invalide ou dupliquée.')
+    if any(not isinstance(v,str) or (v and v not in headers) for v in mapping.values()) or len([v for v in mapping.values() if v])!=len(set(v for v in mapping.values() if v)): raise ValueError('Correspondance de colonnes invalide ou dupliquée.')
     if any(mapping.get(k) for k in set(FIELDS[6:])-set(METRICS[kind])): raise ValueError('Séparez les rapports Commandes, Rémunérations et Paiements.')
+    check_currency((mapping[key] for key in ('commission_cents','payment_cents') if mapping.get(key)),
+                   (row[headers.index(mapping[key])] for key in ('commission_cents','payment_cents')
+                             if mapping.get(key) for row in rows),currency_column_values(headers,rows))
+    keys, _ = resolve_columns(headers, [column_key(h) for h in headers], rows)
+    for header, key in zip(headers, keys):
+        if key=='returned_items' and mapping.get(key)!=header:
+            raise ValueError(f'Associez la colonne « {header} » à son indicateur Amazon.')
+        if not column_key(header) and unsupported_financial_column(header):
+            raise ValueError(f'Colonne financière non interprétée « {header} ».')
+    if mapping.get('returned_items') and column_key(mapping['returned_items']) not in {None,'returned_items'}:
+        raise ValueError('Le nombre de retours doit provenir de sa propre colonne.')
     try:
         start=date.fromisoformat(data['start']).isoformat();end=date.fromisoformat(data['end']).isoformat()
         if start>end: raise ValueError()
     except (ValueError,KeyError,TypeError): raise ValueError('Période du rapport invalide.') from None
-    scope=data.get('scope','').strip()
+    scope=data.get('scope','')
+    if not isinstance(scope,str):raise ValueError('Périmètre Amazon invalide.')
+    scope=scope.strip()
     if not re.fullmatch(r'(all|[A-Za-z0-9_-]{1,100})',scope): raise ValueError('Indiquez all pour tous les Tracking IDs, ou le Tracking ID exact.')
     if data.get('single_day') is True and start!=end: raise ValueError('Sans colonne Date, seule une période explicitement confirmée d’un jour est acceptée.')
     date_format=data.get('date_format','dmy')
@@ -128,7 +142,11 @@ def normalize(data):
                 item['tracking_id']=scope
             if any(len(item[k])>500 for k in ('tracking_id','asin','title','provider_status','transaction_id')): raise ValueError()
         except (ValueError,InvalidOperation): raise ValueError('Date, quantité, montant EUR ou Tracking ID invalide. Aucun import effectué.') from None
+        if not mapping.get('returned_items'):
+            item.pop('returned_items')
         result.append(item)
+    if not result:
+        raise ValueError('Rapport Amazon vide : couverture impossible à établir.')
     return {'version':1,**({'contribution':contribution} if contribution=='detail' else {}),**({'date_basis':'confirmed_single_day'} if not mapping.get('date') else {}),**({'view':view} if view!='legacy' else {}),'kind':kind,'start':start,'end':end,'scope':scope,'currency':'EUR','rows':result}
 
 
@@ -148,13 +166,50 @@ def financial_rows_fingerprint(value):
 def misdated_annual_export(value):
     return value.get('date_basis')!='confirmed_period' and financial_rows_fingerprint(value) in MISDATED_ANNUAL_EXPORTS
 
+def report_history(db,identity):
+    for row in db.execute("SELECT id,observed_at,source,summary FROM aff_snapshots WHERE account_id=? AND source!='amazon-pending' ORDER BY id",(identity,)):
+        if value:=json.loads(row['summary']).get('amazon'):
+            yield {**value,'id':row['id'],'observed_at':row['observed_at'],'source':row['source']}
+
+
+def observation_fingerprint(value, fields=FIELDS):
+    """Identity of normalized evidence, independent of row order and ingestion metadata."""
+    single_day=value['start']==value['end']
+    rows=sorted(json.dumps([row.get(field) if field!='date' or not single_day else value['start']
+                           for field in fields],ensure_ascii=False) for row in value['rows'])
+    view = value.get('view','legacy')
+    if view in {'legacy','daily_trends'} and not any(row['title'] or row['asin'] for row in value['rows']):
+        view = 'daily'
+    evidence = [value[key] for key in ('start','end','scope','currency')]
+    evidence.extend([view,not single_day and value.get('date_basis')=='confirmed_period',rows])
+    return hashlib.sha256(json.dumps(evidence).encode()).hexdigest()
+
+
+def historical_fingerprints(history):
+    """Index full evidence and the portion known before return quantities were parsed."""
+    fingerprints={}
+    legacy_fields=FIELDS[:-1]
+    for report in history:
+        fingerprints.setdefault(observation_fingerprint(report),[]).append(report['id'])
+        if all('returned_items' not in row for row in report['rows']):
+            key=observation_fingerprint(report,legacy_fields)
+            fingerprints.setdefault(key,[]).append(report['id'])
+    return fingerprints
+
+
+def matching_observations(value, known, active_ids):
+    exact=known.get(observation_fingerprint(value))
+    if exact:return exact
+    # Newly recognized cells must not reactivate an older financial version.
+    legacy=known.get(observation_fingerprint(value,FIELDS[:-1]),())
+    return [] if active_ids.intersection(legacy) else legacy
+
+
 def resolved_reports(db,identity):
     latest={}
-    for row in db.execute('SELECT * FROM aff_snapshots WHERE account_id=? ORDER BY id',(identity,)):
-        value=json.loads(row['summary']).get('amazon')
-        if value:
-            latest={key:report for key,report in latest.items() if report['id'] not in value.get('supersedes',[])}
-            latest[(value['kind'],value['start'],value['end'],value['scope'],value.get('view','legacy'),value.get('contribution','totals'),tuple(sorted(reference_metrics(value))))]={'id':row['id'],'observed_at':row['observed_at'],**value}
+    for value in report_history(db,identity):
+        latest={key:report for key,report in latest.items() if report['id'] not in value.get('supersedes',[])}
+        latest[(value['kind'],value['start'],value['end'],value['scope'],value.get('view','legacy'),value.get('contribution','totals'),tuple(sorted(reference_metrics(value))))]=value
     return list(latest.values())
 
 def active_reports(db,identity):
@@ -176,7 +231,7 @@ def validate_saved(value):
     if value['kind'] not in METRICS or not isinstance(value['rows'],list) or len(value['rows'])>10000:raise ValueError('Rapport Amazon sauvegardé invalide.')
     if date.fromisoformat(value['start'])>date.fromisoformat(value['end']) or not re.fullmatch(r'(all|[A-Za-z0-9_-]{1,100})',value['scope']):raise ValueError('Périmètre Amazon invalide.')
     for row in value['rows']:
-        if not isinstance(row,dict) or set(row) not in (set(FIELDS),set(FIELDS)-{'clicks'}):raise ValueError('Ligne Amazon invalide.')
+        if not isinstance(row,dict) or not set(FIELDS)-{'clicks','returned_items'}<=set(row)<=set(FIELDS):raise ValueError('Ligne Amazon invalide.')
         if value.get('date_basis')=='confirmed_period':
             if row['date'] is not None: raise ValueError('Date quotidienne inventée.')
         elif not value['start']<=date.fromisoformat(row['date']).isoformat()<=value['end']:raise ValueError('Date Amazon invalide.')
@@ -188,37 +243,77 @@ def validate_saved(value):
     if hashlib.sha256(json.dumps(original,sort_keys=True,ensure_ascii=False).encode()).hexdigest()!=value['digest']:raise ValueError('Empreinte Amazon invalide.')
 
 
-def ingest(db,identity,data,observed):
+def prepare_csv(data):
     if data.get('confirmed') is not True: raise ValueError('Confirmez la période, les colonnes et l’absence de lignes de total.')
-    value=normalize(data)
-    canonical=json.dumps(value,sort_keys=True,ensure_ascii=False)
-    digest=hashlib.sha256(canonical.encode()).hexdigest()
+    return normalize(data)
+
+
+def ingest(db,identity,data,observed):
+    value=prepare_csv(data)
+    return store_csv(db,identity,value,observed)
+
+
+def store_csv(db,identity,value,observed,source='amazon-csv'):
+    value=dict(value)
+    previous_reports=active_reports(db,identity)
+    matches=matching_observations(value,historical_fingerprints(report_history(db,identity)),{r['id'] for r in previous_reports})
+    if matches:
+        return {'ok':True,'duplicate':True,'rows':len(value['rows']),'report_id':matches[-1]}
     supersedes=[]
-    for previous in active_reports(db,identity):
+    for previous in previous_reports:
         same=all(previous[k]==value[k] for k in ('kind','start','end','scope'))
         same_view=previous.get('view','legacy')==value.get('view','legacy')
         same_usage=previous.get('contribution','totals')==value.get('contribution','totals')
-        if same and same_view and same_usage and (previous.get('digest')==digest or all(previous.get(k)==v for k,v in value.items())):return {'ok':True,'duplicate':True,'rows':len(value['rows'])}
         overlap=previous['start']<=value['end'] and value['start']<=previous['end']
         shared=previous['scope']==value['scope'] or 'all' in (previous['scope'],value['scope'])
         financial=previous.get('contribution','totals')=='totals' and value.get('contribution','totals')=='totals'
         common=available_metrics(previous) & available_metrics(value)
         if overlap and shared and common and (financial or (same_usage and same_view)):
+            if previous['observed_at']>observed:
+                raise ValueError('Un relevé plus récent couvre ces indicateurs. Le dernier montant est conservé.')
             if not (same and same_view and same_usage):
                 raise ValueError('Indicateurs et périodes chevauchants : utilisez une vue complémentaire pour éviter le double comptage. Une correction doit conserver la même vue et le même périmètre.')
             if not (reference_metrics(previous) if financial else available_metrics(previous))<=available_metrics(value):
                 raise ValueError('La correction CSV doit conserver les indicateurs existants. Utilisez le ZIP automatique pour une mise à jour partielle.')
+            if source=='amazon-portal' and previous['source']=='amazon-csv' and financial:
+                raise ValueError('Un import CSV manuel existe sur ce périmètre. Vérifiez et confirmez la correction par CSV.')
+            metrics=reference_metrics(previous) if financial else available_metrics(previous)
+            if not all(metric_coverage(previous,metric)<=metric_coverage(value,metric) for metric in metrics):
+                raise ValueError('Correction CSV incomplète : une ligne déjà renseignée manque. Dernier relevé conservé.')
             supersedes.append(previous['id'])
     if supersedes:value['supersedes']=supersedes
     value['digest']=hashlib.sha256(json.dumps(value,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
-    db.execute('INSERT INTO aff_snapshots(account_id,observed_at,summary,row_count,pages,source) VALUES(?,?,?,?,1,?)',
-               (identity,observed,json.dumps({'amazon':value}),len(value['rows']),'amazon-csv'))
-    db.execute('UPDATE aff_accounts SET last_success=?,last_error=NULL WHERE id=?',(observed,identity))
-    return {'ok':True,'duplicate':False,'rows':len(value['rows'])}
+    report_id=db.execute('INSERT INTO aff_snapshots(account_id,observed_at,summary,row_count,pages,source) VALUES(?,?,?,?,1,?)',
+               (identity,observed,json.dumps({'amazon':value}),len(value['rows']),source)).lastrowid
+    db.execute('UPDATE aff_accounts SET last_success=MAX(COALESCE(last_success,?),?),last_error=NULL WHERE id=?',(observed,observed,identity))
+    return {'ok':True,'duplicate':False,'rows':len(value['rows']),'report_id':report_id}
 
 
 def field_key(value):
     return re.sub(r'[^a-z0-9]', '', unicodedata.normalize('NFKD',value.lower()).encode('ascii','ignore').decode())
+
+
+def metric_coverage(value,metric):
+    return Counter((row['date'],row['tracking_id'],row['asin'])
+                   for row in value['rows'] if row.get(metric) is not None)
+
+
+def currency_column_values(headers,rows):
+    return (row[i].strip() for i,h in enumerate(headers)
+            if field_key(h) in {'devise','currency','currencycode','codedevise'}
+            for row in rows if row[i].strip() not in {'','-'})
+
+
+def check_currency(headers, values, declared_values=()):
+    pattern=re.compile(r'\b(?:EUR|USD|GBP|CAD|JPY|AUD|CHF|CNY|INR|SEK|PLN|AED|SAR|MXN|BRL|SGD|TRY)\b|[€$£¥₹]',re.I)
+    declared=list(headers)
+    currencies={match.group().upper() for collection in (declared,values) for text in collection for match in pattern.finditer(text)}
+    currencies.update(match.upper() for text in declared for match in
+                      re.findall(r'\b(?:currency|devise)\s*[:=;\t]\s*([a-z]{3})\b',text,re.I))
+    currencies.update(value.upper() for value in declared_values)
+    if currencies-{'EUR','€'}:
+        raise ValueError('Devise non EUR ou devises mélangées : aucun import.')
+    return bool(currencies)
 
 
 AUTO_COLUMNS = {
@@ -228,10 +323,12 @@ AUTO_COLUMNS = {
     'clicks': ('clicks','clics'), 'orders': ('orders','commandes'),
     'ordered_items': ('ordered items','items ordered','articles commandes','commandes articles'),
     'shipped_items': ('shipped items','items shipped','articles expedies','expedies'),
+    'returned_items': ('returned items','items returned','articles retournés'),
     'commission_cents': ('commission','commissions','earnings','total earnings','revenus totaux','remunerations','advertising fees'),
     'payment_cents': ('payment','payments','paiement','paiements'),
 }
 AUTO_ALIASES = {field_key(alias):key for key,aliases in AUTO_COLUMNS.items() for alias in aliases}
+AUTO_ALIASES.update({field_key(key):key for key in FIELDS})
 
 
 def auto_day(value):
@@ -246,13 +343,22 @@ class ComplementaryReport(ValueError):
 
 
 def column_key(header):
+    header=re.sub(r' \[colonne \d+\]$', '',header)
     return AUTO_ALIASES.get(field_key(re.sub(r'\s*[\[(]?(?:EUR|€)[\])]?\s*$', '',header,flags=re.I)))
+
+
+def unsupported_financial_column(header):
+    name=field_key(header)
+    return bool(re.search(r'refund|rembours|chargeback|adjustment|ajustement|commission|remuneration|earnings|revenu|fees|frais|retour|return|payment|paiement',name)) and not bool(re.search(r'rate|taux|pourcentage|percent',name))
 
 
 def numeric_cell(raw):
     raw=re.sub(r'EUR|€|\s', '',raw,flags=re.I)
     if ',' in raw and '.' in raw:
-        return raw.replace('.','').replace(',','.') if raw.rfind(',')>raw.rfind('.') else raw.replace(',','')
+        decimal,group=(',', '.') if raw.rfind(',')>raw.rfind('.') else ('.', ',')
+        if not re.fullmatch(r'-?\d{1,3}(?:'+re.escape(group)+r'\d{3})+'+re.escape(decimal)+r'\d+',raw):
+            raise ValueError('Séparateurs de milliers ou décimaux incohérents.')
+        return raw.replace(group,'').replace(decimal,'.')
     return raw.replace(',','.')
 
 
@@ -326,6 +432,9 @@ def auto_report(file,override,diagnostic=None):
     keys,warnings=resolve_columns(headers,keys,rows)
     recognized=[k for k in keys if k]
     if diagnostic is not None:diagnostic.update(row_count=len(rows),columns=[{'position':i+1,'header':h,'role':keys[i]} for i,h in enumerate(headers)],corrections=warnings[:])
+    unknown=[h for h in headers if not column_key(h) and unsupported_financial_column(h)]
+    if unknown:
+        raise ValueError('Colonnes financières non interprétées : '+', '.join(unknown)+'.')
     clean=[]
     for row in rows:
         if any(field_key(row[i]) in {'total','totals','totalgeneral','grandtotal','subtotal','soustotal'} for i,k in enumerate(keys) if k in {'title','date','tracking_id'}):
@@ -363,11 +472,11 @@ def auto_report(file,override,diagnostic=None):
     if len(set(scopes))>1: raise ValueError('Périmètres contradictoires dans le rapport.')
     scope=scopes[0] if scopes else override.get('scope')
     if scopes and override.get('scope') and override['scope']!=scope: raise ValueError('Le périmètre saisi contredit le rapport.')
-    currencies=set(re.findall(r'\b(?:EUR|USD|GBP|CAD|JPY)\b',preamble+' '+','.join(headers)+' '+' '.join(v for r in clean for k,v in r.items() if k.endswith('_cents')),re.I))
-    if any('€' in v for r in clean for k,v in r.items() if k.endswith('_cents')) or '€' in ','.join(headers): currencies.add('EUR')
-    currencies={c.upper() for c in currencies}
-    if currencies-{'EUR'}: raise ValueError('Devise non EUR ou devises mélangées : aucun import.')
-    currency='EUR' if currencies else str(override.get('currency','')).strip().upper()
+    has_currency=check_currency([preamble,*(h for h in headers if column_key(h) in FIELDS[6:] or
+                                            re.search(r'\b(?:devise|currency)\b',h,re.I))],
+                                (v for row in clean for k,v in row.items() if k.endswith('_cents')),
+                                currency_column_values(headers,rows))
+    currency='EUR' if has_currency else str(override.get('currency','')).strip().upper()
     needed=[]
     if period is None:needed.extend(['start','end'])
     if not scope:needed.append('scope')
@@ -424,6 +533,11 @@ def ingest_archive(db,identity,data,observed):
         if missing:needs.append(missing)
         else:prepared.append(value)
     if needs:return {'ok':False,'imported':False,'needs':needs,'warnings':warnings}
+    previous=active_reports(db,identity)
+    known=historical_fingerprints(report_history(db,identity))
+    active_ids={r['id'] for r in previous}
+    duplicates={id(value) for value in prepared if matching_observations(value,known,active_ids)}
+    if len(duplicates)==len(prepared):return {'ok':True,'imported':False,'duplicate':True,'warnings':warnings}
     groups={}
     for value in prepared:groups.setdefault((value['start'],value['end'],value['scope']),[]).append(value)
     for group in groups.values():
@@ -431,7 +545,7 @@ def ingest_archive(db,identity,data,observed):
         if len(set(identities))!=len(identities):raise ValueError('Plusieurs fichiers de la même vue et du même périmètre : archive ambiguë.')
         for value in group:value['reference_metrics']=[]
         for metric in FIELDS[6:]:
-            choices=[v for v in group if any(r[metric] is not None for r in v['rows'])]
+            choices=[v for v in group if metric in available_metrics(v)]
             if not choices:continue
             rank={'category':0,'daily_trends':1,'tracking_id':2,'linked_product':3,'legacy':4}
             choices.sort(key=lambda v:(rank[v.get('view','legacy')],v['filename']))
@@ -442,14 +556,18 @@ def ingest_archive(db,identity,data,observed):
             if any(metric_totals(v['rows'])[metric]!=amount for v in choices):warnings.append('Vues divergentes pour '+metric+' : seule la référence '+reference['filename']+' est comptabilisée.')
         for value in group:value['contribution']='totals' if value['reference_metrics'] else 'detail'
     # Validate every overlap before the first write, including overlaps within the ZIP.
-    previous=active_reports(db,identity);supersedes=[]
+    supersedes=[]
     for i,value in enumerate(prepared):
         for other in prepared[:i]:
             if value['start']<=other['end'] and other['start']<=value['end'] and (value['scope']==other['scope'] or 'all' in (value['scope'],other['scope'])) and reference_metrics(value)&reference_metrics(other):
                 raise ValueError('Chevauchement incompatible dans le ZIP : '+value['filename']+' / '+other['filename'])
+    prepared=[v for v in prepared if id(v) not in duplicates]
     for old in previous:
         conflicts=[v for v in prepared if old['start']<=v['end'] and v['start']<=old['end'] and (old['scope']==v['scope'] or 'all' in (old['scope'],v['scope'])) and reference_metrics(old)&reference_metrics(v)]
         if not conflicts:continue
+        if old['source']=='amazon-csv':
+            raise ValueError('Un rapport CSV manuel couvre déjà ces chiffres. Vérifiez et confirmez la correction par CSV.')
+        if old['observed_at']>observed:raise ValueError('Un relevé plus récent couvre ces indicateurs. Le dernier montant est conservé.')
         exact=all(all(old[k]==v[k] for k in ('start','end','scope')) for v in conflicts)
         covered=set().union(*(reference_metrics(v) for v in conflicts))
         old_metrics={m for m in reference_metrics(old) if any(r.get(m) is not None for r in old['rows'])}
@@ -480,7 +598,7 @@ def report(db,identity,start='',end=''):
         period=source.get('date_basis')=='confirmed_period'
         contained=(not start or source['start']>=start) and (not end or source['end']<=end)
         if period and not contained and (not start or source['end']>=start) and (not end or source['start']<=end):excluded.append(source['id'])
-        selected=[{**r,'coverage':(source['start'],source['end']) if period else r['date'],'clicks':r.get('clicks'),'kind':source['kind'],'view':source.get('view','legacy')} for r in source['rows'] if (contained if period else (not start or r['date']>=start) and (not end or r['date']<=end))]
+        selected=[{**r,'coverage':(source['start'],source['end']) if period else r['date'],'clicks':r.get('clicks'),'returned_items':r.get('returned_items'),'kind':source['kind'],'view':source.get('view','legacy')} for r in source['rows'] if (contained if period else (not start or r['date']>=start) and (not end or r['date']<=end))]
         if source.get('contribution','totals')=='totals':
             selected=[{**r,**{k:None for k in FIELDS[6:] if k not in reference_metrics(source)}} for r in selected]
             rows.extend(selected)
@@ -519,7 +637,7 @@ def report(db,identity,start='',end=''):
             'quarantined_reports':[{'id':r['id'],'start':r['start'],'end':r['end'],'reason':'Cumul annuel identifié : dates quotidiennes invalides. Rapport conservé dans l’historique et exclu des statistiques.'} for r in resolved_reports(db,identity) if misdated_annual_export(r)],
             'daily_limitation':'Seules les dates présentes dans les lignes des rapports de référence alimentent l’évolution. Les jours absents ne valent pas zéro. Les dates confirmées manuellement sont exclues.',
             'tracking_limitation':'Vue Tracking IDs séparée, jamais ajoutée aux totaux. '+('Couverture partielle : un total non daté chevauchant ne peut pas être réparti.' if tracking_partial else 'Sa couverture peut différer de celle du rapport de référence.'),
-            'reports':[{**{k:r[k] for k in ('id','kind','start','end','scope','observed_at')},'filename':r.get('filename'),'date_basis':r.get('date_basis'),'view':r.get('view','legacy'),'contribution':r.get('contribution','totals')} for r in reports],
+            'reports':[{**{k:r[k] for k in ('id','kind','start','end','scope','observed_at','source','digest')},'filename':r.get('filename'),'date_basis':r.get('date_basis'),'view':r.get('view','legacy'),'contribution':r.get('contribution','totals')} for r in reports],
             'loss_tracking':False,'limitation':'Rapports agrégés ou limités dans le temps : aucune perte par transaction calculée.'}
 
 
@@ -584,12 +702,18 @@ def retrieve_report(identity,filename,report_type):
 
 def ingest_portal_batch(db, identity, payload, day, expected_tag, observed):
     """Fail closed, atomic batch through the existing versioned importer."""
-    if payload.get('complete') is not True or payload.get('day') != day:
+    return store_portal_batch(db,identity,prepare_portal_batch(payload,day,expected_tag),observed)
+
+
+def prepare_portal_batch(payload, day, expected_tag):
+    if not isinstance(payload,dict) or payload.get('complete') is not True or payload.get('day') != day:
         raise ValueError('Collecte Amazon incomplète ou période différente. Aucun import.')
     if payload.get('scope')!={'value':'all','verified':True,'method':'portal_tracking_filter'}:
         raise ValueError('Périmètre tous les Tracking IDs non vérifié. Dernier relevé conservé.')
     files=payload.get('files')
-    if not isinstance(files,list) or len(files)!=3 or {f.get('view') for f in files}!={'category','linked_product','tracking_id'}:
+    if (not isinstance(files,list) or len(files)!=3
+            or any(not isinstance(f,dict) or f.get('view') not in ('category','linked_product','tracking_id') for f in files)
+            or len({f['view'] for f in files})!=3):
         raise ValueError('Les trois vues Amazon attendues ne sont pas disponibles.')
     prepared=[]
     for file in files:
@@ -598,7 +722,7 @@ def ingest_portal_batch(db, identity, payload, day, expected_tag, observed):
             members=inspect_archive(file)['files']
             if len(members)!=1:raise ValueError('Un seul CSV attendu par export Amazon.')
             text=members[0]['csv']
-        headers,_=inspect_csv({'csv':text})
+        headers,rows=inspect_csv({'csv':text})
         mapping={'clicks':'clics','ordered_items':'articles commandés','shipped_items':'articles expédiés','commission_cents':'revenus totaux'}
         if file['view']=='tracking_id':mapping['tracking_id']='Numéro de suivi'
         else:
@@ -606,18 +730,34 @@ def ingest_portal_batch(db, identity, payload, day, expected_tag, observed):
             mapping['title']='catégorie' if file['view']=='category' else 'titre du produit'
             if file['view']=='linked_product':mapping['asin']='ASIN'
         if not set(mapping.values())<=set(headers):raise ValueError('Colonnes Amazon non reconnues. Import manuel nécessaire.')
+        keys,_=resolve_columns(headers,[column_key(h) for h in headers],rows)
+        if 'returned_items' in keys:
+            mapping['returned_items']=headers[keys.index('returned_items')]
         data=dict(csv=text,mapping=mapping,kind='performance',view=file['view'],contribution='totals' if file['view']=='category' else 'detail',start=day,end=day,scope='all',single_day=file['view']=='tracking_id',date_format='mdy',decimal='dot',confirmed=True)
-        value=normalize(data)
-        if not value['rows']:raise ValueError('Rapport Amazon vide : couverture à vérifier manuellement.')
+        value=prepare_csv(data)
         if file['view']=='tracking_id' and expected_tag not in {r['tracking_id'] for r in value['rows']}:
             raise ValueError('Tracking ID attendu absent : compte ou périmètre Amazon à vérifier. Aucun import.')
-        prepared.append(data)
-    totals=[metric_totals(normalize(data)['rows']) for data in prepared]
+        prepared.append(value)
+    totals=[metric_totals(value['rows']) for value in prepared]
     if any(len({t[key] for t in totals if t[key] is not None})>1 for key in FIELDS[6:]):
         raise ValueError('Les trois vues Amazon divergent. Dernier relevé conservé.')
+    return prepared
+
+
+def store_portal_batch(db, identity, prepared, observed):
     db.execute('SAVEPOINT amazon_portal_batch')
     try:
-        results=[ingest(db,identity,data,observed) for data in prepared]
+        reference=next(value for value in prepared if value['view']=='category')
+        result=store_csv(db,identity,reference,observed,'amazon-portal')
+        active_ids={r['id'] for r in active_reports(db,identity)}
+        if result['duplicate'] and result['report_id'] not in active_ids:
+            # The remaining views belong to the same old observation even if
+            # their breakdown changed or was absent in the original import.
+            results=[{'ok':True,'duplicate':True,'rows':len(v['rows']),'report_id':result['report_id']}
+                     for v in prepared]
+        else:
+            results=[result if value is reference else store_csv(db,identity,value,observed,'amazon-portal')
+                     for value in prepared]
         db.execute('RELEASE amazon_portal_batch')
         return results
     except Exception:

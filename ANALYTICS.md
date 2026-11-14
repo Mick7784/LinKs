@@ -22,6 +22,18 @@ Les sources génériques et règles d’instance utilisent le même moteur. `utm
 
 Les journées utilisent le fuseau configuré. Changer de fuseau ne recalcule pas l’historique. Les campagnes restent enregistrées sous forme d’instants UTC.
 
+Pour les ouvertures de liens suivis et de campagnes, Statistiques affiche le
+placement déclaré et, pour les nouvelles mesures, la catégorie du référent
+observé. Le référent reste inconnu lorsqu’il est absent ou illisible. SQLite
+conserve une catégorie, sans le chemin ni les paramètres du référent. Le
+référent n’altère ni l’attribution au placement ni la destination marchande.
+
+Les préchargements signalés et les agents reconnus comme robots sont exclus des
+ouvertures. Les requêtes `HEAD` et celles qui activent DNT ou GPC redirigent sans
+mesure. Quand SQLite tarde à accepter une écriture, la redirection peut aboutir
+avec la destination déjà résolue et sans événement associé. Un agent sans signal
+détectable peut encore être compté comme une ouverture.
+
 ## Confidentialité
 
 SQLite contient des compteurs agrégés, sans IP, cookie analytics, identifiant visiteur ou notion de personne unique. La provenance complète n’est pas conservée. Do Not Track et Global Privacy Control sont respectés. La collecte ne purge plus les anciens compteurs. Un rapport reste limité à une période de 400 jours par requête ; le détail des liens privés dispose aussi d’un historique complet. DNT/GPC sont contrôlés côté serveur pour les redirections et les métriques, ainsi que côté navigateur pour la page.
@@ -31,3 +43,8 @@ Les sessions administrateur sont distinctes des statistiques. Ces garanties ne d
 ## Sauvegardes
 
 Le format version 3 inclut compteurs, snapshots de copies, associations Story, citations et réglages. Les anciens formats restent compatibles. Voir [Installation](docs/INSTALL.md).
+
+La table `redirect_observations` est ajoutée au démarrage. Le format version 3
+inclut ces nouveaux agrégats lorsqu’ils existent et les fusionne par maximum
+lors d’une restauration. Les anciens compteurs restent consultables avec leur
+placement d’origine. Les référents antérieurs à la mise à jour sont indisponibles.
