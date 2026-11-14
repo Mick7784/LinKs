@@ -9,9 +9,11 @@ cleanup() { docker rm -f "$container" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 native_architecture=$(uname -m)
 case "$native_architecture" in x86_64) native_architecture=amd64;; aarch64) native_architecture=arm64;; esac
-if [ -n "${LINKS_CHECK_IMAGE:-}" ] && [ "${LINKS_CHECK_ARCHITECTURES:-}" != "$native_architecture" ]; then
-  echo 'A prebuilt image requires the explicit native test architecture.' >&2
-  exit 2
+if [ -n "${LINKS_CHECK_IMAGE:-}" ]; then
+  case "${LINKS_CHECK_ARCHITECTURES:-}" in
+    amd64|arm64) ;;
+    *) echo 'A prebuilt image requires one explicit test architecture.' >&2; exit 2 ;;
+  esac
 fi
 for architecture in ${LINKS_CHECK_ARCHITECTURES:-amd64 arm64}; do
   image=${LINKS_CHECK_IMAGE:-links-check-$architecture}

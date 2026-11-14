@@ -47,6 +47,15 @@ class VersionTest(unittest.TestCase):
    self.assertEqual(run(patch,message='Release V1.4.1')['commit'],output['commit'])
  def test_patch_overflow(self):
   with self.assertRaises(ValueError):release.next_version('V1.299')
+ def test_stable_docker_requires_dotted_version_before_writing(self):
+  import tempfile
+  with tempfile.TemporaryDirectory() as directory:
+   root=Path(directory);version=root/'VERSION';version.write_text('V1.201\n')
+   with self.assertRaisesRegex(ValueError,'Stable Docker releases'):
+    release.reserve(root,'commit',require_dotted=True)
+   self.assertEqual(version.read_text(),'V1.201\n')
+   self.assertFalse((root/'.release-state.json').exists())
+   self.assertEqual(release.reserve(root,'commit','V1.4.18',require_dotted=True),'V1.4.18')
  def test_dotted_patch_reservation_and_successor(self):
   import tempfile
   self.assertEqual(release.choose('Release V1.4.1 — titres et affiliation'),'V1.4.1')
