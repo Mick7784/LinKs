@@ -1,0 +1,66 @@
+name: Promote validated LinKs v1.4.18-rc.1
+on:
+  push:
+    branches: ['release/promote-v1.4.18-rc.1']
+permissions:
+  packages: write
+concurrency:
+  group: links-official-v1.4.18-rc.1
+  cancel-in-progress: false
+jobs:
+  promote:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Copy the validated index and verify the official tags
+        run: |
+          set -euo pipefail
+          if ! command -v skopeo >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y skopeo
+          fi
+          official=ghcr.io/mick7784/links
+          validated=ghcr.io/mick7784/links-rc
+          tag=v1.4.18-rc.1
+          expected=sha256:13d3b4d3b1acd1563d878a47bac1ef1201c7fbf7663d6814434aa3d22efcadc2
+          raw() {
+            skopeo inspect --raw --authfile "$HOME/.docker/config.json" "docker://$1"
+          }
+          digest() {
+            printf 'sha256:%s\n' "$(sha256sum "$1" | cut -d' ' -f1)"
+          }
+
+          raw "$official:latest" > "$RUNNER_TEMP/latest-before.json"
+          raw "$official:v1.4.17" > "$RUNNER_TEMP/stable-before.json"
+          raw "$validated:$tag" > "$RUNNER_TEMP/source.json"
+          test "$(digest "$RUNNER_TEMP/source.json")" = "$expected"
+          jq -e --arg amd 'sha256:56f38fc9f4181fd1dcba73d553802c7ded812f687fb7f4b908efdb74fd482a9a' \
+                --arg arm 'sha256:9c23707786c7422f0a2fe8779ee875b7b8d2397217c143ca683b2b5eb31bf7a7' '
+            (.manifests | length) == 2 and
+            any(.manifests[]; .platform.os == "linux" and .platform.architecture == "amd64" and .digest == $amd) and
+            any(.manifests[]; .platform.os == "linux" and .platform.architecture == "arm64" and .digest == $arm)
+          ' "$RUNNER_TEMP/source.json"
+          if raw "$official:$tag" > "$RUNNER_TEMP/destination.json" 2> "$RUNNER_TEMP/probe-error"; then
+            cmp "$RUNNER_TEMP/source.json" "$RUNNER_TEMP/destination.json"
+          else
+            if ! grep -Eiq 'manifest unknown|manifest_unknown' "$RUNNER_TEMP/probe-error"; then
+              cat "$RUNNER_TEMP/probe-error" >&2
+              exit 1
+            fi
+            skopeo copy --all --preserve-digests --authfile "$HOME/.docker/config.json" \
+              "docker://$validated@$expected" "docker://$official:$tag"
+          fi
+          raw "$official:$tag" > "$RUNNER_TEMP/destination.json"
+          cmp "$RUNNER_TEMP/source.json" "$RUNNER_TEMP/destination.json"
+          raw "$official:latest" > "$RUNNER_TEMP/latest-after.json"
+          raw "$official:v1.4.17" > "$RUNNER_TEMP/stable-after.json"
+          cmp "$RUNNER_TEMP/latest-before.json" "$RUNNER_TEMP/latest-after.json"
+          cmp "$RUNNER_TEMP/stable-before.json" "$RUNNER_TEMP/stable-after.json"
+          echo "$official:$tag@$expected"
+          echo "$official:latest unchanged $(digest "$RUNNER_TEMP/latest-after.json")"
+          echo "$official:v1.4.17 unchanged $(digest "$RUNNER_TEMP/stable-after.json")"
