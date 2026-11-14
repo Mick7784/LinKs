@@ -29,11 +29,29 @@ for path in ['/uploads.js','/storage.js']:
 with opener.open(admin+'/shortcuts.js') as response:assert b'LinksShortcuts' in response.read()
 assert len(call(admin,'/api/content')['items'])==1
 call(public,'/metrics',{'kind':'view','source':'youtube'})
-promo=call(admin,'/api/content',{'type':'promo','internal_name':'Smoke offer','title':'Offer','url':'https://partner.example','promo_code':'TEST10'},csrf)['id']
+destination='https://partner.example/offer?tag=smoke-21&value=a%2Fb'
+promo=call(admin,'/api/content',{'type':'promo','internal_name':'Smoke offer','title':'Offer','url':destination,'promo_code':'TEST10'},csrf)['id']
 call(public,'/metrics',{'kind':'promo_code_copy','link':'block:'+promo,'code':'TEST10','source':'instagram'})
 call(admin,'/api/quotes',{'text':'Smoke quote'},csrf)
 backup=call(admin,'/api/backup');assert backup['version']==3;assert len(backup['tables']['footer_quotes'])==1;assert any(x['kind']=='promo_code_copy' for x in backup['tables']['counts'])
-assert call(admin,'/api/content/'+promo+'/story-link',{},csrf)['url'].startswith(public+'/go/')
+story_url=call(admin,'/api/content/'+promo+'/story-link',{},csrf)['url']
+assert story_url.startswith(public+'/go/')
+if os.environ.get('LINKS_CHECK_REFERRER_POLICY') == '1':
+    class NoRedirect(HTTPRedirectHandler):
+        def redirect_request(self,*args):
+            return None
+    with build_opener().open(public+'/nginx-healthz') as health:
+        assert health.status==200
+        assert health.headers.get_all('Referrer-Policy')==['strict-origin-when-cross-origin']
+    try:
+        build_opener(NoRedirect).open(story_url)
+    except HTTPError as redirect:
+        with redirect:
+            assert redirect.code==302
+            assert redirect.headers['Location']==destination
+            assert redirect.headers.get_all('Referrer-Policy')==['no-referrer']
+    else:
+        raise AssertionError('Expected a tracked redirect')
 call(admin,'/api/settings',{'name':'Smoke test','analytics_enabled':False},csrf)
 before=call(admin,'/api/backup')['tables']['counts'];call(public,'/metrics',{'kind':'view'});assert call(admin,'/api/backup')['tables']['counts']==before
 call(admin,'/api/restore',backup,csrf)

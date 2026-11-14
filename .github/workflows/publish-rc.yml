@@ -1,0 +1,124 @@
+name: Publish LinKs release candidate
+on:
+  push:
+    tags: ['v*-rc.*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: links-candidate-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  image:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@v4
+      - name: Build and test this architecture
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          version=$(cat VERSION)
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-rc\.[1-9][0-9]*$ ]]
+          [[ "${GITHUB_REF_NAME%%-rc.*}" = "${version,,}" ]]
+          archive="$RUNNER_TEMP/links-$ARCH.tar"
+          docker buildx build --platform "linux/$ARCH" --provenance=false \
+            --build-arg "APP_RELEASE_VERSION=$version" \
+            --build-arg "APP_RELEASE_ID=$GITHUB_REF_NAME:$GITHUB_SHA" \
+            --label "org.opencontainers.image.version=$GITHUB_REF_NAME" \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --output "type=oci,dest=$archive" .
+          if ! command -v skopeo >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y skopeo
+          fi
+          skopeo copy "oci-archive:$archive" "docker-daemon:links-rc-test:$ARCH"
+          LINKS_CHECK_ARCHITECTURES="$ARCH" LINKS_CHECK_IMAGE="links-rc-test:$ARCH" \
+            LINKS_CHECK_REFERRER_POLICY=1 bash scripts/check-images.sh "$version" "$GITHUB_SHA"
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Upload the tested image by digest
+        id: upload
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          image="ghcr.io/${GITHUB_REPOSITORY,,}-rc"
+          archive="$RUNNER_TEMP/links-$ARCH.tar"
+          digest=$(tar -xOf "$archive" index.json | jq -er '.manifests | select(length == 1) | .[0].digest')
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          skopeo copy --preserve-digests --dest-authfile "$HOME/.docker/config.json" \
+            "oci-archive:$archive" "docker://$image@$digest"
+          printf '%s=%s\n' "$ARCH" "$digest" >> "$GITHUB_OUTPUT"
+    outputs:
+      amd64: ${{ steps.upload.outputs.amd64 }}
+      arm64: ${{ steps.upload.outputs.arm64 }}
+
+  publish:
+    needs: image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      packages: write
+    steps:
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish the tested digests and verify the index
+        env:
+          AMD64_DIGEST: ${{ needs.image.outputs.amd64 }}
+          ARM64_DIGEST: ${{ needs.image.outputs.arm64 }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-rc\.[1-9][0-9]*$ ]]
+          image="ghcr.io/${GITHUB_REPOSITORY,,}-rc"
+          [[ "$AMD64_DIGEST" =~ ^sha256:[0-9a-f]{64}$ && "$ARM64_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          if ! command -v skopeo >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y skopeo
+          fi
+          reference="$image:$GITHUB_REF_NAME"
+          if skopeo inspect --raw --authfile "$HOME/.docker/config.json" \
+            "docker://$reference" > /dev/null 2> "$RUNNER_TEMP/tag-check"; then
+            echo "The candidate tag already exists: $reference" >&2
+            exit 1
+          fi
+          if ! grep -Eiq 'manifest unknown|manifest_unknown' "$RUNNER_TEMP/tag-check"; then
+            cat "$RUNNER_TEMP/tag-check" >&2
+            exit 1
+          fi
+          docker buildx imagetools create --tag "$reference" "$image@$AMD64_DIGEST" "$image@$ARM64_DIGEST"
+          docker buildx imagetools inspect --raw "$reference" > "$RUNNER_TEMP/index.json"
+          jq -e --arg amd "$AMD64_DIGEST" --arg arm "$ARM64_DIGEST" '
+            (.manifests | length) == 2 and
+            any(.manifests[]; .platform.os == "linux" and .platform.architecture == "amd64" and .digest == $amd) and
+            any(.manifests[]; .platform.os == "linux" and .platform.architecture == "arm64" and .digest == $arm)
+          ' "$RUNNER_TEMP/index.json"
+          digest=$(docker buildx imagetools inspect "$reference" --format '{{.Manifest.Digest}}')
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          printf '%s\n' "$reference@$digest" >> "$GITHUB_STEP_SUMMARY"
+          jq -r '.manifests[] | "\(.platform.os)/\(.platform.architecture) \(.digest)"' \
+            "$RUNNER_TEMP/index.json" >> "$GITHUB_STEP_SUMMARY"
