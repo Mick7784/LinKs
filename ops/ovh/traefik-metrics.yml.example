@@ -1,0 +1,21 @@
+http:
+  routers:
+    links-metrics:
+      rule: 'Host(`links.domotik-studio.fr`) && Path(`/metrics`)'
+      entryPoints: [websecure]
+      tls: {}
+      priority: 1000
+      middlewares: [links-metrics-quota]
+      service: links-metrics-private
+  middlewares:
+    links-metrics-quota:
+      rateLimit:
+        average: 30
+        period: 1s
+        burst: 100
+  services:
+    links-metrics-private:
+      loadBalancer:
+        servers:
+          # Documentation-only address. Use the qualified private transport.
+          - url: 'http://192.0.2.20:8082'

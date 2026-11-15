@@ -22,6 +22,7 @@ RUN npm ci --omit=dev --ignore-scripts \
 LABEL org.opencontainers.image.source="https://github.com/Mick7784/links"
 LABEL org.opencontainers.image.title="Links"
 COPY nginx.conf /etc/nginx/nginx.conf
+COPY ops/nginx/*.conf /etc/nginx/links-metrics/
 COPY --from=config /app/site/ /usr/share/nginx/html/
 COPY scripts/video-api.mjs scripts/start.mjs /app/
 COPY scripts/analytics.py scripts/url_inspection.py scripts/tracked_batch.py scripts/tracked_links.py scripts/affiliate_partners.py scripts/short_urls.py scripts/instance.py scripts/youtube.py scripts/themes.py scripts/images.py scripts/storage.py links.json VERSION /app/

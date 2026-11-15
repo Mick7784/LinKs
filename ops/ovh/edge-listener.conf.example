@@ -1,0 +1,11 @@
+# Mount as edge-listener.conf only with the edge-only public policy and an
+# isolated network restricted to the approved relay. Replace the relay IP.
+server {
+  listen 8082;
+  location = /metrics {
+    allow 192.0.2.10/32;
+    deny all;
+    include /etc/nginx/links-metrics/upstream.conf;
+  }
+  location / { return 404; }
+}

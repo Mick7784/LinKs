@@ -1,0 +1,2 @@
+# Traffic on the generic public upstream cannot reach the metrics collector.
+return 403;
