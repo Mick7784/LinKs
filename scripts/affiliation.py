@@ -202,10 +202,6 @@ def report(db, query):
             previous_error=db.execute("SELECT id,finished_at,message FROM aff_runs WHERE account_id=? AND status='failed' ORDER BY id DESC LIMIT 1",(item['id'],)).fetchone()
             item['portal_run']=dict(latest) if latest else None
             item['portal_previous_error']=dict(previous_error) if previous_error and (not latest or previous_error['id']!=latest['id']) else None
-            if latest and latest['status']=='running':
-                try:item['portal_progress']=worker('amazon/status',{'account':item['id'],'run':latest['id']},timeout=2)
-                except ValueError:item['portal_progress']={'stage':'unavailable','message':'Suivi du navigateur momentanément indisponible ; collecte toujours en cours.'}
-
         item['snapshot']={**dict(last),'summary':json.loads(last['summary'])} if last else None
         item['running']=bool(db.execute("SELECT 1 FROM aff_runs WHERE account_id=? AND status='running'",(item['id'],)).fetchone())
     selected=[a for a in accounts if not identity or a['id']==identity]
@@ -315,9 +311,10 @@ def start_amazon_sync(connect, identity, data):
         def collect():
             try:
                 payload=worker('amazon/collect',{'account':identity,'day':day,'run':run},timeout=600)
+                prepared=amazon.prepare_portal_batch(payload,day,tag)
                 with connect() as db:
                     db.execute('BEGIN IMMEDIATE')
-                    results=amazon.ingest_portal_batch(db,identity,payload,day,tag,stamp())
+                    results=amazon.store_portal_batch(db,identity,prepared,started)
                     db.execute("UPDATE aff_accounts SET session_state='connected',last_error=NULL WHERE id=?",(identity,))
                     db.execute("UPDATE aff_runs SET status='success',finished_at=?,rows=?,pages=3 WHERE id=?",(stamp(),sum(r['rows'] for r in results),run))
             except Exception as exc:
@@ -340,8 +337,8 @@ def export_backup(db):
     """Financial observations only; encrypted browser sessions/key are excluded."""
     return {'version':1,'tables':{table:[dict(row) for row in db.execute('SELECT * FROM '+table)] for table in TABLES}}
 
-def restore_backup(db, bundle):
-    if bundle is None: return 'absent'
+def validate_backup(bundle):
+    if bundle is None:return
     if not isinstance(bundle,dict) or bundle.get('version')!=1 or set(bundle.get('tables',{}))!=set(TABLES):
         raise ValueError('Sauvegarde Affiliation invalide.')
     tables=bundle['tables']
@@ -374,6 +371,12 @@ def restore_backup(db, bundle):
     except (sqlite3.Error,TypeError,KeyError,ValueError) as exc:
         raise ValueError('Sauvegarde Affiliation invalide ou incompatible.') from exc
     finally: checked.close()
+
+
+def restore_backup(db,bundle,*,validated=False):
+    if bundle is None:return 'absent'
+    if not validated:validate_backup(bundle)
+    tables=bundle['tables']
     initialize(db)
     # Never roll current financial history back when restoring a content backup.
     if db.execute('SELECT 1 FROM aff_snapshots LIMIT 1').fetchone() or db.execute("SELECT 1 FROM aff_accounts WHERE id!='domadoo' LIMIT 1").fetchone(): return 'conservé'
@@ -401,16 +404,27 @@ def scheduler(connect):
 
 def get(connect, action, query):
     with connect() as db:
-        if action=='overview': return report(db,query)
-        if action=='transactions': return transactions(db,query)
-        identity=query.get('account','domadoo'); account(db,identity)
-        if action=='history':
-            return {'items':[dict(r) for r in db.execute('SELECT * FROM aff_revisions WHERE account_id=? AND provider_id=? ORDER BY id DESC',(identity,query.get('id','')))]}
-        if action=='payments': return {'items':[dict(r) for r in db.execute('SELECT * FROM aff_vouchers WHERE account_id=? ORDER BY position',(identity,))]}
-        if action=='runs': return {'items':[dict(r) for r in db.execute('SELECT * FROM aff_runs WHERE account_id=? ORDER BY id DESC LIMIT 30',(identity,))]}
+        result=report(db,query) if action=='overview' else read_account_report(db,action,query)
+    if action!='overview':return result
+    for item in result['accounts']:
+        latest=item.get('portal_run')
+        if latest and latest['status']=='running' and (not query.get('account') or query['account']==item['id']):
+            try:item['portal_progress']=worker('amazon/status',{'account':item['id'],'run':latest['id']},timeout=2)
+            except ValueError:item['portal_progress']={'stage':'unavailable','message':'Suivi du navigateur momentanément indisponible ; collecte toujours en cours.'}
+    return result
+
+
+def read_account_report(db, action, query):
+    if action=='transactions': return transactions(db,query)
+    identity=query.get('account','domadoo'); account(db,identity)
+    if action=='history':
+        return {'items':[dict(r) for r in db.execute('SELECT * FROM aff_revisions WHERE account_id=? AND provider_id=? ORDER BY id DESC',(identity,query.get('id','')))]}
+    if action=='payments': return {'items':[dict(r) for r in db.execute('SELECT * FROM aff_vouchers WHERE account_id=? ORDER BY position',(identity,))]}
+    if action=='runs': return {'items':[dict(r) for r in db.execute('SELECT * FROM aff_runs WHERE account_id=? ORDER BY id DESC LIMIT 30',(identity,))]}
     raise ValueError('Action inconnue.')
 
 def post(connect, action, data):
+    if not isinstance(data,dict):raise ValueError('Requête Affiliation invalide.')
     identity=data.get('account',data.get('id','domadoo'))
     if action.startswith('amazon/'):
         with connect() as db:
@@ -434,23 +448,35 @@ def post(connect, action, data):
                 value=amazon_imports.saved_archive(db,identity,data.get('id'))
                 return {k:v for k,v in value.items() if k!='archive'}
         if action in {'amazon/reanalyze','amazon/reanalyze-pending','amazon/ignore-archive'}:
+            if action=='amazon/ignore-archive':
+                with connect() as db:
+                    db.execute('BEGIN IMMEDIATE')
+                    return amazon_imports.ignore(db,identity,data.get('id'),stamp())
+            if action=='amazon/reanalyze':
+                return reanalyze_amazon_archive(connect,identity,data.get('id'))
             with connect() as db:
-                db.execute('BEGIN IMMEDIATE')
-                if action=='amazon/reanalyze-pending':return amazon_imports.reprocess_pending(db,identity,stamp())
-                if action=='amazon/ignore-archive':return amazon_imports.ignore(db,identity,data.get('id'),stamp())
-                return amazon_imports.reprocess(db,identity,data.get('id'),stamp())
+                pending=amazon_imports.pending_reports(db,identity)
+            results=[]
+            for item in sorted(pending,key=lambda v:(v['observed_at'],v['id'])):
+                try:results.append(reanalyze_amazon_archive(connect,identity,item['id']))
+                except ValueError as exc:results.append({'id':item['id'],'ok':False,'message':str(exc)})
+            return {'ok':True,'results':results,'message':f'{len(results)} archive(s) réanalysée(s).'}
         if action=='amazon/archive':return amazon.inspect_archive(data)
         if action=='amazon/import-zip':
+            observed=stamp()
+            prepared=amazon_imports.prepare_zip(data)
             with connect() as db:
                 db.execute('BEGIN IMMEDIATE')
-                return amazon_imports.ingest(db,identity,data,stamp())
+                return amazon_imports.store_zip(db,identity,data,observed,prepared)
         if action=='amazon/inspect':
             headers,rows=amazon.inspect_csv(data);return {'headers':headers,'sample':rows[:3],'rows':len(rows)}
         if action=='amazon/preview':return amazon.normalize(data)
         if action=='amazon/import':
+            observed=stamp()
+            prepared=amazon.prepare_csv(data)
             with connect() as db:
                 db.execute('BEGIN IMMEDIATE')
-                return amazon.ingest(db,identity,data,stamp())
+                return amazon.store_csv(db,identity,prepared,observed)
         if action=='amazon/list-reports':return {'reports':amazon.list_reports(identity)[0]}
         if action=='amazon/get-report':return amazon.retrieve_report(identity,data.get('filename'),data.get('reportType'))
         raise ValueError('Action Amazon inconnue.')
@@ -468,3 +494,15 @@ def post(connect, action, data):
                 if action=='disconnect': db.execute('UPDATE aff_accounts SET enabled=0 WHERE id=?',(identity,))
         return result
     raise ValueError('Action inconnue.')
+
+
+def reanalyze_amazon_archive(connect,identity,ident):
+    with connect() as db:
+        value=amazon_imports.saved_archive(db,identity,ident)
+    prepared=amazon_imports.prepare_zip(value)
+    with connect() as db:
+        db.execute('BEGIN IMMEDIATE')
+        # A concurrent classification wins over an analysis started earlier.
+        if amazon_imports.saved_archive(db,identity,ident)!=value:
+            raise ValueError('L’archive a été modifiée pendant son analyse. Actualisez son état.')
+        return amazon_imports.store_zip(db,identity,value,stamp(),prepared,reanalyze=True)

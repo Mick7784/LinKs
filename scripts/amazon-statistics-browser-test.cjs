@@ -23,8 +23,8 @@ s.serve_forever()`],{cwd:__dirname,env:{...process.env,PYTHONIOENCODING:'utf-8',
   browser=await chromium.launch({headless:true,...(process.env.CHROMIUM_PATH?{executablePath:process.env.CHROMIUM_PATH}:{})});
   const page=await browser.newPage(),errors=[];
   page.on('pageerror',e=>errors.push(e.message));await page.route('**/*',r=>r.request().url().startsWith(origin)?r.continue():r.abort());
-  const csv='Date,Tag,clics,articles commandés,articles expédiés,revenus totaux\n10-31-2026,test-21,7,3,2,3.75\n';
-  const payload={account:account.id,csv,kind:'performance',view:'category',mapping:{date:'Date',clicks:'clics',ordered_items:'articles commandés',shipped_items:'articles expédiés',commission_cents:'revenus totaux'},start:'2026-10-31',end:'2026-10-31',scope:'all',date_format:'mdy',decimal:'dot',confirmed:true};
+  const csv='Date,Tag,clics,articles commandés,articles expédiés,Articles retournés,revenus totaux\n10-31-2026,test-21,7,3,2,0,3.75\n';
+  const payload={account:account.id,csv,kind:'performance',view:'category',mapping:{date:'Date',clicks:'clics',ordered_items:'articles commandés',shipped_items:'articles expédiés',returned_items:'Articles retournés',commission_cents:'revenus totaux'},start:'2026-10-31',end:'2026-10-31',scope:'all',date_format:'mdy',decimal:'dot',confirmed:true};
   await api('amazon/import',payload);
   await api('amazon/import',{...payload,view:'tracking_id',contribution:'detail',mapping:{...payload.mapping,tracking_id:'Tag'}});
   await page.goto(origin);await page.locator('[data-tab=affiliation]').click();await page.getByRole('button',{name:'Gérer les partenaires',exact:true}).click();
@@ -36,7 +36,8 @@ s.serve_forever()`],{cwd:__dirname,env:{...process.env,PYTHONIOENCODING:'utf-8',
   const nav=page.getByRole('navigation',{name:'Rubriques affiliation'});
   assert.deepEqual(await nav.getByRole('button').allTextContents(),['Vue d’ensemble','Rapports et imports','Connexion']);
   assert.equal(await page.getByRole('heading',{name:'Lignes de rapports Amazon',exact:true}).count(),0);
-  assert.equal(await page.locator('.aff-card').count(),4);
+  assert.equal(await page.locator('.aff-card').count(),5);
+  assert.equal(await page.locator('.aff-card').filter({hasText:'Articles retournés'}).locator('strong').innerText(),'0');
   if(process.env.AMAZON_UI_SHOTS)await page.screenshot({path:join(process.env.AMAZON_UI_SHOTS,'amazon-vue-ensemble.png'),fullPage:true});
   await nav.getByRole('button',{name:'Rapports et imports',exact:true}).click();
   await page.getByRole('heading',{name:'Rapports actifs · 1',exact:true}).waitFor();

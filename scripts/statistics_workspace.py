@@ -153,6 +153,30 @@ def workspace(db, *, now, zone, selected, period, aliases, labels, campaigns, se
                 totals[source] = totals.get(source, 0) + count
         return {"items": items, "sources": totals, "total": sum(totals.values())}
 
+    redirect_rows = db.execute("""
+        SELECT o.day,o.kind,o.placement,o.outcome,o.referrer,
+               COALESCE(t.link_id,s.promotion_id,o.token) AS identity,SUM(o.total) AS total
+        FROM redirect_observations o
+        LEFT JOIN tracked_tokens t ON o.kind='tracked' AND t.token=o.token
+        LEFT JOIN story_links s ON o.kind='story' AND s.token=o.token
+        WHERE o.day BETWEEN ? AND ? OR o.day=?
+        GROUP BY o.day,o.kind,identity,o.placement,o.outcome,o.referrer
+    """, (start.isoformat(),end,day))
+    for row in redirect_rows:
+        category=categories[row['kind']]
+        groups=[]
+        if row['day']==day:groups.append(by_day.get(day,{}).get(category,{}))
+        if start.isoformat()<=row['day']<=end:groups.append(period_items[category])
+        for group in groups:
+            item=group.get(row['identity'])
+            if item is None:continue
+            key,signal=('observed_referrers',row['referrer']) if row['outcome']=='open' else ('excluded_redirects',row['outcome'])
+            totals=item.setdefault(key,{})
+            totals[signal]=totals.get(signal,0)+row['total']
+            signals=item.setdefault('redirect_signals',{}).setdefault(row['placement'],{})
+            totals=signals.setdefault(key,{})
+            totals[signal]=totals.get(signal,0)+row['total']
+
     for key, summary in series.items():
         daily = campaign_activity.get(key, {})
         summary["campaign_count"] = len(daily)

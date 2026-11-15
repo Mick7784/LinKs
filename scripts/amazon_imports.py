@@ -7,7 +7,7 @@ from datetime import datetime
 import amazon_affiliation as amazon
 
 RANK={'category':0,'daily_trends':1,'tracking_id':2,'linked_product':3,'legacy':4}
-ENGINE='archives-2'
+ENGINE='archives-4'
 STATES={'pending','unusable','complementary','active','replaced','ignored'}
 
 
@@ -24,10 +24,6 @@ def archives(db,identity):
         items.append({'id':row['id'],'observed_at':row['observed_at'],**{k:v for k,v in value.items() if k not in {'archive','version','state'}},
             'state':state,'report_ids':linked,'can_reanalyze':state in {'pending','unusable','complementary','ignored'},'can_ignore':state in {'pending','unusable','complementary'}})
     return items
-
-def fingerprint(value):
-    keys=('kind','start','end','scope','currency','rows')
-    return json.dumps({**{k:value[k] for k in keys},'view':value.get('view','legacy'),'date_basis':value.get('date_basis')},sort_keys=True)
 
 def pending_reports(db,identity):
     return [{k:item for k,item in v.items() if k not in {'diagnostics','attempts'}} for v in archives(db,identity) if v['state'] in {'pending','unusable'}]
@@ -140,12 +136,23 @@ def reconcile(values,previous,received_at=None):
                     v['reference_metrics']=[m for m in v['reference_metrics'] if m not in common]
                     v['contribution']='totals' if v['reference_metrics'] else 'detail'
                     continue
+            if old['source']=='amazon-csv':
+                equivalent=exact and amazon.observation_fingerprint(old)==amazon.observation_fingerprint(v)
+                if not equivalent:
+                    raise ValueError('Un rapport CSV manuel couvre déjà ces chiffres. Vérifiez et confirmez la correction par CSV.')
             daily=not old.get('date_basis') and not v.get('date_basis')
             if not exact and not daily:raise ValueError('Chevauchement de totaux non datés : impossible de répartir les montants avec certitude.')
             for metric in common:
                 days={r['date'] for r in v['rows'] if r.get(metric) is not None}
                 if daily and any(r.get(metric) is None and r['date'] in days for r in v['rows']):
                     raise ValueError('Correction quotidienne partielle : le dernier montant fiable est conservé.')
+                if same_view:
+                    required=amazon.metric_coverage(remaining,metric)
+                    if daily:
+                        required={cell:n for cell,n in required.items() if cell[0] in days}
+                    offered=amazon.metric_coverage(v,metric)
+                    if any(offered[cell]<n for cell,n in required.items()):
+                        raise ValueError('Correction ZIP incomplète : une ligne déjà renseignée manque.')
                 for row in remaining['rows']:
                     if row.get(metric) is not None and (not daily or row['date'] in days):row[metric]=None;changed=True
             if changed:changed_groups.add((old['start'],old['end'],old['scope']))
@@ -153,7 +160,7 @@ def reconcile(values,previous,received_at=None):
             supersedes.append(old['id'])
             remaining['reference_metrics']=sorted(amazon.reference_metrics(remaining))
             if remaining['reference_metrics']:
-                for key in ('id','observed_at','digest','supersedes'):remaining.pop(key,None)
+                for key in ('id','observed_at','source','digest','supersedes'):remaining.pop(key,None)
                 carried.append(remaining)
     supersedes.extend(old['id'] for old in previous if old.get('contribution')=='detail' and (old['start'],old['end'],old['scope']) in changed_groups)
     return carried,list(dict.fromkeys(supersedes))
@@ -184,24 +191,45 @@ def analyze(archive):
     return values,diagnostics,warnings
 
 
-def ingest(db,identity,data,observed,reanalyze=False):
+def prepare_zip(data):
     archive=amazon.inspect_archive(data)  # Unsafe containers are rejected, never stored.
+    return archive,analyze(archive)
+
+
+def ingest(db,identity,data,observed,reanalyze=False):
+    return store_zip(db,identity,data,observed,prepare_zip(data),reanalyze)
+
+
+def store_zip(db,identity,data,observed,prepared,reanalyze=False):
+    archive,(values,diagnostics,warnings)=prepared
     prior=next((v for v in archives(db,identity) if v['digest']==archive['digest']),None)
     received_at=prior['observed_at'] if prior else observed
     if prior and not reanalyze and (prior.get('engine')==ENGINE or prior['state']=='ignored'):
         return {'ok':True,'imported':False,'duplicate':True,'pending':prior['state'] in {'pending','unusable'},'state':prior['state'],'id':prior['id'],'reasons':prior['reasons']}
-    history=[{'id':r['id'],**v} for r in db.execute('SELECT id,summary FROM aff_snapshots WHERE account_id=?',(identity,)) if (v:=json.loads(r['summary']).get('amazon'))]
-    values,diagnostics,warnings=analyze(archive)
     reasons=[d['name']+' : '+r for d in diagnostics if d['status']!='ready' for r in d['reasons']]
     # Historical normalized contents, not just ZIP bytes, prevent old corrections
     # from returning to the totals, including repackaged or partially imported ZIPs.
-    matched=[old['id'] for old in history if any(fingerprint(v)==fingerprint(old) for v in values)]
-    new_values=[v for v in values if not any(fingerprint(v)==fingerprint(old) for old in history)]
-    values=new_values
+    previous=amazon.active_reports(db,identity)
+    known=amazon.historical_fingerprints(amazon.report_history(db,identity))
+    active_ids={r['id'] for r in previous}
+    matched=[];new_values=[]
     carried=[];supersedes=[];blocked=False
     try:
         warnings.extend(select_references(values))
-        carried,supersedes=reconcile(values,amazon.active_reports(db,identity),received_at)
+        obsolete_groups=set()
+        for value in values:
+            matches=amazon.matching_observations(value,known,active_ids)
+            if matches:
+                matched.extend(matches)
+                if amazon.reference_metrics(value) and not active_ids.intersection(matches):
+                    obsolete_groups.add((value['start'],value['end'],value['scope']))
+            else:new_values.append(value)
+        values=[v for v in new_values if (v['start'],v['end'],v['scope']) not in obsolete_groups]
+        if previous and any(d['status'] in {'unusable','pending'} and any(
+                amazon.column_key(h) in amazon.FIELDS[6:] or amazon.unsupported_financial_column(h)
+                for h in d.get('headers',[])) for d in diagnostics):
+            raise ValueError('Une vue financière du ZIP doit être vérifiée avant de modifier les statistiques existantes.')
+        carried,supersedes=reconcile(values,previous,received_at)
     except ValueError as exc:
         reasons.append(str(exc));values=[];carried=[];supersedes=[];blocked=True
     db.execute('SAVEPOINT amazon_automatic')
@@ -217,7 +245,7 @@ def ingest(db,identity,data,observed,reanalyze=False):
             report_id=db.execute('INSERT INTO aff_snapshots(account_id,observed_at,summary,row_count,pages,source) VALUES(?,?,?,?,1,?)',
                 (identity,received_at,json.dumps({'amazon':v}),len(v['rows']),'amazon-zip')).lastrowid
             if i<len(values):report_ids.append(report_id)
-        if values:db.execute('UPDATE aff_accounts SET last_success=?,last_error=NULL WHERE id=?',(observed,identity))
+        if values:db.execute('UPDATE aff_accounts SET last_success=MAX(COALESCE(last_success,?),?),last_error=NULL WHERE id=?',(observed,observed,identity))
         statuses={d['status'] for d in diagnostics}
         state=('pending' if blocked or 'pending' in statuses else 'unusable' if 'unusable' in statuses else 'active' if report_ids else 'complementary')
         if state=='active' and not set(report_ids)&{r['id'] for r in amazon.active_reports(db,identity)}:state='replaced'
@@ -256,12 +284,11 @@ def ignore(db,identity,ident,observed):
 def report_history(db,identity):
     active={r['id'] for r in amazon.active_reports(db,identity)}
     saved=archives(db,identity);items=[]
-    for row in db.execute('SELECT id,observed_at,source,summary FROM aff_snapshots WHERE account_id=? ORDER BY id DESC',(identity,)):
-        v=json.loads(row['summary']).get('amazon')
-        if not v or row['id'] in active:continue
+    for v in reversed(list(amazon.report_history(db,identity))):
+        if v['id'] in active:continue
         excluded=amazon.misdated_annual_export(v)
         original=next((a for a in saved if a['digest']==v.get('archive_digest')),None)
-        items.append({'id':row['id'],'observed_at':row['observed_at'],'start':v['start'],'end':v['end'],'scope':v['scope'],'filename':v.get('filename',row['source']),
+        items.append({'id':v['id'],'observed_at':v['observed_at'],'source':v['source'],'digest':v['digest'],'start':v['start'],'end':v['end'],'scope':v['scope'],'filename':v.get('filename',v['source']),
             'state':'excluded' if excluded else 'replaced','archive_id':original['id'] if original else None,
             'reason':('Cumul historique attribué à des journées incorrectes. ' + ('Original disponible : réanalyse possible, uniquement avec une période prouvée par le fichier.' if original else 'Original non conservé avec ce rapport ; aucune période fiable reconstructible à partir des seules lignes sauvegardées.')) if excluded else 'Rapport remplacé par une version plus récente ; conservé hors consolidation.'})
     return items

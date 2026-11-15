@@ -1,5 +1,22 @@
 # Changelog
 
+## V1.4.18
+
+### Affiliation Amazon
+
+- Idempotence CSV, ZIP et portail, protection des références manuelles et contrôle
+  des corrections partielles.
+- Import et affichage des articles retournés, provenance et diagnostics des
+  colonnes financières non interprétées.
+
+### Disponibilité et statistiques
+
+- Appels au collecteur et analyse des rapports hors transaction SQLite.
+- Placement déclaré et référent observé dans Statistiques. Préchargements signalés
+  et robots détectés exclus des ouvertures.
+- Création automatique de `redirect_observations`, avec conservation des URLs,
+  destinations et compteurs historiques.
+
 ## V1.4.17
 
 # V1.4.17 — Administration harmonisée

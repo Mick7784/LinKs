@@ -105,7 +105,23 @@ transaction SQLite existante et les insertions financières un point de sauvegar
 Les empreintes des contenus déjà importés empêchent le double comptage et le
 retour d'une ancienne correction, même après changement du nom ou du ZIP. Une
 archive reçue avant une référence plus récente ne peut pas l'écraser. Les imports
-financiers restent immuables ; seuls l'état et le journal de l'archive évoluent.
+financiers restent immuables. Les imports CSV, ZIP et portail consultent la même
+identité d’observation par compte, période, périmètre, vue et lignes normalisées.
+L’ordre des lignes et le nom de fichier peuvent varier. Le rapport conserve sa
+source, sa date d’observation et son empreinte. Un relevé inédit dont la date de
+création est inconnue reste soumis à la validation du périmètre et de la période.
+
+Les corrections d’une référence manuelle utilisent un CSV confirmé. Les ZIP et
+les collectes du portail préservent cette référence. Une correction CSV doit
+conserver les cellules déjà renseignées, y compris les zéros. Une archive qui
+contient une vue financière en attente de vérification reste hors consolidation
+si le compte possède déjà des relevés actifs.
+
+Les rapports peuvent fournir le nombre d’articles retournés. Une quantité
+absente reste inconnue et un zéro explicite reste visible. Une colonne financière
+non prise en charge apparaît dans le diagnostic de l’archive. Les relevés
+historiques restent tels qu’ils ont été importés. La restauration d’une sauvegarde
+qui contient des relevés avec retours requiert une version qui connaît ce champ.
 
 Le rapport historique #9 et les deux archives signalées résident sur un VPS non
 accessible pendant ce développement : leurs contenus exacts n'ont pas été examinés.

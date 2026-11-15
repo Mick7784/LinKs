@@ -97,7 +97,11 @@ window.LinksDescriptionEditor=(()=>{'use strict';
    // Keep the current unsaved copy as a separate recovery before switching.
    if(this.dirty()){this.persist();this.writer=window.LinksUUID()}
    this.remember();Object.assign(this.doc,clone(value.fields));this.selection=value.selection||{start:0,end:0};this.recoveryOrigin=key;this.recoveryValue=JSON.stringify(value);
-   const acknowledged=value.pending?.mutation_id===this.doc.last_mutation?.id;
+   // A receipt only accounts for the immediate successor of the local base.
+   // Workflow operations can advance the draft without replacing that receipt.
+   const receipt=this.doc.last_mutation;
+   const acknowledged=!!receipt?.id&&value.pending?.mutation_id===receipt.id
+    &&receipt.base_revision===value.baseRevision&&this.doc.revision===value.baseRevision+1;
    this.blocked=value.baseRevision!==this.doc.revision&&!acknowledged;
    this.generation++;this.pending=!this.blocked&&!acknowledged?clone(value.pending):null;
    // An interrupted in-flight save can be retried exactly. Its ack must not clear

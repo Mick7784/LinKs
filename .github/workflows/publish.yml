@@ -11,7 +11,7 @@ on:
         type: boolean
         default: true
       version:
-        description: Optional explicit version (otherwise increment VERSION)
+        description: Optional explicit stable version (for example V1.4.18)
         type: string
         default: ""
       validation_only:
@@ -193,35 +193,77 @@ jobs:
           RELEASE_MESSAGE: ${{ github.event.head_commit.message }}
           OFFICIAL_RELEASE: ${{ inputs.official_release }}
           RELEASE_OVERRIDE: ${{ inputs.version }}
+          RELEASE_REQUIRE_DOTTED: 'true'
         run: python3 scripts/release-version.py
-      - name: Log in to GHCR
+      - uses: docker/login-action@v4
         if: steps.release.outputs.eligible == 'true'
-        env:
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GHCR_USER: ${{ github.actor }}
-        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
-      - name: Publish AMD64 and ARM64 images
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Validate the stable index and publish its versioned tag
         if: steps.release.outputs.eligible == 'true'
+        id: registry
         env:
           COMMIT_SHA: ${{ steps.release.outputs.commit }}
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
-          RELEASE_TAG: ${{ steps.release.outputs.tag }}
         run: |
           set -euo pipefail
-          bash scripts/check-images.sh "$RELEASE_VERSION" "$COMMIT_SHA"
-          release_args=()
-          if [ -n "$RELEASE_VERSION" ]; then
-            if docker buildx imagetools inspect "$IMAGE:$RELEASE_TAG" >/dev/null 2>&1; then
-              docker pull "$IMAGE:$RELEASE_TAG"
-              revision=$(docker image inspect "$IMAGE:$RELEASE_TAG" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')
-              test "$revision" = "$COMMIT_SHA" || { echo "Version tag belongs to another source commit"; exit 1; }
-              echo "This production image was already published; keep its immutable version tag."
-              docker buildx imagetools create --tag "$IMAGE:latest" "$IMAGE:$RELEASE_TAG"
-              exit 0
-            fi
-            release_args=(--tag "$IMAGE:$RELEASE_TAG" --build-arg "APP_RELEASE_VERSION=$RELEASE_VERSION" --build-arg "APP_RELEASE_ID=$RELEASE_VERSION:$COMMIT_SHA" --label "org.opencontainers.image.version=$RELEASE_VERSION")
+          [[ "$RELEASE_VERSION" =~ ^V[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          reference="$IMAGE:${RELEASE_VERSION,,}"
+          if ! command -v skopeo >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y skopeo
           fi
-          docker buildx build --platform linux/amd64,linux/arm64 --tag "$IMAGE:latest" --tag "$IMAGE:sha-$COMMIT_SHA" --label "org.opencontainers.image.revision=$COMMIT_SHA" "${release_args[@]}" --push .
+          existing=true
+          if skopeo inspect --raw --authfile "$HOME/.docker/config.json" "docker://$reference" \
+            > "$RUNNER_TEMP/stable-index.json" 2> "$RUNNER_TEMP/stable-probe"; then
+            digest=$(skopeo manifest-digest "$RUNNER_TEMP/stable-index.json")
+          else
+            if ! grep -Eiq 'manifest unknown|manifest_unknown' "$RUNNER_TEMP/stable-probe"; then
+              cat "$RUNNER_TEMP/stable-probe" >&2
+              exit 1
+            fi
+            existing=false
+            docker buildx build --platform linux/amd64,linux/arm64 \
+              --build-arg "APP_RELEASE_VERSION=$RELEASE_VERSION" \
+              --build-arg "APP_RELEASE_ID=$RELEASE_VERSION:$COMMIT_SHA" \
+              --label "org.opencontainers.image.version=$RELEASE_VERSION" \
+              --label "org.opencontainers.image.revision=$COMMIT_SHA" \
+              --output "type=image,name=$IMAGE,push-by-digest=true,name-canonical=true,push=true" \
+              --metadata-file "$RUNNER_TEMP/stable-build.json" .
+            digest=$(jq -er '."containerimage.digest"' "$RUNNER_TEMP/stable-build.json")
+          fi
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          image="$IMAGE@$digest"
+          docker buildx imagetools inspect --raw "$image" > "$RUNNER_TEMP/links-release-manifest.json"
+          for arch in amd64 arm64; do
+            platform_digest=$(jq -er --arg arch "$arch" '
+              [.manifests[] | select(.platform.os == "linux" and .platform.architecture == $arch)]
+              | select(length == 1) | .[0].digest
+            ' "$RUNNER_TEMP/links-release-manifest.json")
+            platform_image="$IMAGE@$platform_digest"
+            docker pull --platform "linux/$arch" "$platform_image"
+            test "$(docker image inspect "$platform_image" --format '{{.Os}}/{{.Architecture}}')" = "linux/$arch"
+            revision=$(docker image inspect "$platform_image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')
+            test "$revision" = "$COMMIT_SHA" || { echo "Version tag belongs to another source commit"; exit 1; }
+            LINKS_CHECK_ARCHITECTURES="$arch" LINKS_CHECK_IMAGE="$platform_image" \
+              LINKS_CHECK_REFERRER_POLICY=1 bash scripts/check-images.sh "$RELEASE_VERSION" "$COMMIT_SHA"
+          done
+          if ! $existing; then
+            if skopeo inspect --raw --authfile "$HOME/.docker/config.json" "docker://$reference" \
+              > /dev/null 2> "$RUNNER_TEMP/stable-probe"; then
+              echo "The stable tag appeared during validation: $reference" >&2
+              exit 1
+            fi
+            if ! grep -Eiq 'manifest unknown|manifest_unknown' "$RUNNER_TEMP/stable-probe"; then
+              cat "$RUNNER_TEMP/stable-probe" >&2
+              exit 1
+            fi
+            docker buildx imagetools create --tag "$reference" "$image"
+          fi
+          test "$(docker buildx imagetools inspect "$reference" --format '{{.Manifest.Digest}}')" = "$digest"
+          printf 'reference=%s\ndigest=%s\n' "$reference" "$digest" >> "$GITHUB_OUTPUT"
       - name: Tag validated production version
         if: steps.release.outputs.eligible == 'true'
         run: |
@@ -242,16 +284,52 @@ jobs:
         run: |
           set -euo pipefail
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release edit "$RELEASE_TAG" --title "$RELEASE_VERSION" --notes-file "docs/releases/$RELEASE_VERSION.md" --latest
+            gh release edit "$RELEASE_TAG" --title "$RELEASE_VERSION" --notes-file "docs/releases/$RELEASE_VERSION.md"
           else
-            gh release create "$RELEASE_TAG" --verify-tag --target "$COMMIT_SHA" --title "$RELEASE_VERSION" --notes-file "docs/releases/$RELEASE_VERSION.md" --latest
+            gh release create "$RELEASE_TAG" --verify-tag --target "$COMMIT_SHA" --title "$RELEASE_VERSION" --notes-file "docs/releases/$RELEASE_VERSION.md" --latest=false
           fi
-          docker buildx imagetools inspect "$IMAGE:$RELEASE_TAG"
-          test "$(docker buildx imagetools inspect "$IMAGE:$RELEASE_TAG" --format '{{.Manifest.Digest}}')" = "$(docker buildx imagetools inspect "$IMAGE:latest" --format '{{.Manifest.Digest}}')"
-          docker buildx imagetools inspect --raw "$IMAGE:$RELEASE_TAG" > /tmp/links-release-manifest.json
-          python3 -c 'import json; data=json.load(open("/tmp/links-release-manifest.json")); platforms={(m.get("platform",{}).get("os"),m.get("platform",{}).get("architecture")) for m in data["manifests"]}; assert {("linux","amd64"),("linux","arm64")} <= platforms, platforms'
-          gh release upload "$RELEASE_TAG" /tmp/links-release-manifest.json --clobber
-          gh release download "$RELEASE_TAG" --pattern links-release-manifest.json --dir /tmp/links-release-verification
-          cmp /tmp/links-release-manifest.json /tmp/links-release-verification/links-release-manifest.json
+          gh release upload "$RELEASE_TAG" "$RUNNER_TEMP/links-release-manifest.json" --clobber
+          gh release download "$RELEASE_TAG" --pattern links-release-manifest.json --dir "$RUNNER_TEMP/release-verification"
+          cmp "$RUNNER_TEMP/links-release-manifest.json" "$RUNNER_TEMP/release-verification/links-release-manifest.json"
+      - name: Advance latest to the validated stable digest
+        if: steps.release.outputs.eligible == 'true'
+        env:
+          COMMIT_SHA: ${{ steps.release.outputs.commit }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          DIGEST: ${{ steps.registry.outputs.digest }}
+          REFERENCE: ${{ steps.registry.outputs.reference }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          [[ "$REFERENCE" = "$IMAGE:${RELEASE_VERSION,,}" && "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          git fetch origin main
+          test "$(git rev-parse origin/main)" = "$COMMIT_SHA" || { echo "main advanced; latest was left unchanged"; exit 1; }
+          current=$(docker buildx imagetools inspect "$IMAGE:latest" --format '{{.Manifest.Digest}}')
+          if [ "$current" != "$DIGEST" ]; then
+            docker pull --platform linux/amd64 "$IMAGE@$current"
+            current_version=$(docker image inspect "$IMAGE@$current" --format '{{index .Config.Labels "org.opencontainers.image.version"}}')
+            python3 - "$current_version" "$RELEASE_VERSION" <<'PY'
+          import re
+          import sys
+
+          def version(value):
+              if not re.fullmatch(r"[Vv][0-9]+\.[0-9]+\.[0-9]+", value):
+                  raise SystemExit(f"Cannot verify the stable version of latest: {value}")
+              return tuple(map(int, value[1:].split(".")))
+
+          if version(sys.argv[2]) <= version(sys.argv[1]):
+              raise SystemExit("Refusing to replace latest with an older or conflicting stable version")
+          PY
+            test "$(docker buildx imagetools inspect "$IMAGE:latest" --format '{{.Manifest.Digest}}')" = "$current" || {
+              echo "latest changed during validation" >&2
+              exit 1
+            }
+            docker buildx imagetools create --tag "$IMAGE:latest" "$IMAGE@$DIGEST"
+          fi
+          test "$(docker buildx imagetools inspect "$IMAGE:latest" --format '{{.Manifest.Digest}}')" = "$DIGEST"
+          gh release edit "$RELEASE_TAG" --latest
+          printf '%s@%s\n%s:latest@%s\n' "$REFERENCE" "$DIGEST" "$IMAGE" "$DIGEST" >> "$GITHUB_STEP_SUMMARY"
 
 

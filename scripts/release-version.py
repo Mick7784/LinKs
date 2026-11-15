@@ -31,9 +31,11 @@ def plan(current,source,state=None,override=''):
         return version
     return validate(override) if override else next_version(current)
 
-def reserve(root,source,override=''):
+def reserve(root,source,override='',require_dotted=False):
     path=root/'.release-state.json';state=json.loads(path.read_text()) if path.exists() else None
     current=(root/'VERSION').read_text().strip();version=plan(current,source,state,override)
+    if require_dotted and not re.fullmatch(r"V[0-9]+\.[0-9]+\.[0-9]+",version):
+        raise ValueError("Stable Docker releases require a version like V1.4.18")
     (root/'VERSION').write_text(version+'\n')
     path.write_text(json.dumps({'source_sha':source,'version':version},indent=2)+'\n')
     readme=root/'README.md'
@@ -56,7 +58,7 @@ if __name__=='__main__':
     eligible=tip==source or (remote_state and remote_state.get('source_sha')==source and git('rev-parse','origin/main^')==source)
     if eligible:
         git('checkout','--detach',tip)
-        version=reserve(root,source,override)
+        version=reserve(root,source,override,require_dotted=os.environ.get('RELEASE_REQUIRE_DOTTED')=='true')
         git('config','user.name','github-actions[bot]');git('config','user.email','41898282+github-actions[bot]@users.noreply.github.com')
         notes_script=root/'scripts'/'release-notes.py'
         extra=[]

@@ -28,11 +28,16 @@ s.serve_forever()`],{cwd:__dirname,env:{...process.env,PYTHONIOENCODING:'utf-8',
   const create=title=>api('drafts',{title,template_id:template.id,template_revision:template.revision});
   const original=await create('Rédaction principale'),second=await create('Autre brouillon');
   browser=await chromium.launch({headless:true,...(process.env.CHROMIUM_PATH?{executablePath:process.env.CHROMIUM_PATH}:{})});
-  const context=await browser.newContext({viewport:{width:1920,height:1080},reducedMotion:'reduce'}),page=await context.newPage(),errors=[],external=[];
-  // Exercise the HTTP/older-browser UUID fallback throughout persistence and recovery.
-  await context.addInitScript(()=>Object.defineProperty(crypto,'randomUUID',{value:undefined,configurable:true}));
-  await context.route('**/*',route=>{if(!route.request().url().startsWith(origin)){external.push(route.request().url());return route.abort()}return route.continue()});
-  context.on('page',p=>p.on('pageerror',e=>errors.push(e.message)));page.on('pageerror',e=>errors.push(e.message));
+  const errors=[],external=[];
+  async function editorContext(storageState){
+   const ctx=await browser.newContext({viewport:{width:1920,height:1080},reducedMotion:'reduce',storageState});
+   // Exercise the HTTP/older-browser UUID fallback throughout persistence and recovery.
+   await ctx.addInitScript(()=>Object.defineProperty(crypto,'randomUUID',{value:undefined,configurable:true}));
+   await ctx.route('**/*',route=>{if(!route.request().url().startsWith(origin)){external.push(route.request().url());return route.abort()}return route.continue()});
+   ctx.on('page',p=>p.on('pageerror',e=>errors.push(e.message)));
+   return ctx;
+  }
+  const context=await editorContext(),page=await context.newPage();
   async function open(p,title){await p.goto(origin);await p.locator('[data-tab=descriptions]').click();await p.locator('#descriptions').getByRole('button',{name:'Descriptions',exact:true}).click();await p.locator('.description-draft-list article').filter({has:p.getByText(title,{exact:true})}).getByRole('button',{name:'Ouvrir',exact:true}).click();await p.getByLabel('Texte de la description',{exact:true}).waitFor()}
   await open(page,original.title);
   const root=page.locator('#descriptions'),area=page.getByLabel('Texte de la description',{exact:true}),status=root.locator('.description-editor-status');
@@ -79,16 +84,28 @@ s.serve_forever()`],{cwd:__dirname,env:{...process.env,PYTHONIOENCODING:'utf-8',
   other.once('dialog',d=>d.accept());await other.getByRole('button',{name:'Enregistrer ma copie',exact:true}).click();await other.locator('.description-editor-status').filter({hasText:'Copie enregistrée'}).waitFor();
   const copies=(await api('drafts')).items.filter(x=>x.title.endsWith(' — copie'));assert.equal(copies.length,1);assert.equal(copies[0].text,loser);assert.equal((await get(original.id)).text,winner);await other.close();
   // Offline interruption: navigation reload reads only the server until explicit recovery.
-  const offline=winner+'\nTravail hors ligne 👩🏽‍💻';await context.setOffline(true);await area.fill(offline);await status.filter({hasText:'Hors ligne'}).waitFor();
-  const localCount=await page.evaluate(()=>Object.keys(localStorage).filter(k=>k.startsWith('links:description-editor:')).length);assert(localCount>0);
-  await page.close({runBeforeUnload:false});await context.setOffline(false);const recovered=await context.newPage();await open(recovered,original.title);
+  const beforeOffline=await get(original.id),offline=winner+'\nTravail hors ligne 👩🏽‍💻';
+  // Keep the old writer disconnected through teardown, independently of Chromium's online events.
+  await page.route('**/drafts/'+original.id+'/save',route=>route.abort('internetdisconnected'));
+  await context.setOffline(true);await area.fill(offline);await status.filter({hasText:'Hors ligne'}).waitFor();
+  const storageState=await context.storageState();
+  const local=storageState.origins.find(x=>x.origin===origin).localStorage
+   .filter(x=>x.name.startsWith('links:description-editor:')).map(x=>JSON.parse(x.value)).find(x=>x.id===original.id);
+  assert.equal(local?.fields.text,offline);assert.equal(local.baseRevision,beforeOffline.revision);
+  await context.close();
+  const resumed=await editorContext(storageState),recovered=await resumed.newPage();await open(recovered,original.title);
   const recoveredArea=recovered.getByLabel('Texte de la description',{exact:true});assert.equal(await recoveredArea.inputValue(),winner);
+  assert.equal((await get(original.id)).revision,beforeOffline.revision);
+  await recovered.getByRole('button',{name:'Voir le texte',exact:true}).click();
+  assert.equal(await recovered.getByLabel('Copie locale — lecture seule',{exact:true}).inputValue(),offline);
+  await recovered.getByRole('button',{name:'Fermer',exact:true}).click();
   recovered.once('dialog',d=>d.accept());await recovered.getByRole('button',{name:'Reprendre cette copie',exact:true}).click();await poll(async()=>(await get(original.id)).text===offline);await recovered.locator('.description-editor-status').filter({hasText:'Enregistré'}).waitFor();assert.equal(await recoveredArea.inputValue(),offline);
+  assert.equal((await get(original.id)).revision,beforeOffline.revision+1);
   // A committed request with a lost acknowledgement retries idempotently after restart.
   let lost,abort;const committed=new Promise(r=>lost=r),abortGate=new Promise(r=>abort=r);const beforeLost=await get(original.id);
   await recovered.route('**/drafts/'+original.id+'/save',async route=>{await route.fetch();lost();await abortGate;await route.abort()},{times:1});
   const committedText=offline+'\nAccusé perdu',unacknowledged=committedText+'\nSaisie encore plus récente 😀';await recoveredArea.fill(committedText);await committed;await recoveredArea.fill(unacknowledged);abort();await recovered.locator('.description-editor-status').filter({hasText:'interrompu'}).waitFor();
-  await recovered.close({runBeforeUnload:false});const restarted=await context.newPage();await open(restarted,original.title);
+  await recovered.close({runBeforeUnload:false});const restarted=await resumed.newPage();await open(restarted,original.title);
   assert.equal(await restarted.getByLabel('Texte de la description',{exact:true}).inputValue(),committedText);
   const recoveryKey=await restarted.evaluate(id=>Object.keys(localStorage).find(k=>k.startsWith('links:description-editor:')&&JSON.parse(localStorage.getItem(k)).id===id),original.id);assert(recoveryKey);
   let resumeAck,resumeSent;const resumeGate=new Promise(r=>resumeAck=r),resumeReceived=new Promise(r=>resumeSent=r);
@@ -105,6 +122,26 @@ s.serve_forever()`],{cwd:__dirname,env:{...process.env,PYTHONIOENCODING:'utf-8',
   await restarted.getByLabel('Texte de la description',{exact:true}).fill(unacknowledged+'\nNavigation');await waitingGate;
   await restarted.locator('#descriptions').getByRole('button',{name:'Descriptions',exact:true}).click();await restarted.locator('.description-draft-list article').filter({hasText:second.title}).getByRole('button',{name:'Ouvrir',exact:true}).click();
   await restarted.getByLabel('Titre interne',{exact:true}).waitFor();finish();await pause(200);assert.equal(await restarted.getByLabel('Texte de la description',{exact:true}).inputValue(),second.text);
+  // A server workflow advances the revision without creating a draft save receipt.
+  const secondPath='drafts/'+second.id,secondArea=restarted.getByLabel('Texte de la description',{exact:true});
+  await restarted.route('**/'+secondPath+'/save',route=>route.abort('internetdisconnected'));
+  const unsaved=second.text+'\nCopie locale avant finalisation';await resumed.setOffline(true);await secondArea.fill(unsaved);
+  await restarted.locator('.description-editor-status').filter({hasText:'Hors ligne'}).waitFor();
+  const conflictStorage=await resumed.storageState();await resumed.close();
+  const plan=await api(secondPath+'/compare',{expected_revision:second.revision});
+  const finalized=await api(secondPath+'/finalize',{expected_revision:plan.expected_revision,text_hash:plan.text_hash,plan_hash:plan.plan_hash,mutation_id:'offline-conflict-finalize',ignore_remaining:true});
+  assert.equal(finalized.document.revision,second.revision+1);assert.equal(finalized.document.last_mutation,undefined);
+  const conflictContext=await editorContext(conflictStorage),stale=await conflictContext.newPage();await open(stale,second.title);
+  const staleArea=stale.getByLabel('Texte de la description',{exact:true});
+  assert.equal(await staleArea.inputValue(),second.text);
+  stale.once('dialog',d=>d.accept());await stale.getByRole('button',{name:'Reprendre cette copie',exact:true}).click();
+  assert.equal(await staleArea.inputValue(),unsaved);
+  await stale.locator('.description-editor-status').filter({hasText:'Copie récupérée — conflit avec la version serveur'}).waitFor({timeout:3000});
+  assert.equal((await get(second.id)).revision,finalized.document.revision);
+  stale.once('dialog',d=>d.accept());await stale.getByRole('button',{name:'Enregistrer ma copie',exact:true}).click();
+  await stale.locator('.description-editor-status').filter({hasText:'Copie enregistrée'}).waitFor();
+  assert.equal((await api('drafts')).items.find(x=>x.title===second.title+' — copie')?.text,unsaved);
+  assert.equal((await get(second.id)).text,second.text);assert.equal((await get(second.id)).revision,finalized.document.revision);
   assert.deepEqual(errors,[]);assert.deepEqual(external,[]);
   console.log('Description editor browser: 65/35, Unicode, stale responses, undo, restoration, moves, full reference import, confirmed associations, conflicts, offline recovery, lost acknowledgements and navigation OK');
  }finally{if(browser)await browser.close();if(server){server.kill();if(server.exitCode===null)await new Promise(r=>server.once('exit',r))}rmSync(temp,{recursive:true,force:true})}

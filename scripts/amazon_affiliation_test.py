@@ -30,6 +30,9 @@ class AmazonTests(unittest.TestCase):
     def test_repeat_and_correction_keep_history_without_double_count(self):
         self.ingest(payload());self.assertTrue(self.ingest(payload())['duplicate'])
         corrected=payload();corrected['csv']=corrected['csv'].replace('12,34','-1,25');self.ingest(corrected)
+        old=payload()
+        old['csv']=old['csv'].replace('12,34','12,3400')
+        self.assertTrue(self.ingest(old)['duplicate'])
         self.assertEqual(self.db.execute('SELECT COUNT(*) FROM aff_snapshots').fetchone()[0],2)
         self.assertEqual(amazon.report(self.db,self.identity)['totals']['commission_cents'],-125)
     def test_overlap_and_tracking_scope_are_not_double_counted(self):
@@ -50,6 +53,23 @@ class AmazonTests(unittest.TestCase):
         for change in [{'confirmed':False},{'start':'2026-11-03'},{'scope':'another-21'},{'mapping':{'date':'Date','commission_cents':'Missing'}},{'csv':payload()['csv'].replace('12,34','1,234')}]:
             with self.assertRaises(ValueError):self.ingest({**payload(),**change})
         self.assertEqual(self.db.execute('SELECT COUNT(*) FROM aff_snapshots').fetchone()[0],1)
+
+    def test_correction_with_missing_daily_value_preserves_validated_total(self):
+        first=payload()
+        first['end']='2026-11-02'
+        first['csv']+='02/11/2026;site-21;B012345678;Écran;1;5,00\n'
+        self.ingest(first)
+        partial={**first,'csv':first['csv'].replace('12,34','13,00').replace('5,00','')}
+        with self.assertRaisesRegex(ValueError,'incomplète'):
+            self.ingest(partial)
+        self.assertEqual(amazon.report(self.db,self.identity)['totals']['commission_cents'],1734)
+
+    def test_manual_csv_rejects_explicit_foreign_currency(self):
+        value=payload()
+        value['csv']=value['csv'].replace('Commission','Commission (USD)')
+        value['mapping']['commission_cents']='Commission (USD)'
+        with self.assertRaisesRegex(ValueError,'Devise'):
+            self.ingest(value)
     def test_orders_are_not_commissions_or_payments(self):
         value=payload();value['kind']='orders';value['mapping']={'date':'Date','ordered_items':'Articles','tracking_id':'Tag'};self.ingest(value)
         r=amazon.report(self.db,self.identity)['totals'];self.assertEqual(r['ordered_items'],2);self.assertIsNone(r['orders']);self.assertIsNone(r['commission_cents'])
