@@ -32,6 +32,7 @@ for architecture in ${LINKS_CHECK_ARCHITECTURES:-amd64 arm64}; do
   done
   curl -fsS http://127.0.0.1:28080/healthz
   curl -fsS http://127.0.0.1:28080/nginx-healthz
+  docker exec "$container" nginx -t
   bootstrap=$(docker exec "$container" cat /data/setup-code)
   python3 scripts/smoke.py http://127.0.0.1:28080 http://127.0.0.1:28081 "$bootstrap"
   python3 -c 'import json,sys,urllib.request; data=json.load(urllib.request.urlopen("http://127.0.0.1:28080/api/public-config")); assert data["profile"]["app_version"]==sys.argv[1],data' "$version"

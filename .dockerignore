@@ -4,6 +4,9 @@
 !package.json
 !package-lock.json
 !nginx.conf
+!ops/
+!ops/nginx/
+!ops/nginx/*.conf
 !links.json
 !links.schema.json
 !scripts/
